@@ -21,6 +21,7 @@ async function login() {
 
   currentUser = data.user;
   await loadProfile();
+  showMainApp();
   initApp();
 }
 
@@ -28,14 +29,14 @@ async function logout() {
   await db.auth.signOut();
   currentUser = null;
   currentProfile = null;
-  document.getElementById('login-screen').classList.add('active');
-  document.getElementById('main-screen').classList.remove('active');
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('main-screen').style.display = 'none';
   document.getElementById('login-email').value = '';
   document.getElementById('login-password').value = '';
 }
 
 async function loadProfile() {
-  const { data } = await supabase
+  const { data } = await db
     .from('profiles')
     .select('*')
     .eq('id', currentUser.id)
@@ -47,12 +48,18 @@ function isAdmin() {
   return currentProfile && currentProfile.role === 'admin';
 }
 
+function showMainApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('main-screen').style.display = 'block';
+}
+
 // Check session on load
 window.addEventListener('load', async () => {
   const { data } = await db.auth.getSession();
   if (data.session) {
     currentUser = data.session.user;
     await loadProfile();
+    showMainApp();
     initApp();
   }
 });
