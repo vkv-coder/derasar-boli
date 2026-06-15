@@ -20,7 +20,7 @@ async function renderMembers() {
 }
 
 async function loadMembersList(query = '') {
-  let req = supabase.from('members').select('*').order('family_no');
+  let req = db.from('members').select('*').order('family_no');
   if (query) {
     req = req.or(`person_name.ilike.%${query}%,family_no.ilike.%${query}%`);
   }
@@ -88,7 +88,7 @@ async function addMember(familyNo = null, personName = null) {
   const person_name = personName || document.getElementById('mem-name').value.trim();
   if (!family_no || !person_name) { showToast('Fill all fields', 'error'); return null; }
 
-  const { data, error } = await supabase.from('members').insert({ family_no, person_name }).select().single();
+  const { data, error } = await db.from('members').insert({ family_no, person_name }).select().single();
   if (error) { showToast('Error: ' + error.message, 'error'); return null; }
 
   if (!familyNo) {
@@ -121,7 +121,7 @@ async function updateMember(id) {
   const family_no = document.getElementById('mem-family-edit').value.trim();
   const person_name = document.getElementById('mem-name-edit').value.trim();
   if (!family_no || !person_name) { showToast('Fill all fields', 'error'); return; }
-  const { error } = await supabase.from('members').update({ family_no, person_name }).eq('id', id);
+  const { error } = await db.from('members').update({ family_no, person_name }).eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Member updated!', 'success');
@@ -130,7 +130,7 @@ async function updateMember(id) {
 
 async function deleteMember(id) {
   if (!confirm('Delete this member?')) return;
-  await supabase.from('members').delete().eq('id', id);
+  await db.from('members').delete().eq('id', id);
   showToast('Member deleted');
   await loadMembersList();
 }

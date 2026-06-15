@@ -8,7 +8,7 @@ let liveEventId = null;
 async function renderLive() {
   const content = document.getElementById('page-content');
 
-  const { data: events } = await supabase
+  const { data: events } = await db
     .from('events')
     .select('*')
     .eq('is_live', true)
@@ -43,7 +43,7 @@ async function onLiveEventChange() {
 
   // Unsubscribe previous
   if (liveSubscription) {
-    supabase.removeChannel(liveSubscription);
+    db.removeChannel(liveSubscription);
     liveSubscription = null;
   }
 
@@ -67,21 +67,21 @@ async function loadLiveData() {
   const el = document.getElementById('live-content');
 
   // Load all donations for event
-  const { data: donations } = await supabase
+  const { data: donations } = await db
     .from('donations')
     .select('*')
     .eq('event_id', liveEventId)
     .order('created_at', { ascending: false });
 
   // Load swapna items
-  const { data: swapnas } = await supabase
+  const { data: swapnas } = await db
     .from('swapna')
     .select('*, swapna_items(*)')
     .eq('event_id', liveEventId)
     .order('display_order');
 
   // Load general heads
-  const { data: generalHeads } = await supabase
+  const { data: generalHeads } = await db
     .from('general_heads')
     .select('*')
     .eq('event_id', liveEventId)

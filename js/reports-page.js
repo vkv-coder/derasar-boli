@@ -5,7 +5,7 @@
 async function renderReports() {
   const content = document.getElementById('page-content');
 
-  const { data: events } = await supabase
+  const { data: events } = await db
     .from('events')
     .select('*')
     .order('created_at', { ascending: false });
@@ -38,10 +38,10 @@ async function loadReport() {
     { data: generalHeads },
     { data: eventData }
   ] = await Promise.all([
-    supabase.from('donations').select('*').eq('event_id', eventId).order('created_at'),
-    supabase.from('swapna').select('*, swapna_items(*)').eq('event_id', eventId).order('display_order'),
-    supabase.from('general_heads').select('*').eq('event_id', eventId).order('display_order'),
-    supabase.from('events').select('*').eq('id', eventId).single()
+    db.from('donations').select('*').eq('event_id', eventId).order('created_at'),
+    db.from('swapna').select('*, swapna_items(*)').eq('event_id', eventId).order('display_order'),
+    db.from('general_heads').select('*').eq('event_id', eventId).order('display_order'),
+    db.from('events').select('*').eq('id', eventId).single()
   ]);
 
   if (!donations || donations.length === 0) {

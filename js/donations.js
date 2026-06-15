@@ -16,7 +16,7 @@ async function renderEntry() {
   const content = document.getElementById('page-content');
 
   // Load live events only for operators, all for admin
-  const { data: events } = await supabase
+  const { data: events } = await db
     .from('events')
     .select('*')
     .eq('is_live', true)
@@ -118,7 +118,7 @@ async function onHeadTypeChange() {
   detailEl.style.display = 'block';
 
   if (type === 'general') {
-    const { data } = await supabase.from('general_heads').select('*').eq('event_id', entryState.eventId).order('display_order');
+    const { data } = await db.from('general_heads').select('*').eq('event_id', entryState.eventId).order('display_order');
     detailEl.innerHTML = `
       <div class="form-group">
         <label>Select General Head</label>
@@ -129,7 +129,7 @@ async function onHeadTypeChange() {
       </div>
     `;
   } else if (type === 'swapna') {
-    const { data: swapnas } = await supabase
+    const { data: swapnas } = await db
       .from('swapna')
       .select('*, swapna_items(*)')
       .eq('event_id', entryState.eventId)
@@ -190,7 +190,7 @@ function searchDonor() {
       return;
     }
 
-    const { data } = await supabase
+    const { data } = await db
       .from('members')
       .select('*')
       .or(`person_name.ilike.%${q}%,family_no.ilike.%${q}%`)
@@ -249,7 +249,7 @@ async function addNewDonorInline() {
   const personName = document.getElementById('new-person-name').value.trim();
   if (!familyNo || !personName) { showToast('Fill family no. and name', 'error'); return; }
 
-  const { data, error } = await supabase.from('members').insert({ family_no: familyNo, person_name: personName }).select().single();
+  const { data, error } = await db.from('members').insert({ family_no: familyNo, person_name: personName }).select().single();
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
   showToast('New member added!', 'success');
@@ -280,7 +280,7 @@ async function saveDonation() {
     entered_by: currentUser.id
   };
 
-  const { error } = await supabase.from('donations').insert(record);
+  const { error } = await db.from('donations').insert(record);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
   showToast(`✅ Saved! ${entryState.memberName} → ${formatAmount(amount)}`, 'success');

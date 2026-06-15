@@ -17,7 +17,7 @@ async function renderEvents() {
 }
 
 async function loadEventsList() {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('events')
     .select('*')
     .order('created_at', { ascending: false });
@@ -87,7 +87,7 @@ async function addEvent() {
   const date = document.getElementById('ev-date').value;
   if (!name) { showToast('Enter event name', 'error'); return; }
 
-  const { error } = await supabase.from('events').insert({
+  const { error } = await db.from('events').insert({
     name,
     event_date: date || null,
     is_live: false
@@ -122,7 +122,7 @@ async function updateEvent(id) {
   const date = document.getElementById('ev-date-edit').value;
   if (!name) { showToast('Enter event name', 'error'); return; }
 
-  const { error } = await supabase.from('events').update({
+  const { error } = await db.from('events').update({
     name,
     event_date: date || null
   }).eq('id', id);
@@ -134,7 +134,7 @@ async function updateEvent(id) {
 }
 
 async function toggleLive(id, live) {
-  const { error } = await supabase.from('events').update({ is_live: live }).eq('id', id);
+  const { error } = await db.from('events').update({ is_live: live }).eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast(live ? '🟢 Event is now Live!' : '⏹ Event stopped', live ? 'success' : '');
   await loadEventsList();
@@ -142,7 +142,7 @@ async function toggleLive(id, live) {
 
 async function deleteEvent(id) {
   if (!confirm('Delete this event? All heads and donations under it will also be deleted.')) return;
-  const { error } = await supabase.from('events').delete().eq('id', id);
+  const { error } = await db.from('events').delete().eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Event deleted');
   await loadEventsList();

@@ -14,7 +14,7 @@ async function renderHeads() {
   const content = document.getElementById('page-content');
 
   // Load events
-  const { data: events } = await supabase.from('events').select('*').order('created_at', { ascending: false });
+  const { data: events } = await db.from('events').select('*').order('created_at', { ascending: false });
 
   content.innerHTML = `
     <div class="card">
@@ -64,7 +64,7 @@ async function loadHeadsContent() {
 
 // ========== SWAPNA ==========
 async function loadSwapnaList() {
-  const { data } = await supabase
+  const { data } = await db
     .from('swapna')
     .select('*, swapna_items(*)')
     .eq('event_id', selectedEventForHeads)
@@ -119,7 +119,7 @@ function showAddSwapnaModal() {
 async function addSwapna() {
   const name = document.getElementById('sw-name').value.trim();
   if (!name) { showToast('Enter swapna name', 'error'); return; }
-  const { error } = await supabase.from('swapna').insert({ event_id: selectedEventForHeads, name });
+  const { error } = await db.from('swapna').insert({ event_id: selectedEventForHeads, name });
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Swapna added!', 'success');
@@ -143,7 +143,7 @@ function showAddSwapnaItemModal(swapnaId, swapnaName) {
 async function addSwapnaItem(swapnaId) {
   const name = document.getElementById('sw-item-name').value.trim();
   if (!name) { showToast('Enter item name', 'error'); return; }
-  const { error } = await supabase.from('swapna_items').insert({ swapna_id: swapnaId, name });
+  const { error } = await db.from('swapna_items').insert({ swapna_id: swapnaId, name });
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Item added!', 'success');
@@ -167,7 +167,7 @@ function showEditSwapnaItemModal(id, name) {
 async function updateSwapnaItem(id) {
   const name = document.getElementById('sw-item-edit').value.trim();
   if (!name) return;
-  await supabase.from('swapna_items').update({ name }).eq('id', id);
+  await db.from('swapna_items').update({ name }).eq('id', id);
   closeModal();
   showToast('Updated!', 'success');
   await loadSwapnaList();
@@ -175,21 +175,21 @@ async function updateSwapnaItem(id) {
 
 async function deleteSwapna(id) {
   if (!confirm('Delete this Swapna and all its items?')) return;
-  await supabase.from('swapna').delete().eq('id', id);
+  await db.from('swapna').delete().eq('id', id);
   showToast('Swapna deleted');
   await loadSwapnaList();
 }
 
 async function deleteSwapnaItem(id) {
   if (!confirm('Delete this item?')) return;
-  await supabase.from('swapna_items').delete().eq('id', id);
+  await db.from('swapna_items').delete().eq('id', id);
   showToast('Item deleted');
   await loadSwapnaList();
 }
 
 // ========== GENERAL HEADS ==========
 async function loadGeneralHeadsList() {
-  const { data } = await supabase
+  const { data } = await db
     .from('general_heads')
     .select('*')
     .eq('event_id', selectedEventForHeads)
@@ -229,7 +229,7 @@ async function loadDefaultHeads() {
     name,
     display_order: i
   }));
-  const { error } = await supabase.from('general_heads').insert(inserts);
+  const { error } = await db.from('general_heads').insert(inserts);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Default heads loaded!', 'success');
   await loadGeneralHeadsList();
@@ -252,7 +252,7 @@ function showAddGeneralHeadModal() {
 async function addGeneralHead() {
   const name = document.getElementById('gh-name').value.trim();
   if (!name) { showToast('Enter head name', 'error'); return; }
-  const { error } = await supabase.from('general_heads').insert({ event_id: selectedEventForHeads, name });
+  const { error } = await db.from('general_heads').insert({ event_id: selectedEventForHeads, name });
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Head added!', 'success');
@@ -276,7 +276,7 @@ function showEditGeneralHeadModal(id, name) {
 async function updateGeneralHead(id) {
   const name = document.getElementById('gh-edit').value.trim();
   if (!name) return;
-  await supabase.from('general_heads').update({ name }).eq('id', id);
+  await db.from('general_heads').update({ name }).eq('id', id);
   closeModal();
   showToast('Updated!', 'success');
   await loadGeneralHeadsList();
@@ -284,7 +284,7 @@ async function updateGeneralHead(id) {
 
 async function deleteGeneralHead(id) {
   if (!confirm('Delete this head?')) return;
-  await supabase.from('general_heads').delete().eq('id', id);
+  await db.from('general_heads').delete().eq('id', id);
   showToast('Head deleted');
   await loadGeneralHeadsList();
 }
