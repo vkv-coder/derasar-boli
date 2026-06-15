@@ -35,7 +35,7 @@ async function logout() {
 }
 
 async function loadProfile() {
-  const { data } = await db
+  const { data } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', currentUser.id)
