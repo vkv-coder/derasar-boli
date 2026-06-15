@@ -5,17 +5,10 @@
 let activeTab = '';
 
 function initApp() {
-  document.getElementById('login-screen').classList.remove('active');
-  document.getElementById('main-screen').classList.add('active');
-
-  // Set role badge
+  showMainApp();
   const badge = document.getElementById('user-role-badge');
   badge.textContent = isAdmin() ? 'Admin' : 'Operator';
-
-  // Build nav tabs
   buildNav();
-
-  // Load default tab
   if (isAdmin()) {
     loadTab('events');
   } else {
@@ -34,6 +27,7 @@ function buildNav() {
     { id: 'entry', label: '💰 Donation Entry' },
     { id: 'live', label: '🔴 Live View' },
     { id: 'reports', label: '📊 Reports' },
+    { id: 'users', label: '👤 Users' },
   ];
 
   const operatorTabs = [
@@ -55,8 +49,6 @@ function buildNav() {
 
 function loadTab(tabId) {
   activeTab = tabId;
-
-  // Update active tab style
   document.querySelectorAll('.nav-tab').forEach(t => {
     t.classList.toggle('active', t.dataset.tab === tabId);
   });
@@ -71,6 +63,7 @@ function loadTab(tabId) {
     case 'entry':    renderEntry(); break;
     case 'live':     renderLive(); break;
     case 'reports':  renderReports(); break;
+    case 'users':    renderUsers(); break;
   }
 }
 
