@@ -1,0 +1,22 @@
+{
+  "name": "Derasar Boli",
+  "short_name": "Derasar Boli",
+  "description": "Jain Temple Donation & Auction Manager",
+  "start_url": "/derasar-boli/",
+  "display": "standalone",
+  "background_color": "#FDF6EC",
+  "theme_color": "#7B3F00",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
