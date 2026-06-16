@@ -138,12 +138,13 @@ async function createAppUser() {
   });
 
   const rawText = await response.text();
-  alert('HTTP ' + response.status + ': ' + rawText);
+  console.error('CREATE USER RESPONSE:', response.status, rawText);
 
   if (!response.ok) {
     let msg = rawText;
     try { msg = JSON.parse(rawText).error || rawText; } catch(e) {}
     errEl.textContent = 'Error: ' + msg;
+    showToast('❌ ' + msg, 'error');
     return;
   }
 
