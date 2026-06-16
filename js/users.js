@@ -127,18 +127,24 @@ async function createAppUser() {
 
   const { data: { session } } = await db.auth.getSession();
 
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/create-user`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${session.access_token}`,
-      'apikey': SUPABASE_ANON_KEY
-    },
-    body: JSON.stringify({ email, password, full_name, role })
-  });
-
-  const rawText = await response.text();
-  console.error('CREATE USER RESPONSE:', response.status, rawText);
+  let response, rawText;
+  try {
+    response = await fetch(`${SUPABASE_URL}/functions/v1/create-user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': SUPABASE_ANON_KEY
+      },
+      body: JSON.stringify({ email, password, full_name, role })
+    });
+    rawText = await response.text();
+    console.error('CREATE USER RESPONSE:', response.status, rawText);
+  } catch (fetchErr) {
+    errEl.textContent = 'Network error: ' + fetchErr.message;
+    showToast('❌ Network error: ' + fetchErr.message, 'error');
+    return;
+  }
 
   if (!response.ok) {
     let msg = rawText;
