@@ -210,13 +210,34 @@ async function changeMyPassword() {
 }
 
 async function deleteAppUser(id, name) {
-  if (!confirm(`Remove "${name}" from this app? They will lose access.`)) return;
+  if (!confirm(`Remove "${name}" from this app? They will lose all access.`)) return;
 
-  const { error } = await db.from('profiles').delete().eq('id', id);
-  if (error) {
-    showToast('Error: ' + error.message, 'error');
+  const { data: { session } } = await db.auth.getSession();
+
+  let response, rawText;
+  try {
+    response = await fetch(`${SUPABASE_URL}/functions/v1/delete-user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': SUPABASE_ANON_KEY
+      },
+      body: JSON.stringify({ userId: id })
+    });
+    rawText = await response.text();
+  } catch (fetchErr) {
+    showToast('Network error: ' + fetchErr.message, 'error');
     return;
   }
-  showToast(`"${name}" removed from app.`, 'success');
+
+  if (!response.ok) {
+    let msg = rawText;
+    try { msg = JSON.parse(rawText).error || rawText; } catch(e) {}
+    showToast('Error: ' + msg, 'error');
+    return;
+  }
+
+  showToast(`"${name}" removed successfully.`, 'success');
   await loadUsersList();
 }
