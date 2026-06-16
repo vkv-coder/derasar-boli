@@ -125,8 +125,9 @@ async function createAppUser() {
 
   errEl.textContent = 'Creating user...';
 
-  // Sign up the user using Supabase Auth
-  const { data, error } = await db.auth.signUp({
+  // Use a separate client so the admin session on `db` is not disturbed
+  const tempClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const { data, error } = await tempClient.auth.signUp({
     email,
     password,
     options: {
