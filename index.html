@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Derasar Boli</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" href="icon.png" />
+  <link rel="icon" href="temple.png" />
   <meta name="theme-color" content="#7B3F00" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -14,9 +14,10 @@
     <div id="login-screen" class="screen active">
       <div class="login-box">
         <div class="logo-area">
-          <div class="logo-icon">🛕</div>
+          <img src="temple.png" alt="Shankheshwar Parshwanath" style="width:100px;height:70px;object-fit:cover;border-radius:8px;margin-bottom:8px;" />
           <h1>Derasar Boli</h1>
-          <p class="subtitle">Jain Temple Donation Manager</p>
+          <p class="subtitle">🙏 શ્રી શંખેશ્વર પાર્શ્વનાથય નમઃ 🙏</p>
+          <p class="subtitle">S K Shah Gotri Sangh, Harinagar</p>
         </div>
         <div class="form-group">
           <label>Email</label>
@@ -33,6 +34,19 @@
 
     <!-- MAIN APP -->
     <div id="main-screen" class="screen" style="display:none;">
+
+      <!-- Temple Banner -->
+      <div class="temple-banner">
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;">
+          <img src="temple.png" alt="Temple" style="width:48px;height:36px;object-fit:cover;border-radius:4px;border:2px solid var(--primary);" />
+          <div>
+            <div class="gujarati-text">🙏 શ્રી શંખેશ્વર પાર્શ્વનાથય નમઃ 🙏</div>
+            <div class="sangh-name">S K Shah Gotri Sangh, Harinagar</div>
+          </div>
+          <img src="temple.png" alt="Temple" style="width:48px;height:36px;object-fit:cover;border-radius:4px;border:2px solid var(--primary);" />
+        </div>
+      </div>
+
       <!-- Top Bar -->
       <div class="topbar">
         <div class="topbar-left">
@@ -46,12 +60,6 @@
 
       <!-- Nav Tabs -->
       <div class="nav-tabs" id="nav-tabs"></div>
-
-      <!-- Temple Banner -->
-      <div class="temple-banner">
-        <div class="gujarati-text">🙏 શ્રી શંખેશ્વર પાર્શ્વનાથય નમઃ 🙏</div>
-        <div class="sangh-name">S K Shah Gotri Sangh, Harinagar</div>
-      </div>
 
       <!-- Page Content -->
       <div id="page-content" class="page-content"></div>
