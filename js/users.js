@@ -139,7 +139,6 @@ async function createAppUser() {
       body: JSON.stringify({ email, password, full_name, role })
     });
     rawText = await response.text();
-    console.error('CREATE USER RESPONSE:', response.status, rawText);
   } catch (fetchErr) {
     errEl.textContent = 'Network error: ' + fetchErr.message;
     showToast('❌ Network error: ' + fetchErr.message, 'error');
