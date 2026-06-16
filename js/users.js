@@ -8,7 +8,10 @@ async function renderUsers() {
     <div class="card">
       <div class="section-header">
         <h3>👤 App Users</h3>
-        <button class="btn-accent btn-sm" onclick="showAddUserModal()">+ Add User</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-secondary btn-sm" onclick="showChangePasswordModal()">🔑 Change My Password</button>
+          <button class="btn-accent btn-sm" onclick="showAddUserModal()">+ Add User</button>
+        </div>
       </div>
       <div id="users-list">Loading...</div>
     </div>
@@ -156,6 +159,55 @@ async function createAppUser() {
   closeModal();
   showToast(`✅ User "${full_name}" created as ${role}!`, 'success');
   await loadUsersList();
+}
+
+function showChangePasswordModal() {
+  showModal(`
+    <div class="modal-title">🔑 Change My Password</div>
+    <div class="form-group">
+      <label>New Password</label>
+      <input type="password" id="new-pwd" placeholder="Min 6 characters" />
+    </div>
+    <div class="form-group">
+      <label>Confirm New Password</label>
+      <input type="password" id="confirm-pwd" placeholder="Repeat new password" />
+    </div>
+    <div id="pwd-error" class="error-msg"></div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="changeMyPassword()">Update Password</button>
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+    </div>
+  `);
+}
+
+async function changeMyPassword() {
+  const newPwd = document.getElementById('new-pwd').value.trim();
+  const confirmPwd = document.getElementById('confirm-pwd').value.trim();
+  const errEl = document.getElementById('pwd-error');
+
+  if (!newPwd || !confirmPwd) {
+    errEl.textContent = 'Please fill both fields.';
+    return;
+  }
+  if (newPwd.length < 6) {
+    errEl.textContent = 'Password must be at least 6 characters.';
+    return;
+  }
+  if (newPwd !== confirmPwd) {
+    errEl.textContent = 'Passwords do not match.';
+    return;
+  }
+
+  errEl.textContent = 'Updating...';
+
+  const { error } = await db.auth.updateUser({ password: newPwd });
+  if (error) {
+    errEl.textContent = 'Error: ' + error.message;
+    return;
+  }
+
+  closeModal();
+  showToast('✅ Password updated successfully!', 'success');
 }
 
 async function deleteAppUser(id, name) {
