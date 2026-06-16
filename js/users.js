@@ -137,14 +137,17 @@ async function createAppUser() {
     body: JSON.stringify({ email, password, full_name, role })
   });
 
-  const result = await response.json();
+  const rawText = await response.text();
+  alert('HTTP ' + response.status + ': ' + rawText);
 
   if (!response.ok) {
-    const msg = result.error || 'Failed to create user';
-    alert('Add User Error: ' + msg);
+    let msg = rawText;
+    try { msg = JSON.parse(rawText).error || rawText; } catch(e) {}
     errEl.textContent = 'Error: ' + msg;
     return;
   }
+
+  const result = JSON.parse(rawText);
 
   closeModal();
   showToast(`✅ User "${full_name}" created as ${role}!`, 'success');
