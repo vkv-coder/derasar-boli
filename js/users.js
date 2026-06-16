@@ -125,36 +125,23 @@ async function createAppUser() {
 
   errEl.textContent = 'Creating user...';
 
-  // Use a separate client so the admin session on `db` is not disturbed
-  const tempClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  const { data, error } = await tempClient.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        full_name,
-        role
-      }
-    }
+  const { data: { session } } = await db.auth.getSession();
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/create-user`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': SUPABASE_ANON_KEY
+    },
+    body: JSON.stringify({ email, password, full_name, role })
   });
 
-  if (error) {
-    errEl.textContent = 'Error: ' + error.message;
+  const result = await response.json();
+
+  if (!response.ok) {
+    errEl.textContent = 'Error: ' + (result.error || 'Failed to create user');
     return;
-  }
-
-  // If trigger didn't fire, manually insert profile
-  if (data.user) {
-    const { error: profileError } = await db.from('profiles').upsert({
-      id: data.user.id,
-      full_name,
-      role
-    });
-
-    if (profileError) {
-      errEl.textContent = 'User created but profile error: ' + profileError.message;
-      return;
-    }
   }
 
   closeModal();

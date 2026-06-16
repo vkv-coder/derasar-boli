@@ -9,7 +9,7 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "https://raw.githubusercontent.com/vkv-coder/derasar-boli/main/icon-192.png",
+      "src": "./temple.png",
       "sizes": "192x192",
       "type": "image/png"
     }
