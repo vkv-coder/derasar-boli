@@ -226,6 +226,7 @@ async function deleteAppUser(id, name) {
       body: JSON.stringify({ userId: id })
     });
     rawText = await response.text();
+    console.log('DELETE USER RESPONSE:', response.status, rawText);
   } catch (fetchErr) {
     showToast('Network error: ' + fetchErr.message, 'error');
     return;
