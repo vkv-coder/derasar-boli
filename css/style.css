@@ -499,3 +499,26 @@ body {
   .data-table { font-size: 12px; }
   .data-table th, .data-table td { padding: 8px; }
 }
+
+/* ========== TEMPLE BANNER ========== */
+.temple-banner {
+  background: linear-gradient(135deg, #D4A017, #F0C040, #D4A017);
+  color: var(--primary);
+  text-align: center;
+  padding: 8px 16px;
+  border-bottom: 2px solid var(--primary);
+}
+.temple-banner .gujarati-text {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1.4;
+}
+.temple-banner .sangh-name {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.85;
+}
