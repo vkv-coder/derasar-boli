@@ -140,7 +140,9 @@ async function createAppUser() {
   const result = await response.json();
 
   if (!response.ok) {
-    errEl.textContent = 'Error: ' + (result.error || 'Failed to create user');
+    const msg = result.error || 'Failed to create user';
+    errEl.textContent = 'Error: ' + msg;
+    showToast('Error: ' + msg, 'error');
     return;
   }
 

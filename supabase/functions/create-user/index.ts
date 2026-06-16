@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
     })
 
     if (error) {
-      return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: corsHeaders })
+      return new Response(JSON.stringify({ error: error.message, code: error.code, status: error.status }), { status: 400, headers: corsHeaders })
     }
 
     if (data.user) {
