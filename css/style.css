@@ -97,25 +97,25 @@ body {
 .btn-logout:hover { background: rgba(255,255,255,0.25); }
 
 /* ========== NAV TABS ========== */
-/* NAV TABS */
 .nav-tabs {
   display: flex;
-  flex-wrap: wrap;
   background: var(--primary);
   border-top: 1px solid rgba(255,255,255,0.1);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.nav-tabs::-webkit-scrollbar { display: none; }
 
 .nav-tab {
-  flex: 1 1 auto;
-  padding: 9px 12px;
+  flex: 0 0 auto;
+  padding: 10px 18px;
   color: rgba(255,255,255,0.7);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   border-bottom: 3px solid transparent;
   white-space: nowrap;
   transition: all 0.2s;
-  text-align: center;
 }
 .nav-tab:hover { color: white; }
 .nav-tab.active {
@@ -500,25 +500,11 @@ body {
   .data-table th, .data-table td { padding: 8px; }
 }
 
-/* ========== TEMPLE BANNER ========== */
-.temple-banner {
-  background: linear-gradient(135deg, #D4A017, #F0C040, #D4A017);
-  color: var(--primary);
-  text-align: center;
-  padding: 8px 16px;
-  border-bottom: 2px solid var(--primary);
-}
-.temple-banner .gujarati-text {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  line-height: 1.4;
-}
-.temple-banner .sangh-name {
-  font-size: 12px;
-  font-weight: 600;
-  margin-top: 2px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  opacity: 0.85;
+/* ========== PRINT STYLES ========== */
+@media print {
+  .topbar, .nav-tabs, .btn-primary, .btn-secondary,
+  .btn-accent, .btn-danger, .btn-sm, .toast, .modal-overlay { display: none !important; }
+  body { background: white; }
+  .page-content { padding: 0; max-width: 100%; }
+  .card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
 }

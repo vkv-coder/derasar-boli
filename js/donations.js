@@ -15,7 +15,6 @@ let entryState = {
 async function renderEntry() {
   const content = document.getElementById('page-content');
 
-  // Load live events only for operators, all for admin
   const { data: events } = await db
     .from('events')
     .select('*')
@@ -84,6 +83,16 @@ async function renderEntry() {
           <input type="text" id="entry-note" placeholder="Any note..." />
         </div>
         <button class="btn-primary" style="margin-top:8px;" onclick="saveDonation()">✅ Save Donation</button>
+      </div>
+    </div>
+
+    <!-- Post-save actions -->
+    <div id="post-save-card" style="display:none;" class="card">
+      <div class="card-title">✅ Donation Saved!</div>
+      <p id="post-save-summary" style="font-size:14px;color:var(--text-light);margin-bottom:14px;"></p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn-secondary" onclick="printLastReceipt()">🧾 Receipt (Gujarati)</button>
+        <button class="btn-accent" style="background:#25D366;color:white;" onclick="whatsappLastDonation()">📲 Share on WhatsApp</button>
       </div>
     </div>
 
@@ -257,6 +266,7 @@ async function addNewDonorInline() {
 }
 
 let recentEntries = [];
+let lastSavedDonationId = null;
 
 async function saveDonation() {
   const amount = parseFloat(document.getElementById('entry-amount').value);
@@ -280,13 +290,21 @@ async function saveDonation() {
     entered_by: currentUser.id
   };
 
-  const { error } = await db.from('donations').insert(record);
+  const { data: saved, error } = await db.from('donations').insert(record).select().single();
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
+  lastSavedDonationId = saved.id;
   showToast(`✅ Saved! ${entryState.memberName} → ${formatAmount(amount)}`, 'success');
+
+  // Show post-save actions
+  const postCard = document.getElementById('post-save-card');
+  document.getElementById('post-save-summary').textContent =
+    `${entryState.memberName} · ${entryState.headName} · ${formatAmount(amount)}`;
+  postCard.style.display = 'block';
 
   // Add to recent entries
   recentEntries.unshift({
+    id: saved.id,
     donor: entryState.memberName,
     family: entryState.familyNo,
     head: entryState.headName,
@@ -295,28 +313,107 @@ async function saveDonation() {
 
   updateRecentEntries();
 
-  // Reset amount and note only (keep event + head selected for faster entry)
+  // Reset amount and note (keep event + head for faster entry)
   document.getElementById('entry-amount').value = '';
   document.getElementById('entry-note').value = '';
   clearDonor();
+}
+
+function printLastReceipt() {
+  if (lastSavedDonationId) showDonationReceipt(lastSavedDonationId);
+}
+
+function whatsappLastDonation() {
+  if (!recentEntries.length) return;
+  const e = recentEntries[0];
+  const msg = `🛕 *Derasar Boli - Donation Receipt*\n\n` +
+    `👤 Donor: ${e.donor}\n` +
+    `🏠 Family: ${e.family || '—'}\n` +
+    `📋 Head: ${e.head}\n` +
+    `💰 Amount: ${formatAmount(e.amount)}\n\n` +
+    `🙏 Jai Jinendra`;
+  window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
 }
 
 function updateRecentEntries() {
   const el = document.getElementById('recent-entries');
   if (recentEntries.length === 0) return;
   el.innerHTML = `
-    <table class="data-table">
-      <thead><tr><th>Donor</th><th>Family</th><th>Head</th><th>Amount</th></tr></thead>
-      <tbody>
-        ${recentEntries.slice(0, 10).map(e => `
-          <tr>
-            <td>${e.donor}</td>
-            <td>${e.family}</td>
-            <td>${e.head}</td>
-            <td><strong>${formatAmount(e.amount)}</strong></td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
+    <div style="overflow-x:auto;">
+      <table class="data-table">
+        <thead><tr><th>Donor</th><th>Family</th><th>Head</th><th>Amount</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${recentEntries.slice(0, 10).map(e => `
+            <tr>
+              <td>${e.donor}</td>
+              <td>${e.family}</td>
+              <td>${e.head}</td>
+              <td><strong>${formatAmount(e.amount)}</strong></td>
+              <td>
+                <div style="display:flex;gap:4px;">
+                  <button class="btn-sm btn-secondary" onclick="showDonationReceipt('${e.id}')">🧾</button>
+                  ${isAdmin() ? `<button class="btn-sm btn-danger" onclick="deleteDonation('${e.id}','entry')">✕</button>` : ''}
+                </div>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
   `;
+}
+
+// ========== EDIT / DELETE DONATIONS ==========
+
+async function showEditDonationModal(id, refreshFn) {
+  const { data: d, error } = await db.from('donations').select('*').eq('id', id).single();
+  if (error || !d) { showToast('Could not load', 'error'); return; }
+
+  showModal(`
+    <div class="modal-title">Edit Donation</div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">
+      <strong>${d.donor_name}</strong> · Family: ${d.family_no || '—'}
+    </div>
+    <div class="form-group">
+      <label>Amount</label>
+      <div class="amount-input-wrap">
+        <input type="number" id="edit-don-amount" value="${d.amount}" min="1" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Note (optional)</label>
+      <input type="text" id="edit-don-note" value="${d.note || ''}" placeholder="Any note..." />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="updateDonation('${id}','${refreshFn}')">Update</button>
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+    </div>
+  `);
+}
+
+async function updateDonation(id, refreshFn) {
+  const amount = parseFloat(document.getElementById('edit-don-amount').value);
+  const note = document.getElementById('edit-don-note').value.trim();
+  if (!amount || amount <= 0) { showToast('Enter valid amount', 'error'); return; }
+
+  const { error } = await db.from('donations').update({ amount, note: note || null }).eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+
+  closeModal();
+  showToast('Donation updated!', 'success');
+  if (refreshFn === 'live') loadLiveData();
+  else if (refreshFn === 'reports') loadReport();
+}
+
+async function deleteDonation(id, refreshFn) {
+  if (!confirm('Delete this donation entry? This cannot be undone.')) return;
+  const { error } = await db.from('donations').delete().eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  showToast('Donation deleted');
+  if (refreshFn === 'live') loadLiveData();
+  else if (refreshFn === 'reports') loadReport();
+  else if (refreshFn === 'entry') {
+    recentEntries = recentEntries.filter(e => e.id !== id);
+    updateRecentEntries();
+  }
 }

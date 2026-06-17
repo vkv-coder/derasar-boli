@@ -30,7 +30,6 @@ async function renderLive() {
     <div id="live-content"></div>
   `;
 
-  // Auto-select if only one event
   if (events && events.length === 1) {
     document.getElementById('live-event-select').value = events[0].id;
     onLiveEventChange();
@@ -41,7 +40,6 @@ async function onLiveEventChange() {
   liveEventId = document.getElementById('live-event-select').value;
   if (!liveEventId) return;
 
-  // Unsubscribe previous
   if (liveSubscription) {
     db.removeChannel(liveSubscription);
     liveSubscription = null;
@@ -49,47 +47,34 @@ async function onLiveEventChange() {
 
   await loadLiveData();
 
-  // Subscribe to real-time changes
-  liveSubscription = supabase
+  liveSubscription = db
     .channel('live-donations-' + liveEventId)
     .on('postgres_changes', {
       event: '*',
       schema: 'public',
       table: 'donations',
       filter: `event_id=eq.${liveEventId}`
-    }, () => {
-      loadLiveData();
-    })
+    }, () => { loadLiveData(); })
     .subscribe();
 }
 
 async function loadLiveData() {
   const el = document.getElementById('live-content');
 
-  // Load all donations for event
-  const { data: donations } = await db
-    .from('donations')
-    .select('*')
-    .eq('event_id', liveEventId)
-    .order('created_at', { ascending: false });
-
-  // Load swapna items
-  const { data: swapnas } = await db
-    .from('swapna')
-    .select('*, swapna_items(*)')
-    .eq('event_id', liveEventId)
-    .order('display_order');
-
-  // Load general heads
-  const { data: generalHeads } = await db
-    .from('general_heads')
-    .select('*')
-    .eq('event_id', liveEventId)
-    .order('display_order');
+  const [
+    { data: donations },
+    { data: swapnas },
+    { data: generalHeads },
+    { data: eventData }
+  ] = await Promise.all([
+    db.from('donations').select('*').eq('event_id', liveEventId).order('created_at', { ascending: false }),
+    db.from('swapna').select('*, swapna_items(*)').eq('event_id', liveEventId).order('display_order'),
+    db.from('general_heads').select('*').eq('event_id', liveEventId).order('display_order'),
+    db.from('events').select('name').eq('id', liveEventId).single()
+  ]);
 
   if (!donations) return;
 
-  // Calculate totals
   const swapnaTotals = {};
   const generalTotals = {};
   let grandTotal = 0;
@@ -108,12 +93,18 @@ async function loadLiveData() {
     }
   });
 
+  const adminActions = isAdmin();
+
   el.innerHTML = `
     <!-- Grand Total -->
     <div class="card" style="background:var(--primary);color:white;text-align:center;">
       <div style="font-size:13px;opacity:0.8;margin-bottom:4px;">Grand Total</div>
       <div style="font-size:36px;font-weight:800;">${formatAmount(grandTotal)}</div>
       <div style="font-size:12px;opacity:0.7;margin-top:4px;">${donations.length} entries</div>
+      <button onclick="whatsappLiveTotal('${(eventData?.name || '').replace(/'/g,"\\'")}',${grandTotal},${donations.length})"
+        style="margin-top:12px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.4);color:white;padding:7px 18px;border-radius:20px;font-size:13px;cursor:pointer;">
+        📲 Share on WhatsApp
+      </button>
     </div>
 
     <!-- Swapna Totals -->
@@ -164,21 +155,39 @@ async function loadLiveData() {
       <div class="card-title">Recent Donations</div>
       ${donations.length === 0
         ? '<div class="empty-state"><div class="empty-icon">💰</div><p>No donations yet.</p></div>'
-        : `<table class="data-table">
-            <thead><tr><th>Donor</th><th>Family</th><th>Head</th><th>Amount</th><th>Time</th></tr></thead>
+        : `<div style="overflow-x:auto;"><table class="data-table">
+            <thead><tr><th>Donor</th><th>Family</th><th>Head</th><th>Amount</th><th>Time</th><th>Actions</th></tr></thead>
             <tbody>
-              ${donations.slice(0, 20).map(d => `
+              ${donations.slice(0, 30).map(d => `
                 <tr>
                   <td>${d.donor_name}</td>
                   <td>${d.family_no || '—'}</td>
                   <td><span class="badge ${d.head_type === 'swapna_item' ? 'badge-swapna' : 'badge-general'}">${d.head_type === 'swapna_item' ? 'Swapna' : 'General'}</span></td>
                   <td><strong>${formatAmount(d.amount)}</strong></td>
                   <td style="font-size:11px;color:var(--text-muted);">${new Date(d.created_at).toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'})}</td>
+                  <td>
+                    <div style="display:flex;gap:4px;">
+                      <button class="btn-sm btn-secondary" title="Receipt" onclick="showDonationReceipt('${d.id}')">🧾</button>
+                      ${adminActions ? `
+                        <button class="btn-sm" style="background:#4CAF50;color:white;" title="Edit" onclick="showEditDonationModal('${d.id}','live')">✏️</button>
+                        <button class="btn-sm btn-danger" title="Delete" onclick="deleteDonation('${d.id}','live')">✕</button>
+                      ` : ''}
+                    </div>
+                  </td>
                 </tr>
               `).join('')}
             </tbody>
-          </table>`
+          </table></div>`
       }
     </div>
   `;
+}
+
+function whatsappLiveTotal(eventName, total, count) {
+  const msg = `🛕 *Derasar Boli – Live Update*\n\n` +
+    `📅 Event: ${eventName}\n` +
+    `💰 Total: ${formatAmount(total)}\n` +
+    `📝 Entries: ${count}\n\n` +
+    `🙏 Jai Jinendra`;
+  window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
 }

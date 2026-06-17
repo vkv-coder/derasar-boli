@@ -21,9 +21,7 @@ async function renderMembers() {
 
 async function loadMembersList(query = '') {
   let req = db.from('members').select('*').order('family_no');
-  if (query) {
-    req = req.or(`person_name.ilike.%${query}%,family_no.ilike.%${query}%`);
-  }
+  if (query) req = req.or(`person_name.ilike.%${query}%,family_no.ilike.%${query}%`);
   const { data, error } = await req;
 
   const el = document.getElementById('members-list');
@@ -43,8 +41,9 @@ async function loadMembersList(query = '') {
             <td><strong>${m.family_no}</strong></td>
             <td>${m.person_name}</td>
             <td>
-              <div style="display:flex;gap:6px;">
-                <button class="btn-sm btn-secondary" onclick="showEditMemberModal('${m.id}','${m.family_no}','${m.person_name.replace(/'/g,"\\'")}')">Edit</button>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="btn-sm btn-secondary" onclick="showDonorHistory('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${m.family_no}')">📜 History</button>
+                <button class="btn-sm" style="background:#4CAF50;color:white;" onclick="showEditMemberModal('${m.id}','${m.family_no}','${m.person_name.replace(/'/g,"\\'")}')">Edit</button>
                 <button class="btn-sm btn-danger" onclick="deleteMember('${m.id}')">Delete</button>
               </div>
             </td>
@@ -133,4 +132,71 @@ async function deleteMember(id) {
   await db.from('members').delete().eq('id', id);
   showToast('Member deleted');
   await loadMembersList();
+}
+
+// ========== DONOR HISTORY ==========
+async function showDonorHistory(memberId, memberName, familyNo) {
+  showModal(`<div class="modal-title">📜 ${memberName}</div><p style="color:var(--text-muted);font-size:13px;">Loading history...</p>`);
+
+  const { data: donations, error } = await db
+    .from('donations')
+    .select('*, events(name)')
+    .eq('member_id', memberId)
+    .order('created_at', { ascending: false });
+
+  if (error || !donations || donations.length === 0) {
+    document.getElementById('modal-box').innerHTML = `
+      <div class="modal-title">📜 ${memberName}</div>
+      <p style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px 0;">No donation history found.</p>
+      <div class="modal-actions"><button class="btn-secondary" onclick="closeModal()">Close</button></div>
+    `;
+    return;
+  }
+
+  const totalAmount = donations.reduce((s, d) => s + parseFloat(d.amount), 0);
+
+  // Group by event
+  const byEvent = {};
+  donations.forEach(d => {
+    const evName = d.events?.name || 'Unknown Event';
+    if (!byEvent[evName]) byEvent[evName] = [];
+    byEvent[evName].push(d);
+  });
+
+  document.getElementById('modal-box').innerHTML = `
+    <div class="modal-title">📜 ${memberName}</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Family No: ${familyNo} &nbsp;·&nbsp; ${donations.length} donations</div>
+
+    <div style="background:var(--primary);color:white;border-radius:8px;padding:12px;text-align:center;margin-bottom:14px;">
+      <div style="font-size:11px;opacity:.8;">Total Donated (All Time)</div>
+      <div style="font-size:26px;font-weight:800;">${formatAmount(totalAmount)}</div>
+    </div>
+
+    <div style="max-height:340px;overflow-y:auto;">
+      ${Object.entries(byEvent).map(([evName, evDonations]) => {
+        const evTotal = evDonations.reduce((s, d) => s + parseFloat(d.amount), 0);
+        return `
+          <div style="margin-bottom:12px;">
+            <div style="font-size:12px;font-weight:700;color:var(--primary);padding:6px 0;border-bottom:1.5px solid var(--border);display:flex;justify-content:space-between;">
+              <span>📅 ${evName}</span>
+              <span>${formatAmount(evTotal)}</span>
+            </div>
+            ${evDonations.map(d => `
+              <div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <div style="font-weight:600;">${formatAmount(d.amount)}</div>
+                  <div style="font-size:11px;color:var(--text-muted);">${new Date(d.created_at).toLocaleDateString('en-IN')}${d.note ? ' · ' + d.note : ''}</div>
+                </div>
+                <button class="btn-sm btn-secondary" onclick="showDonationReceipt('${d.id}')" title="View Receipt">🧾</button>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }).join('')}
+    </div>
+
+    <div class="modal-actions" style="margin-top:12px;">
+      <button class="btn-secondary" onclick="closeModal()">Close</button>
+    </div>
+  `;
 }
