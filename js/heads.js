@@ -1,48 +1,25 @@
 // ==========================================
-// DERASAR BOLI - Heads Setup
+// DERASAR BOLI - Heads Setup (Global)
+// Heads are no longer tied to events
 // ==========================================
 
-let selectedEventForHeads = null;
-
 const DEFAULT_GENERAL_HEADS = [
-  'Jivdaya', 'Sadharan', 'Angi', 'Otnere',
-  'Swamivatsalya Coupon', 'New Member Fee',
-  'Member Renewal Fee', 'Nishal Garna'
+  'જીવદયા',
+  'સાધારણ',
+  'અંગી',
+  'ઓઠ-ઓઢ',
+  'સ્વામીવાત્સલ્ય કૂપન',
+  'નવી સભ્ય ફી',
+  'સભ્ય નવીનીકરણ ફી',
+  'નિષ્ઠળ ભંડાર'
 ];
 
 async function renderHeads() {
   const content = document.getElementById('page-content');
-
-  // Load events
-  const { data: events } = await db.from('events').select('*').order('created_at', { ascending: false });
-
   content.innerHTML = `
     <div class="card">
-      <div class="card-title">Heads Setup</div>
-      <div class="form-group">
-        <label>Select Event</label>
-        <select id="heads-event-select" onchange="onHeadsEventChange()">
-          <option value="">-- Select Event --</option>
-          ${(events || []).map(ev => `<option value="${ev.id}">${ev.name}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-    <div id="heads-content"></div>
-  `;
-}
-
-async function onHeadsEventChange() {
-  selectedEventForHeads = document.getElementById('heads-event-select').value;
-  if (!selectedEventForHeads) return;
-  await loadHeadsContent();
-}
-
-async function loadHeadsContent() {
-  const el = document.getElementById('heads-content');
-  el.innerHTML = `
-    <div class="card">
       <div class="section-header">
-        <h3>🔶 Swapna (Auction Groups)</h3>
+        <h3>🔶 સ્વપ્ન (Swapna / Auction Groups)</h3>
         <button class="btn-accent btn-sm" onclick="showAddSwapnaModal()">+ Add Swapna</button>
       </div>
       <div id="swapna-list">Loading...</div>
@@ -55,6 +32,7 @@ async function loadHeadsContent() {
           <button class="btn-accent btn-sm" onclick="showAddGeneralHeadModal()">+ Add Head</button>
         </div>
       </div>
+      <p style="font-size:11px;color:var(--text-muted);margin:0 0 10px;padding:0 4px;">All heads are available throughout the year for any donation entry.</p>
       <div id="general-heads-list">Loading...</div>
     </div>
   `;
@@ -67,9 +45,10 @@ async function loadSwapnaList() {
   const { data } = await db
     .from('swapna')
     .select('*, swapna_items(*)')
-    .eq('event_id', selectedEventForHeads)
+    .is('event_id', null)   // global only (no event)
     .order('display_order');
 
+  // Also load event-linked swapna for display (read-only notice)
   const el = document.getElementById('swapna-list');
   if (!data || data.length === 0) {
     el.innerHTML = `<div class="empty-state"><div class="empty-icon">🔶</div><p>No Swapna added yet.</p></div>`;
@@ -81,7 +60,7 @@ async function loadSwapnaList() {
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
         <strong style="color:var(--primary);">${sw.name}</strong>
         <div style="display:flex;gap:6px;">
-          <button class="btn-sm btn-secondary" onclick="showAddSwapnaItemModal('${sw.id}','${sw.name}')">+ Item</button>
+          <button class="btn-sm btn-secondary" onclick="showAddSwapnaItemModal('${sw.id}','${sw.name.replace(/'/g,"\\'")}')">+ Item</button>
           <button class="btn-sm btn-danger" onclick="deleteSwapna('${sw.id}')">Delete</button>
         </div>
       </div>
@@ -92,7 +71,7 @@ async function loadSwapnaList() {
             <div class="list-item" style="padding:6px 0;">
               <span style="font-size:13px;">• ${item.name}</span>
               <div class="list-item-actions">
-                <button class="btn-sm btn-secondary" onclick="showEditSwapnaItemModal('${item.id}','${item.name}')">Edit</button>
+                <button class="btn-sm btn-secondary" onclick="showEditSwapnaItemModal('${item.id}','${item.name.replace(/'/g,"\\'")}')">Edit</button>
                 <button class="btn-sm btn-danger" onclick="deleteSwapnaItem('${item.id}')">✕</button>
               </div>
             </div>
@@ -104,10 +83,10 @@ async function loadSwapnaList() {
 
 function showAddSwapnaModal() {
   showModal(`
-    <div class="modal-title">Add Swapna</div>
+    <div class="modal-title">Add Swapna Group</div>
     <div class="form-group">
       <label>Swapna Name</label>
-      <input type="text" id="sw-name" placeholder="e.g. Swapna 1" />
+      <input type="text" id="sw-name" placeholder="e.g. ઇન્દ્ર-ઇન્દ્રાણી સ્વપ્ન" />
     </div>
     <div class="modal-actions">
       <button class="btn-primary" onclick="addSwapna()">Save</button>
@@ -119,7 +98,7 @@ function showAddSwapnaModal() {
 async function addSwapna() {
   const name = document.getElementById('sw-name').value.trim();
   if (!name) { showToast('Enter swapna name', 'error'); return; }
-  const { error } = await db.from('swapna').insert({ event_id: selectedEventForHeads, name });
+  const { error } = await db.from('swapna').insert({ name, event_id: null });
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Swapna added!', 'success');
@@ -131,7 +110,7 @@ function showAddSwapnaItemModal(swapnaId, swapnaName) {
     <div class="modal-title">Add Item to ${swapnaName}</div>
     <div class="form-group">
       <label>Item Name</label>
-      <input type="text" id="sw-item-name" placeholder="e.g. Ful ni Mala" />
+      <input type="text" id="sw-item-name" placeholder="e.g. ફૂલ ની માળા" />
     </div>
     <div class="modal-actions">
       <button class="btn-primary" onclick="addSwapnaItem('${swapnaId}')">Save</button>
@@ -192,7 +171,7 @@ async function loadGeneralHeadsList() {
   const { data } = await db
     .from('general_heads')
     .select('*')
-    .eq('event_id', selectedEventForHeads)
+    .is('event_id', null)   // global only
     .order('display_order');
 
   const el = document.getElementById('general-heads-list');
@@ -211,7 +190,7 @@ async function loadGeneralHeadsList() {
             <td>${h.name}</td>
             <td>
               <div style="display:flex;gap:6px;">
-                <button class="btn-sm btn-secondary" onclick="showEditGeneralHeadModal('${h.id}','${h.name}')">Edit</button>
+                <button class="btn-sm btn-secondary" onclick="showEditGeneralHeadModal('${h.id}','${h.name.replace(/'/g,"\\'")}')">Edit</button>
                 <button class="btn-sm btn-danger" onclick="deleteGeneralHead('${h.id}')">Delete</button>
               </div>
             </td>
@@ -223,10 +202,10 @@ async function loadGeneralHeadsList() {
 }
 
 async function loadDefaultHeads() {
-  if (!confirm('This will add all default heads to this event. Continue?')) return;
+  if (!confirm('This will add all default Gujarati heads. Continue?')) return;
   const inserts = DEFAULT_GENERAL_HEADS.map((name, i) => ({
-    event_id: selectedEventForHeads,
     name,
+    event_id: null,
     display_order: i
   }));
   const { error } = await db.from('general_heads').insert(inserts);
@@ -239,8 +218,8 @@ function showAddGeneralHeadModal() {
   showModal(`
     <div class="modal-title">Add General Head</div>
     <div class="form-group">
-      <label>Head Name</label>
-      <input type="text" id="gh-name" placeholder="e.g. Jivdaya" />
+      <label>Head Name (Gujarati preferred)</label>
+      <input type="text" id="gh-name" placeholder="e.g. જીવદયા" />
     </div>
     <div class="modal-actions">
       <button class="btn-primary" onclick="addGeneralHead()">Save</button>
@@ -252,7 +231,7 @@ function showAddGeneralHeadModal() {
 async function addGeneralHead() {
   const name = document.getElementById('gh-name').value.trim();
   if (!name) { showToast('Enter head name', 'error'); return; }
-  const { error } = await db.from('general_heads').insert({ event_id: selectedEventForHeads, name });
+  const { error } = await db.from('general_heads').insert({ name, event_id: null });
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Head added!', 'success');

@@ -1,6 +1,6 @@
 // ==========================================
-// DERASAR BOLI - Donation Entry (v2)
-// Multi-head, receipt-based flow
+// DERASAR BOLI - Donation Entry (v2.1)
+// Event optional | Global heads always live
 // ==========================================
 
 let donSession = {
@@ -9,64 +9,69 @@ let donSession = {
 };
 
 let cachedGeneralHeads = [];
-let cachedSwapnaItems = []; // flat: [{id, label}]
-let headRows = [];           // [{rowId, headType, headId, headName, amount}]
+let cachedSwapnaItems = [];
+let headRows = [];
 let headRowCounter = 0;
 let sessionReceipts = [];
 
 // ─── RENDER ───────────────────────────────
 async function renderEntry() {
   const content = document.getElementById('page-content');
+  content.innerHTML = `<div class="card"><div style="text-align:center;color:var(--text-muted);padding:20px;">Loading heads...</div></div>`;
+
+  await loadAllHeads();
 
   const { data: events } = await db
-    .from('events').select('*').eq('is_live', true)
+    .from('events').select('*')
     .order('created_at', { ascending: false });
+
+  donSession = { eventId: null, eventName: null, memberId: null, memberName: null, familyNo: null };
+  headRows = []; headRowCounter = 0;
 
   content.innerHTML = `
     <div class="card">
       <div class="card-title">💰 Donation Entry</div>
 
+      <!-- OPTIONAL EVENT -->
       <div class="form-group">
-        <label>Step 1: Select Event</label>
+        <label style="font-size:12px;">ઉત્સવ (Optional — select only for Paryushan / special event)</label>
         <select id="entry-event" onchange="onEntryEventChange()">
-          <option value="">-- Select Live Event --</option>
+          <option value="">-- No Specific Event (General Donation) --</option>
           ${(events || []).map(ev =>
             `<option value="${ev.id}" data-name="${ev.name}">${ev.name}</option>`
           ).join('')}
         </select>
-        ${(!events || events.length === 0)
-          ? '<p style="color:var(--danger);font-size:12px;margin-top:4px;">No live events.</p>' : ''}
       </div>
 
-      <div id="step2" style="display:none">
-        <div style="font-size:13px;font-weight:700;color:var(--primary);margin:14px 0 10px;padding-top:10px;border-top:2px solid var(--border);">Step 2: Donor</div>
-        <div class="search-box">
-          <input type="text" id="donor-search" placeholder="Search by name or family no..." oninput="searchDonorEntry()" />
+      <!-- DONOR -->
+      <div style="font-size:13px;font-weight:700;color:var(--primary);margin:14px 0 10px;padding-top:10px;border-top:2px solid var(--border);">દાતા (Donor)</div>
+      <div class="search-box">
+        <input type="text" id="donor-search" placeholder="Search by name or family no..." oninput="searchDonorEntry()" />
+      </div>
+      <div id="donor-results"></div>
+      <div id="selected-donor-bar" style="display:none;padding:10px;background:#FFF8F0;border-radius:8px;border:1.5px solid var(--accent);margin-bottom:10px;">
+        <strong id="sel-donor-name"></strong>
+        <span id="sel-donor-family" style="font-size:12px;color:var(--text-muted);margin-left:8px;"></span>
+        <button class="btn-sm" style="float:right;background:#eee;color:#333;" onclick="clearDonorEntry()">Change</button>
+      </div>
+      <div id="new-donor-inline" style="display:none;margin-bottom:10px;">
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Not found — add new member:</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="text" id="nd-family" placeholder="Family No." style="width:110px;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" />
+          <input type="text" id="nd-name" placeholder="Person Name" style="flex:1;min-width:140px;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" />
+          <button class="btn-accent btn-sm" onclick="addNewDonorEntry()">Add</button>
         </div>
-        <div id="donor-results"></div>
-        <div id="selected-donor-bar" style="display:none;padding:10px;background:#FFF8F0;border-radius:8px;border:1.5px solid var(--accent);margin-bottom:10px;">
-          <strong id="sel-donor-name"></strong>
-          <span id="sel-donor-family" style="font-size:12px;color:var(--text-muted);margin-left:8px;"></span>
-          <button class="btn-sm" style="float:right;background:#eee;color:#333;" onclick="clearDonorEntry()">Change</button>
-        </div>
-        <div id="new-donor-inline" style="display:none;margin-bottom:10px;">
-          <p style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Not found — add new:</p>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <input type="text" id="nd-family" placeholder="Family No." style="width:110px;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" />
-            <input type="text" id="nd-name" placeholder="Person Name" style="flex:1;min-width:140px;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" />
-            <button class="btn-accent btn-sm" onclick="addNewDonorEntry()">Add</button>
-          </div>
-        </div>
-        <div id="receipt-name-row" style="display:none;">
-          <div class="form-group">
-            <label>Receipt Name &nbsp;<span style="font-weight:400;color:var(--text-muted);font-size:10px;">change if receipt needed in family member's name</span></label>
-            <input type="text" id="receipt-name-input" placeholder="Leave blank to use donor name" />
-          </div>
+      </div>
+      <div id="receipt-name-row" style="display:none;">
+        <div class="form-group">
+          <label>Receipt Name &nbsp;<span style="font-weight:400;color:var(--text-muted);font-size:10px;">change if receipt needed in family member's name</span></label>
+          <input type="text" id="receipt-name-input" placeholder="Leave blank to use donor name" />
         </div>
       </div>
 
+      <!-- HEADS -->
       <div id="step3" style="display:none">
-        <div style="font-size:13px;font-weight:700;color:var(--primary);margin:14px 0 10px;padding-top:10px;border-top:2px solid var(--border);">Step 3: Donation Heads</div>
+        <div style="font-size:13px;font-weight:700;color:var(--primary);margin:14px 0 10px;padding-top:10px;border-top:2px solid var(--border);">દાન ની વિગત (Donation Heads)</div>
         <div id="head-rows"></div>
         <button class="btn-secondary btn-sm" onclick="addHeadRow()" style="margin-top:6px;">+ Add Head</button>
         <div id="entry-total" style="display:none;margin-top:12px;padding:10px;background:#FFF8F0;border-radius:8px;border:1.5px solid var(--accent);text-align:right;">
@@ -74,13 +79,14 @@ async function renderEntry() {
         </div>
       </div>
 
+      <!-- PAYMENT -->
       <div id="step4" style="display:none">
-        <div style="font-size:13px;font-weight:700;color:var(--primary);margin:14px 0 10px;padding-top:10px;border-top:2px solid var(--border);">Step 4: Payment</div>
+        <div style="font-size:13px;font-weight:700;color:var(--primary);margin:14px 0 10px;padding-top:10px;border-top:2px solid var(--border);">ચૂકવણી (Payment)</div>
         <div class="form-group">
           <label>Mode of Payment</label>
           <select id="pay-mode" onchange="onPayModeChange()">
-            <option value="cash">💵 Cash</option>
-            <option value="cheque">🏦 Cheque</option>
+            <option value="cash">💵 Cash — રોકડ</option>
+            <option value="cheque">🏦 Cheque — ચેક</option>
             <option value="online">📱 Online / UPI</option>
             <option value="pending">⏳ Pending — will pay later</option>
           </select>
@@ -114,24 +120,14 @@ async function renderEntry() {
       <div id="recent-entries"><p style="color:var(--text-muted);font-size:13px;">No entries yet.</p></div>
     </div>
   `;
-
-  donSession = { eventId: null, eventName: null, memberId: null, memberName: null, familyNo: null };
-  headRows = []; headRowCounter = 0;
-  cachedGeneralHeads = []; cachedSwapnaItems = [];
 }
 
-// ─── EVENT ────────────────────────────────
-async function onEntryEventChange() {
-  const sel = document.getElementById('entry-event');
-  donSession.eventId = sel.value;
-  donSession.eventName = sel.options[sel.selectedIndex]?.dataset?.name || '';
-  if (!donSession.eventId) return;
-
+// ─── LOAD ALL GLOBAL HEADS ────────────────
+async function loadAllHeads() {
   const [{ data: gh }, { data: sw }] = await Promise.all([
-    db.from('general_heads').select('*').eq('event_id', donSession.eventId).order('display_order'),
-    db.from('swapna').select('*, swapna_items(*)').eq('event_id', donSession.eventId).order('display_order')
+    db.from('general_heads').select('*').is('event_id', null).order('display_order'),
+    db.from('swapna').select('*, swapna_items(*)').is('event_id', null).order('display_order')
   ]);
-
   cachedGeneralHeads = gh || [];
   cachedSwapnaItems = [];
   (sw || []).forEach(s => {
@@ -139,13 +135,13 @@ async function onEntryEventChange() {
       cachedSwapnaItems.push({ id: item.id, label: `${s.name} → ${item.name}` });
     });
   });
+}
 
-  clearDonorEntry();
-  headRows = []; headRowCounter = 0;
-  renderHeadRows();
-  document.getElementById('step2').style.display = 'block';
-  document.getElementById('step3').style.display = 'none';
-  document.getElementById('step4').style.display = 'none';
+// ─── EVENT (OPTIONAL) ─────────────────────
+function onEntryEventChange() {
+  const sel = document.getElementById('entry-event');
+  donSession.eventId   = sel.value || null;
+  donSession.eventName = sel.value ? (sel.options[sel.selectedIndex]?.dataset?.name || '') : '';
 }
 
 // ─── DONOR SEARCH ─────────────────────────
@@ -203,11 +199,12 @@ function clearDonorEntry() {
   const rr = document.getElementById('receipt-name-row'); if (rr) rr.style.display = 'none';
   const s3 = document.getElementById('step3'); if (s3) s3.style.display = 'none';
   const s4 = document.getElementById('step4'); if (s4) s4.style.display = 'none';
+  headRows = []; headRowCounter = 0;
 }
 
 async function addNewDonorEntry() {
-  const familyNo = document.getElementById('nd-family').value.trim();
-  const personName = document.getElementById('nd-name').value.trim();
+  const familyNo    = document.getElementById('nd-family').value.trim();
+  const personName  = document.getElementById('nd-name').value.trim();
   if (!familyNo || !personName) { showToast('Fill family no. and name', 'error'); return; }
   const { data, error } = await db.from('members').insert({ family_no: familyNo, person_name: personName }).select().single();
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
@@ -239,10 +236,10 @@ function renderHeadRows() {
 
   container.innerHTML = headRows.map((row, idx) => {
     const ghOpts = cachedGeneralHeads.map(h =>
-      `<option value="${h.id}" data-name="${h.name}" ${row.headType==='general'&&row.headId===h.id?'selected':''}>${h.name}</option>`
+      `<option value="${h.id}" data-name="${h.name.replace(/"/g,'&quot;')}" ${row.headType==='general'&&row.headId===h.id?'selected':''}>${h.name}</option>`
     ).join('');
     const swOpts = cachedSwapnaItems.map(s =>
-      `<option value="${s.id}" data-name="${s.label}" ${row.headType==='swapna'&&row.headId===s.id?'selected':''}>${s.label}</option>`
+      `<option value="${s.id}" data-name="${s.label.replace(/"/g,'&quot;')}" ${row.headType==='swapna'&&row.headId===s.id?'selected':''}>${s.label}</option>`
     ).join('');
 
     return `<div style="display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;">
@@ -315,23 +312,22 @@ async function generateReceiptNo() {
 
 // ─── SAVE ─────────────────────────────────
 async function saveDonation(action) {
-  if (!donSession.eventId)   { showToast('Select event', 'error'); return; }
   if (!donSession.memberId)  { showToast('Select donor', 'error'); return; }
   if (headRows.length === 0) { showToast('Add at least one head', 'error'); return; }
   for (const row of headRows) {
-    if (!row.headId)                       { showToast('Select head for every row', 'error'); return; }
+    if (!row.headId)                            { showToast('Select head for every row', 'error'); return; }
     if (!row.amount || parseFloat(row.amount) <= 0) { showToast('Enter amount for every row', 'error'); return; }
   }
 
-  const payMode      = document.getElementById('pay-mode').value;
-  const bankName     = document.getElementById('bank-name')?.value.trim() || '';
-  const utrNo        = document.getElementById('utr-no')?.value.trim() || '';
-  const notes        = document.getElementById('entry-notes')?.value.trim() || '';
-  const rNameInput   = document.getElementById('receipt-name-input')?.value.trim() || '';
-  const receiptName  = rNameInput || donSession.memberName;
-  const isPaid       = action !== 'pending';
-  const total        = headRows.reduce((s,r) => s + (parseFloat(r.amount)||0), 0);
-  const receiptNo    = await generateReceiptNo();
+  const payMode     = document.getElementById('pay-mode').value;
+  const bankName    = document.getElementById('bank-name')?.value.trim() || '';
+  const utrNo       = document.getElementById('utr-no')?.value.trim() || '';
+  const notes       = document.getElementById('entry-notes')?.value.trim() || '';
+  const rNameInput  = document.getElementById('receipt-name-input')?.value.trim() || '';
+  const receiptName = rNameInput || donSession.memberName;
+  const isPaid      = action !== 'pending';
+  const total       = headRows.reduce((s,r) => s + (parseFloat(r.amount)||0), 0);
+  const receiptNo   = await generateReceiptNo();
 
   const { data: receipt, error: rErr } = await db.from('receipts').insert({
     event_id:     donSession.eventId,
@@ -418,7 +414,7 @@ function collectPaymentModal(receiptId, receiptNo, total) {
     <div class="form-group">
       <label>Mode of Payment</label>
       <select id="cp-mode" onchange="onCPModeChange()">
-        <option value="cash">💵 Cash</option>
+        <option value="cash">💵 Cash — રોકડ</option>
         <option value="cheque">🏦 Cheque</option>
         <option value="online">📱 Online / UPI</option>
       </select>
@@ -467,7 +463,7 @@ async function confirmCollectPayment(receiptId, action) {
   if (action === 'receipt' || action === 'send') await showReceiptById(receiptId, action === 'send');
 }
 
-// ─── EDIT / DELETE (used in Live View & Reports) ──
+// ─── EDIT / DELETE (Live View & Reports) ──
 async function showEditDonationModal(id, refreshFn) {
   const { data: d, error } = await db.from('donations').select('*').eq('id', id).single();
   if (error || !d) { showToast('Could not load', 'error'); return; }

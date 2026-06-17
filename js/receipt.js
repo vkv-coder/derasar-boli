@@ -38,9 +38,7 @@ const RECEIPT_CSS = `
   .words-row{text-align:center;font-size:11.5px;color:#333;font-style:italic;margin-bottom:10px;padding:4px 6px;background:#FFF8F0;border-radius:3px}
   .pay-info{font-size:11px;color:#555;margin-bottom:10px;padding:6px;background:#f9f9f9;border:1px solid #e8e8e8;border-radius:3px;line-height:1.8}
   .pay-info strong{color:#333}
-  .sig-row{display:flex;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px solid #e0c0c0}
-  .sig-box{text-align:center;font-size:10px;color:#888}
-  .sig-line{width:100px;border-top:1px solid #555;margin:16px auto 4px}
+  .sys-note{text-align:center;font-size:9.5px;color:#888;margin-top:10px;padding:6px 4px;border-top:1px dashed #ddd;line-height:1.6}
   .footer{text-align:center;color:#c00;font-weight:700;font-size:13px;padding:8px 0 4px}
   .btns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
   .btn{padding:11px 22px;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit;font-weight:600}
@@ -156,11 +154,6 @@ function numToGujaratiWords(n) {
       <span class="row-label">કુટુંબ ક્રમ :</span>
       <span class="row-value">${receipt.family_no || '—'}</span>
     </div>
-    <div class="row">
-      <span class="row-label">ઉત્સવ :</span>
-      <span class="row-value">${ev?.name || '—'}</span>
-    </div>
-
     <table class="heads-table">
       <thead>
         <tr>
@@ -182,11 +175,8 @@ function numToGujaratiWords(n) {
 
     ${receipt.notes ? `<div class="row" style="margin-bottom:8px;"><span class="row-label">નોંધ :</span><span class="row-value" style="font-size:11px;">${receipt.notes}</span></div>` : ''}
 
-    <div class="sig-row">
-      <div class="sig-box"><div class="sig-line"></div>નાણાં આપનારની સહી</div>
-      <div class="sig-box"><div class="sig-line"></div>નાણાં લેનારની સહી</div>
-    </div>
     <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
+    <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
   </div>
 </div>
 <div class="btns">
@@ -207,7 +197,6 @@ function numToGujaratiWords(n) {
       + 'Receipt No: ' + receipt.receipt_no + '\n'
       + 'Date: ' + dateStr + '\n'
       + 'Name: ' + receipt.receipt_name + '\n'
-      + 'Event: ' + (ev?.name || '') + '\n'
       + rows.map(r => r.sno + '. ' + r.headName + ': ₹' + r.amount.toLocaleString('en-IN')).join('\n') + '\n'
       + 'Total: ₹' + total.toLocaleString('en-IN') + ' (' + numToGujaratiWords(total) + ' રૂપિયા)\n'
       + (isPaid ? 'Payment: ' + (payModeDisplay[payMode] || payMode) : 'Payment: PENDING') + '\n'
@@ -256,8 +245,6 @@ async function showDonationReceipt(donationId) {
     <div class="meta"><span>ન. : ${receiptNo}</span><span>તા. : ${receiptDate}</span></div>
     <div class="row"><span class="row-label">નામ :</span><span class="row-value">${d.donor_name}</span></div>
     <div class="row"><span class="row-label">કુટુંબ ક્રમ :</span><span class="row-value">${d.family_no || '—'}</span></div>
-    <div class="row"><span class="row-label">ઉત્સવ :</span><span class="row-value">${ev?.name || '—'}</span></div>
-    <div class="row"><span class="row-label">વિગત :</span><span class="row-value">${headName}${itemName ? ' → ' + itemName : ''}</span></div>
     ${d.note ? `<div class="row"><span class="row-label">નોંધ :</span><span class="row-value" style="font-size:11px">${d.note}</span></div>` : ''}
     <table class="heads-table">
       <thead><tr><th style="width:28px;text-align:center;">ક્ર.</th><th>દાન ની વિગત</th><th>રકમ</th></tr></thead>
@@ -265,11 +252,8 @@ async function showDonationReceipt(donationId) {
     </table>
     <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
     <div class="words-row">${numToGujaratiWords(total)} રૂપિયા</div>
-    <div class="sig-row">
-      <div class="sig-box"><div class="sig-line"></div>નાણાં આપનારની સહી</div>
-      <div class="sig-box"><div class="sig-line"></div>નાણાં લેનારની સહી</div>
-    </div>
     <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
+    <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
   </div>
 </div>
 <div class="btns">
