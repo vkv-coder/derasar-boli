@@ -5,7 +5,7 @@
 
 const TEMPLE_HEADER = `
   <div class="org-header">
-    <div class="org-namah">|| શ્રી શંખેશ્વર પાર્શ્વનાથ નમઃ ||</div>
+    <div class="org-namah">|| શ્રી શંખેશ્વર પાર્શ્વનાથાય નમઃ ||</div>
     <div class="org-name">શ્રી શાંતિલાલ કેશવલાલ શાહ ગોત્રી રોડ<br>શ્વેતાંબર મૂર્તિપૂજક જૈન સંઘ</div>
     <div class="org-addr">"શાંતિનિકેતન", ૨૫-એ, હરિનગર સોસાયટી,<br>ગોત્રી રોડ, વડોદરા - ૩૯૦ ૦૦૭.</div>
     <div class="org-reg">PAN : AAFTS8878E &nbsp;|&nbsp; Public Trust Reg. A/3024/Vadodara, dt. 02-08-2004</div>
