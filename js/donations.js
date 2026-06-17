@@ -8,7 +8,8 @@ let donSession = {
   memberId: null, memberName: null, familyNo: null
 };
 
-let cachedGeneralHeads = [];
+let cachedMainHeads = [];   // general_heads WHERE parent_id IS NULL
+let cachedSubHeads  = {};   // { parentId: [subhead, ...] }
 let cachedSwapnaItems = [];
 let headRows = [];
 let headRowCounter = 0;
@@ -128,7 +129,13 @@ async function loadAllHeads() {
     db.from('general_heads').select('*').is('event_id', null).order('display_order'),
     db.from('swapna').select('*, swapna_items(*)').is('event_id', null).order('display_order')
   ]);
-  cachedGeneralHeads = gh || [];
+  const allHeads = gh || [];
+  cachedMainHeads = allHeads.filter(h => !h.parent_id);
+  cachedSubHeads = {};
+  allHeads.filter(h => h.parent_id).forEach(h => {
+    if (!cachedSubHeads[h.parent_id]) cachedSubHeads[h.parent_id] = [];
+    cachedSubHeads[h.parent_id].push(h);
+  });
   cachedSwapnaItems = [];
   (sw || []).forEach(s => {
     (s.swapna_items || []).forEach(item => {
@@ -215,7 +222,7 @@ async function addNewDonorEntry() {
 // ─── HEAD ROWS ────────────────────────────
 function addHeadRow() {
   headRowCounter++;
-  headRows.push({ rowId: headRowCounter, headType: '', headId: '', headName: '', amount: '' });
+  headRows.push({ rowId: headRowCounter, headType: '', mainHeadId: '', headId: '', headName: '', amount: '' });
   renderHeadRows();
 }
 
@@ -234,24 +241,41 @@ function renderHeadRows() {
     return;
   }
 
+  const sel = 'padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;';
+
   container.innerHTML = headRows.map((row, idx) => {
-    const ghOpts = cachedGeneralHeads.map(h =>
-      `<option value="${h.id}" data-name="${h.name.replace(/"/g,'&quot;')}" ${row.headType==='general'&&row.headId===h.id?'selected':''}>${h.name}</option>`
+    const mainOpts = cachedMainHeads.map(h =>
+      `<option value="${h.id}" data-name="${h.name.replace(/"/g,'&quot;')}" ${row.mainHeadId===h.id?'selected':''}>${h.name}</option>`
+    ).join('');
+    const subs = row.mainHeadId ? (cachedSubHeads[row.mainHeadId] || []) : [];
+    const subOpts = subs.map(h =>
+      `<option value="${h.id}" data-name="${h.name.replace(/"/g,'&quot;')}" ${row.headId===h.id?'selected':''}>${h.name}</option>`
     ).join('');
     const swOpts = cachedSwapnaItems.map(s =>
-      `<option value="${s.id}" data-name="${s.label.replace(/"/g,'&quot;')}" ${row.headType==='swapna'&&row.headId===s.id?'selected':''}>${s.label}</option>`
+      `<option value="${s.id}" data-name="${s.label.replace(/"/g,'&quot;')}" ${row.headId===s.id?'selected':''}>${s.label}</option>`
     ).join('');
 
     return `<div style="display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;">
       <span style="font-size:12px;color:var(--text-muted);min-width:18px;">${idx+1}.</span>
-      <select onchange="onHeadTypeDyn(${row.rowId},this.value)" style="flex:1;min-width:110px;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;">
+      <select onchange="onHeadTypeDyn(${row.rowId},this.value)" style="flex:1;min-width:110px;${sel}">
         <option value="" ${!row.headType?'selected':''}>-- Type --</option>
         <option value="general" ${row.headType==='general'?'selected':''}>🔷 General</option>
         <option value="swapna"  ${row.headType==='swapna'?'selected':''}>🔶 Swapna</option>
       </select>
-      ${row.headType==='general'?`<select onchange="onHeadSelectDyn(${row.rowId},this.value,this.options[this.selectedIndex].dataset.name)" style="flex:2;min-width:150px;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;"><option value="">-- Select Head --</option>${ghOpts}</select>`:''}
-      ${row.headType==='swapna'?`<select onchange="onHeadSelectDyn(${row.rowId},this.value,this.options[this.selectedIndex].dataset.name)" style="flex:2;min-width:150px;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;"><option value="">-- Select Item --</option>${swOpts}</select>`:''}
-      ${!row.headType?'<div style="flex:2;"></div>':''}
+      ${row.headType==='general' ? `
+        <select onchange="onMainHeadSelectDyn(${row.rowId},this.value,this.options[this.selectedIndex].dataset.name)" style="flex:2;min-width:140px;${sel}">
+          <option value="">-- Head --</option>${mainOpts}
+        </select>
+        ${subs.length ? `
+          <select onchange="onSubHeadSelectDyn(${row.rowId},this.value,this.options[this.selectedIndex].dataset.name)" style="flex:2;min-width:140px;${sel}">
+            <option value="">-- Sub-head --</option>${subOpts}
+          </select>` : ''}
+      ` : ''}
+      ${row.headType==='swapna' ? `
+        <select onchange="onHeadSelectDyn(${row.rowId},this.value,this.options[this.selectedIndex].dataset.name)" style="flex:2;min-width:150px;${sel}">
+          <option value="">-- Swapna Item --</option>${swOpts}
+        </select>` : ''}
+      ${!row.headType ? '<div style="flex:2;"></div>' : ''}
       <input type="number" value="${row.amount}" placeholder="₹" min="1"
         oninput="onAmountDyn(${row.rowId},this.value)"
         style="width:90px;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:14px;font-weight:700;" />
@@ -267,11 +291,34 @@ function renderHeadRows() {
 function onHeadTypeDyn(rowId, type) {
   const row = headRows.find(r => r.rowId === rowId);
   if (!row) return;
-  row.headType = type; row.headId = ''; row.headName = '';
+  row.headType = type; row.mainHeadId = ''; row.headId = ''; row.headName = '';
   renderHeadRows();
 }
 
+function onMainHeadSelectDyn(rowId, mainHeadId, mainHeadName) {
+  const row = headRows.find(r => r.rowId === rowId);
+  if (!row) return;
+  row.mainHeadId = mainHeadId;
+  const subs = cachedSubHeads[mainHeadId] || [];
+  if (subs.length === 0) {
+    // No sub-heads — main head IS the donation head
+    row.headId = mainHeadId;
+    row.headName = mainHeadName || '';
+  } else {
+    // Has sub-heads — wait for sub-head selection
+    row.headId = '';
+    row.headName = '';
+  }
+  renderHeadRows();
+}
+
+function onSubHeadSelectDyn(rowId, subHeadId, subHeadName) {
+  const row = headRows.find(r => r.rowId === rowId);
+  if (row) { row.headId = subHeadId; row.headName = subHeadName || ''; }
+}
+
 function onHeadSelectDyn(rowId, headId, headName) {
+  // Used for Swapna items only
   const row = headRows.find(r => r.rowId === rowId);
   if (row) { row.headId = headId; row.headName = headName || ''; }
 }

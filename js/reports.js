@@ -70,7 +70,7 @@ async function loadLiveData() {
   ] = await Promise.all([
     db.from('donations').select('*').eq('event_id', liveEventId).order('created_at', { ascending: false }),
     db.from('swapna').select('*, swapna_items(*)').eq('event_id', liveEventId).order('display_order'),
-    db.from('general_heads').select('*').eq('event_id', liveEventId).order('display_order'),
+    db.from('general_heads').select('*').is('event_id', null).order('display_order'),
     db.from('events').select('name').eq('id', liveEventId).single(),
     db.from('receipts').select('*').eq('event_id', liveEventId).eq('is_paid', false).order('created_at', { ascending: false })
   ]);
@@ -158,23 +158,53 @@ async function loadLiveData() {
     ` : ''}
 
     <!-- General Head Totals -->
-    ${generalHeads && generalHeads.length > 0 ? `
-    <div class="card">
-      <div class="card-title">🔷 General Heads</div>
-      <div class="total-grid">
-        ${generalHeads.map(h => {
-          const t = generalTotals[h.id] || { total: 0, count: 0 };
-          return `
-            <div class="total-card">
-              <div class="head-name">${h.name}</div>
-              <div class="total-amount">${formatAmount(t.total)}</div>
-              <div class="entry-count">${t.count} entr${t.count === 1 ? 'y' : 'ies'}</div>
-            </div>
-          `;
+    ${generalHeads && generalHeads.length > 0 ? (() => {
+      const mainHeads = generalHeads.filter(h => !h.parent_id);
+      const subMap = {};
+      generalHeads.filter(h => h.parent_id).forEach(h => {
+        if (!subMap[h.parent_id]) subMap[h.parent_id] = [];
+        subMap[h.parent_id].push(h);
+      });
+      return `
+      <div class="card">
+        <div class="card-title">🔷 General Heads</div>
+        ${mainHeads.map(main => {
+          const subs = subMap[main.id] || [];
+          if (subs.length > 0) {
+            const mainTotal = subs.reduce((s, sub) => s + (generalTotals[sub.id]?.total || 0), 0);
+            const mainCount = subs.reduce((c, sub) => c + (generalTotals[sub.id]?.count || 0), 0);
+            return `
+              <div style="margin-bottom:14px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#FFF4E0;border-radius:6px;margin-bottom:6px;">
+                  <strong style="color:var(--primary);">${main.name}</strong>
+                  <span style="font-size:15px;font-weight:700;color:var(--primary);">${formatAmount(mainTotal)}
+                    <span style="font-size:11px;font-weight:400;color:var(--text-muted);">(${mainCount} entries)</span>
+                  </span>
+                </div>
+                <div class="total-grid" style="margin-left:12px;">
+                  ${subs.map(sub => {
+                    const t = generalTotals[sub.id] || { total: 0, count: 0 };
+                    return `<div class="total-card">
+                      <div class="head-name" style="font-size:11px;">└ ${sub.name}</div>
+                      <div class="total-amount">${formatAmount(t.total)}</div>
+                      <div class="entry-count">${t.count} entr${t.count === 1 ? 'y' : 'ies'}</div>
+                    </div>`;
+                  }).join('')}
+                </div>
+              </div>`;
+          } else {
+            const t = generalTotals[main.id] || { total: 0, count: 0 };
+            return `<div class="total-grid" style="margin-bottom:10px;">
+              <div class="total-card">
+                <div class="head-name">${main.name}</div>
+                <div class="total-amount">${formatAmount(t.total)}</div>
+                <div class="entry-count">${t.count} entr${t.count === 1 ? 'y' : 'ies'}</div>
+              </div>
+            </div>`;
+          }
         }).join('')}
-      </div>
-    </div>
-    ` : ''}
+      </div>`;
+    })() : ''}
 
     <!-- Recent Donations -->
     <div class="card">
