@@ -65,12 +65,14 @@ async function loadLiveData() {
     { data: donations },
     { data: swapnas },
     { data: generalHeads },
-    { data: eventData }
+    { data: eventData },
+    { data: pendingReceipts }
   ] = await Promise.all([
     db.from('donations').select('*').eq('event_id', liveEventId).order('created_at', { ascending: false }),
     db.from('swapna').select('*, swapna_items(*)').eq('event_id', liveEventId).order('display_order'),
     db.from('general_heads').select('*').eq('event_id', liveEventId).order('display_order'),
-    db.from('events').select('name').eq('id', liveEventId).single()
+    db.from('events').select('name').eq('id', liveEventId).single(),
+    db.from('receipts').select('*').eq('event_id', liveEventId).eq('is_paid', false).order('created_at', { ascending: false })
   ]);
 
   if (!donations) return;
@@ -106,6 +108,30 @@ async function loadLiveData() {
         📲 Share on WhatsApp
       </button>
     </div>
+
+    <!-- Pending Receipts -->
+    ${pendingReceipts && pendingReceipts.length > 0 ? `
+    <div class="card" style="border-left:4px solid #ff9800;">
+      <div class="card-title">⏳ Pending Payments (${pendingReceipts.length})</div>
+      <div style="overflow-x:auto;"><table class="data-table">
+        <thead><tr><th>Receipt No.</th><th>Name</th><th>Family</th><th>Amount</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${pendingReceipts.map(r => `
+            <tr>
+              <td><strong>${r.receipt_no}</strong></td>
+              <td>${r.receipt_name}</td>
+              <td>${r.family_no || '—'}</td>
+              <td><strong style="color:#ff9800;">${formatAmount(r.total_amount)}</strong></td>
+              <td>
+                <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                  <button class="btn-sm btn-secondary" onclick="showReceiptById('${r.id}',false)">🧾 View</button>
+                  <button class="btn-sm btn-primary" onclick="collectPaymentModal('${r.id}','${r.receipt_no}',${r.total_amount})">💰 Collect</button>
+                </div>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>` : ''}
 
     <!-- Swapna Totals -->
     ${swapnas && swapnas.length > 0 ? `
