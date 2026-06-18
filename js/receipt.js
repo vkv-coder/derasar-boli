@@ -21,7 +21,9 @@ const RECEIPT_CSS = `
   .org-addr{font-size:11px;color:#444;line-height:1.4;margin-bottom:3px}
   .org-reg{font-size:9.5px;color:#666;line-height:1.4;border-top:1px solid #eee;padding-top:4px;margin-top:4px}
   .receipt-body{padding:12px}
-  .receipt-title{text-align:center;font-size:13px;font-weight:700;color:#c00;letter-spacing:3px;border:1.5px solid #c00;padding:4px;margin-bottom:10px}
+  .receipt-title{display:flex;justify-content:space-between;align-items:center;color:#c00;border:1.5px solid #c00;padding:5px 8px;margin-bottom:10px}
+  .receipt-title .rt-label{font-size:10px;font-weight:600;letter-spacing:2px}
+  .receipt-title .rt-no{font-size:19px;font-weight:800;letter-spacing:0.5px}
   .meta{display:flex;justify-content:space-between;font-size:11px;color:#555;margin-bottom:10px}
   .row{display:flex;border-bottom:1px solid #e0c0c0;padding:5px 0;align-items:flex-start;font-size:13px}
   .row-label{color:#555;width:110px;flex-shrink:0;font-size:12px}
@@ -183,10 +185,12 @@ function numToGujaratiWords(n) {
 <div class="receipt">
   ${TEMPLE_HEADER}
   <div class="receipt-body">
-    <div class="receipt-title">પહોંચ &nbsp;·&nbsp; RECEIPT</div>
+    <div class="receipt-title">
+      <span class="rt-label">પહોંચ &nbsp;·&nbsp; RECEIPT</span>
+      <span class="rt-no">ન.&nbsp;${receipt.receipt_no}</span>
+    </div>
     ${!isPaid ? '<div style="text-align:center;margin-bottom:6px;"><span class="pending-badge">⏳ ચૂકવણી બાકી (PENDING)</span></div>' : ''}
-    <div class="meta">
-      <span>ન. : <strong>${receipt.receipt_no}</strong></span>
+    <div class="meta" style="justify-content:flex-end;">
       <span>તા. : ${dateStr}</span>
     </div>
     <div class="row">
