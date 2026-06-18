@@ -130,39 +130,77 @@ function downloadReceipt() {
   setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
 }
 
-async function sendWA() {
-  const waNum = MEMBER_PHONE.length === 10 ? '91' + MEMBER_PHONE : MEMBER_PHONE;
-  const waUrl = 'https://wa.me/' + waNum
-    + '?text=' + encodeURIComponent('🙏 Receipt No. ' + RECEIPT_NO + ' — receipt image attached below.');
-  const waBtn = document.getElementById('wa-btn');
-  const info  = document.getElementById('wa-info');
-  if (waBtn) { waBtn.textContent = '⏳ Preparing...'; waBtn.disabled = true; }
+// Pre-captured blob so Web Share fires instantly on mobile (user-gesture window).
+let _receiptBlob = null;
+
+async function captureReceiptBlob() {
   try {
     const canvas = await html2canvas(document.querySelector('.receipt'),
       { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
-    canvas.toBlob(async function(blob) {
-      const fileName = 'Receipt-' + RECEIPT_NO + '.png';
-      const file = new File([blob], fileName, { type: 'image/png' });
-      if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
+    canvas.toBlob(function(b) { _receiptBlob = b; }, 'image/png');
+  } catch(e) {}
+}
 
-      // MOBILE: Web Share API attaches the PNG directly in the share sheet.
-      // DESKTOP: download PNG then open WhatsApp to the recipient's number.
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({ files: [file], title: 'Receipt ' + RECEIPT_NO, text: '🙏 Receipt No. ' + RECEIPT_NO });
-          return;
-        } catch(e) { if (e.name === 'AbortError') return; }
-      }
-      // Desktop fallback
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = fileName;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      if (info) info.style.display = 'block';
-      setTimeout(function() { window.open(waUrl); }, 500);
-    }, 'image/png');
+async function sendWA() {
+  const waNum     = MEMBER_PHONE.length === 10 ? '91' + MEMBER_PHONE : MEMBER_PHONE;
+  const waUrl     = 'https://wa.me/' + waNum + '?text=' + encodeURIComponent('🙏 Receipt No. ' + RECEIPT_NO);
+  const fileName  = 'Receipt-' + RECEIPT_NO + '.png';
+  const waBtn     = document.getElementById('wa-btn');
+  const info      = document.getElementById('wa-info');
+  const isMobile  = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  async function tryShare(blob) {
+    const file = new File([blob], fileName, { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'Receipt ' + RECEIPT_NO, text: '🙏 Receipt No. ' + RECEIPT_NO }); return true; }
+      catch(e) { if (e.name === 'AbortError') return true; }
+    }
+    return false;
+  }
+
+  function desktopSend(blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    if (info) info.style.display = 'block';
+    setTimeout(function() { window.open(waUrl); }, 500);
+  }
+
+  // ── MOBILE ──────────────────────────────────────────────────────────────────
+  if (isMobile) {
+    // Blob pre-captured → share fires immediately within the tap gesture.
+    if (_receiptBlob) { await tryShare(_receiptBlob); return; }
+    // Blob not ready yet (slow device): capture now and attempt share.
+    if (waBtn) { waBtn.textContent = '⏳ Preparing...'; waBtn.disabled = true; }
+    try {
+      const canvas = await html2canvas(document.querySelector('.receipt'),
+        { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+      canvas.toBlob(async function(blob) {
+        _receiptBlob = blob;
+        if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
+        if (!await tryShare(blob)) desktopSend(blob);
+      }, 'image/png');
+    } catch(err) {
+      if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
+      window.open(waUrl);
+    }
+    return;
+  }
+
+  // ── DESKTOP ──────────────────────────────────────────────────────────────────
+  if (waBtn) { waBtn.textContent = '⏳ Preparing...'; waBtn.disabled = true; }
+  try {
+    const blob = _receiptBlob
+      ? _receiptBlob
+      : await new Promise(async function(res) {
+          const canvas = await html2canvas(document.querySelector('.receipt'),
+            { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+          canvas.toBlob(res, 'image/png');
+        });
+    if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
+    desktopSend(blob);
   } catch(err) {
     if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
     window.open(waUrl);
@@ -170,7 +208,9 @@ async function sendWA() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-  if (AUTO_SEND) setTimeout(sendWA, 600);
+  // Start pre-capturing PNG immediately so it's ready when user taps WhatsApp.
+  setTimeout(captureReceiptBlob, 200);
+  if (AUTO_SEND) setTimeout(sendWA, 800);
 });
 function numToGujaratiWords(n) {
   if (!n || n === 0) return 'શૂન્ય';
