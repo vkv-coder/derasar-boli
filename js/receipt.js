@@ -129,27 +129,29 @@ function downloadReceipt() {
 
 async function sendWA() {
   const waNum = MEMBER_PHONE.length === 10 ? '91' + MEMBER_PHONE : MEMBER_PHONE;
-  const waUrl = 'https://wa.me/' + waNum;
-  const el = document.querySelector('.receipt');
-  document.querySelector('.btns').style.display = 'none';
+  const waUrl = 'https://wa.me/' + waNum
+    + '?text=' + encodeURIComponent('🙏 Receipt No. ' + RECEIPT_NO + ' — please find the receipt image attached below.');
+  const waBtn = document.getElementById('wa-btn');
+  if (waBtn) { waBtn.textContent = '⏳ Preparing...'; waBtn.disabled = true; }
   try {
-    const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
-    document.querySelector('.btns').style.display = '';
-    canvas.toBlob(async function(blob) {
-      const file = new File([blob], 'Receipt-' + RECEIPT_NO + '.png', { type: 'image/png' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: 'Derasar Boli Receipt - ' + RECEIPT_NO }); return; }
-        catch(e) { if (e.name === 'AbortError') return; }
-      }
-      // Fallback: download image then open WhatsApp
+    const canvas = await html2canvas(document.querySelector('.receipt'),
+      { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+    canvas.toBlob(function(blob) {
+      // 1. Download the PNG receipt
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = 'Receipt-' + RECEIPT_NO + '.png';
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(function(){ URL.revokeObjectURL(url); window.open(waUrl); }, 700);
+      URL.revokeObjectURL(url);
+      // 2. Show attach reminder
+      const info = document.getElementById('wa-info');
+      if (info) { info.style.display = 'block'; }
+      // 3. Open WhatsApp to recipient's number
+      setTimeout(function() { window.open(waUrl); }, 500);
+      if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
     }, 'image/png');
   } catch(err) {
-    document.querySelector('.btns').style.display = '';
+    if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
     window.open(waUrl);
   }
 }
@@ -216,10 +218,14 @@ function numToGujaratiWords(n) {
     <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
   </div>
 </div>
+<div id="wa-info" style="display:none;background:#e8f5e9;border:1.5px solid #4CAF50;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:12px;color:#1b5e20;text-align:center;line-height:1.6;">
+  ✅ Receipt PNG downloaded to your Downloads folder.<br>
+  In WhatsApp, tap the <strong>📎 attach</strong> icon → Gallery/Files → select the PNG → Send.
+</div>
 <div class="btns">
   <button class="btn btn-print" onclick="window.print()">🖨 Print (A6)</button>
-  <button class="btn btn-dl" onclick="downloadReceipt()">⬇ Download</button>
-  <button class="btn btn-wa" onclick="sendWA()">📲 WhatsApp</button>
+  <button class="btn btn-dl" onclick="downloadReceipt()">⬇ Download HTML</button>
+  <button id="wa-btn" class="btn btn-wa" onclick="sendWA()">📲 WhatsApp</button>
   <button class="btn btn-close" onclick="window.close()">Close</button>
 </div>
 </body>
