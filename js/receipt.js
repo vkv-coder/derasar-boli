@@ -143,21 +143,9 @@ async function sendWA() {
       const file = new File([blob], fileName, { type: 'image/png' });
       if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
 
-      // Web Share API only on mobile: desktop Chrome also supports it but
-      // opens the OS share menu instead of going straight to WhatsApp + number.
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: 'Derasar Boli Receipt ' + RECEIPT_NO,
-            text: '🙏 Receipt No. ' + RECEIPT_NO
-          });
-          return;
-        } catch(e) { if (e.name === 'AbortError') return; }
-      }
-
-      // DESKTOP: download PNG → open WhatsApp to recipient's number
+      // Always download PNG and open WhatsApp to the recipient's number directly.
+      // (Web Share API removed — it opens a generic share menu and cannot
+      //  pre-select a WhatsApp contact, which defeats the purpose.)
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = fileName;
