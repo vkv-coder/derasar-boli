@@ -41,10 +41,23 @@ async function loadMembersStats() {
     chip(missingPhone > 0 ? '⚠️' : '✅', missingPhone, 'Missing Phone', true);
 }
 
+function sortFamilyNo(data) {
+  const parse = s => {
+    const m = (s || '').match(/^([A-Za-z]+)-?(\d+)$/);
+    return m ? [m[1].toUpperCase(), parseInt(m[2])] : [s || '', 0];
+  };
+  return data.slice().sort((a, b) => {
+    const [aL, aN] = parse(a.family_no);
+    const [bL, bN] = parse(b.family_no);
+    return aL < bL ? -1 : aL > bL ? 1 : aN - bN;
+  });
+}
+
 async function loadMembersList(query = '') {
-  let req = db.from('members').select('*').order('family_no');
+  let req = db.from('members').select('*');
   if (query) req = req.or(`person_name.ilike.%${query}%,family_no.ilike.%${query}%,phone_no.ilike.%${query}%`);
-  const { data, error } = await req;
+  const { data: raw, error } = await req;
+  const data = raw ? sortFamilyNo(raw) : raw;
 
   const el = document.getElementById('members-list');
   if (error || !data || data.length === 0) {
