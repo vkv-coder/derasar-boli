@@ -203,7 +203,7 @@ async function loadGeneralHeadsList() {
             ${subs.length ? `<span style="font-size:11px;background:var(--accent);color:white;padding:1px 8px;border-radius:10px;white-space:nowrap;">${subs.length} sub</span>` : ''}
           </div>
           <div style="display:flex;gap:5px;flex-shrink:0;">
-            ${subs.length ? `<button class="btn-sm btn-accent" onclick="showAddGeneralHeadModal('${h.id}','${h.name.replace(/'/g,"\\'")}')">+ Sub</button>` : ''}
+            <button class="btn-sm btn-accent" onclick="showAddGeneralHeadModal('${h.id}','${h.name.replace(/'/g,"\\'")}')">+ Sub</button>
             <button class="btn-sm btn-secondary" onclick="showEditGeneralHeadModal('${h.id}','${h.name.replace(/'/g,"\\'")}')">Edit</button>
             <button class="btn-sm btn-danger" onclick="deleteGeneralHead('${h.id}')">Del</button>
           </div>

@@ -58,8 +58,9 @@ async function renderEntry() {
       <div id="new-donor-inline" style="display:none;margin-bottom:10px;">
         <p style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Not found — add new member:</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <input type="text" id="nd-family" placeholder="Family No." style="width:110px;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" />
-          <input type="text" id="nd-name" placeholder="Person Name" style="flex:1;min-width:140px;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" />
+          <input type="text" id="nd-family" placeholder="Family No." style="width:100px;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" />
+          <input type="text" id="nd-name" placeholder="Person Name" style="flex:1;min-width:130px;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" />
+          <input type="tel" id="nd-phone" placeholder="Phone No." style="width:130px;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" />
           <button class="btn-accent btn-sm" onclick="addNewDonorEntry()">Add</button>
         </div>
       </div>
@@ -172,18 +173,21 @@ function searchDonorEntry() {
     }
     document.getElementById('new-donor-inline').style.display = 'none';
     res.innerHTML = `<div class="search-results">${data.map(m =>
-      `<div class="search-result-item" onclick="selectDonorEntry('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${(m.family_no||'').replace(/'/g,"\\'")}')">
+      `<div class="search-result-item" onclick="selectDonorEntry('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${(m.family_no||'').replace(/'/g,"\\'")}','${(m.phone_no||'').replace(/'/g,"\\'")}')">
         <div>${m.person_name}</div>
-        <div class="family-no">Family No: ${m.family_no || '—'}</div>
+        <div class="family-no">Family No: ${m.family_no || '—'}${m.phone_no ? ' · 📞 ' + m.phone_no : ' · <span style="color:#f44;">⚠ No phone</span>'}</div>
       </div>`
     ).join('')}</div>`;
   }, 300);
 }
 
-function selectDonorEntry(id, name, familyNo) {
+function selectDonorEntry(id, name, familyNo, phoneNo) {
   donSession.memberId = id;
   donSession.memberName = name;
   donSession.familyNo = familyNo;
+  if (!phoneNo) {
+    showToast('⚠️ Phone number missing — please update member profile', 'error');
+  }
   document.getElementById('donor-results').innerHTML = '';
   document.getElementById('donor-search').value = '';
   document.getElementById('new-donor-inline').style.display = 'none';
@@ -210,13 +214,16 @@ function clearDonorEntry() {
 }
 
 async function addNewDonorEntry() {
-  const familyNo    = document.getElementById('nd-family').value.trim();
-  const personName  = document.getElementById('nd-name').value.trim();
+  const familyNo   = document.getElementById('nd-family').value.trim();
+  const personName = document.getElementById('nd-name').value.trim();
+  const phoneNo    = document.getElementById('nd-phone')?.value.trim() || null;
   if (!familyNo || !personName) { showToast('Fill family no. and name', 'error'); return; }
-  const { data, error } = await db.from('members').insert({ family_no: familyNo, person_name: personName }).select().single();
+  const { data, error } = await db.from('members')
+    .insert({ family_no: familyNo, person_name: personName, phone_no: phoneNo })
+    .select().single();
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Member added!', 'success');
-  selectDonorEntry(data.id, data.person_name, data.family_no);
+  selectDonorEntry(data.id, data.person_name, data.family_no, data.phone_no);
 }
 
 // ─── HEAD ROWS ────────────────────────────

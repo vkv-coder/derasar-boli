@@ -11,7 +11,7 @@ async function renderMembers() {
         <button class="btn-accent btn-sm" onclick="showAddMemberModal()">+ Add Member</button>
       </div>
       <div class="search-box" style="margin-bottom:14px;">
-        <input type="text" id="member-search" placeholder="Search by name or family no..." oninput="searchMembers()" />
+        <input type="text" id="member-search" placeholder="Search by name, family no or phone..." oninput="searchMembers()" />
       </div>
       <div id="members-list">Loading...</div>
     </div>
@@ -21,7 +21,7 @@ async function renderMembers() {
 
 async function loadMembersList(query = '') {
   let req = db.from('members').select('*').order('family_no');
-  if (query) req = req.or(`person_name.ilike.%${query}%,family_no.ilike.%${query}%`);
+  if (query) req = req.or(`person_name.ilike.%${query}%,family_no.ilike.%${query}%,phone_no.ilike.%${query}%`);
   const { data, error } = await req;
 
   const el = document.getElementById('members-list');
@@ -31,27 +31,35 @@ async function loadMembersList(query = '') {
   }
 
   el.innerHTML = `
+    <div style="overflow-x:auto;">
     <table class="data-table">
       <thead>
-        <tr><th>Family No.</th><th>Person Name</th><th>Actions</th></tr>
+        <tr><th>Family No.</th><th>Name</th><th>Phone</th><th>Members</th><th>Actions</th></tr>
       </thead>
       <tbody>
         ${data.map(m => `
           <tr>
             <td><strong>${m.family_no}</strong></td>
-            <td>${m.person_name}</td>
+            <td>${m.person_name}${m.address ? `<div style="font-size:11px;color:var(--text-muted);">${m.address}</div>` : ''}</td>
+            <td>${m.phone_no
+              ? `<a href="tel:${m.phone_no}" style="color:var(--primary);text-decoration:none;">${m.phone_no}</a>`
+              : '<span style="color:#f44;font-size:11px;">⚠ Missing</span>'}</td>
+            <td style="text-align:center;">${m.family_member_count || '—'}</td>
             <td>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                <button class="btn-sm btn-secondary" onclick="showDonorHistory('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${m.family_no}')">📜 History</button>
-                <button class="btn-sm" style="background:#4CAF50;color:white;" onclick="showEditMemberModal('${m.id}','${m.family_no}','${m.person_name.replace(/'/g,"\\'")}')">Edit</button>
-                <button class="btn-sm btn-danger" onclick="deleteMember('${m.id}')">Delete</button>
+              <div style="display:flex;gap:5px;flex-wrap:wrap;">
+                <button class="btn-sm btn-secondary" onclick="showDonorHistory('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${(m.family_no||'').replace(/'/g,"\\'")}')">📜</button>
+                <button class="btn-sm" style="background:#4CAF50;color:white;" onclick="showEditMemberModal('${m.id}')">Edit</button>
+                <button class="btn-sm btn-danger" onclick="deleteMember('${m.id}')">Del</button>
               </div>
             </td>
           </tr>
         `).join('')}
       </tbody>
     </table>
-    <p style="font-size:12px;color:var(--text-muted);margin-top:10px;">Total: ${data.length} members</p>
+    </div>
+    <p style="font-size:12px;color:var(--text-muted);margin-top:10px;">Total: ${data.length} members
+      &nbsp;·&nbsp; Missing phone: ${data.filter(m => !m.phone_no).length}
+    </p>
   `;
 }
 
@@ -67,13 +75,27 @@ function searchMembers() {
 function showAddMemberModal() {
   showModal(`
     <div class="modal-title">Add Member</div>
-    <div class="form-group">
-      <label>Family No.</label>
-      <input type="text" id="mem-family" placeholder="e.g. 101" />
+    <div style="display:flex;gap:8px;">
+      <div class="form-group" style="flex:1;">
+        <label>Family No. <span style="color:#c00;">*</span></label>
+        <input type="text" id="mem-family" placeholder="e.g. 101" />
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label>No. of Family Members</label>
+        <input type="number" id="mem-count" placeholder="e.g. 4" min="1" />
+      </div>
     </div>
     <div class="form-group">
-      <label>Person Name</label>
+      <label>Person Name <span style="color:#c00;">*</span></label>
       <input type="text" id="mem-name" placeholder="Full name" />
+    </div>
+    <div class="form-group">
+      <label>Phone No.</label>
+      <input type="tel" id="mem-phone" placeholder="e.g. 9876543210" />
+    </div>
+    <div class="form-group">
+      <label>Address</label>
+      <input type="text" id="mem-address" placeholder="e.g. 12, Harinagar Society" />
     </div>
     <div class="modal-actions">
       <button class="btn-primary" onclick="addMember()">Save</button>
@@ -83,11 +105,17 @@ function showAddMemberModal() {
 }
 
 async function addMember(familyNo = null, personName = null) {
-  const family_no = familyNo || document.getElementById('mem-family').value.trim();
-  const person_name = personName || document.getElementById('mem-name').value.trim();
-  if (!family_no || !person_name) { showToast('Fill all fields', 'error'); return null; }
+  const family_no           = familyNo   || document.getElementById('mem-family')?.value.trim();
+  const person_name         = personName || document.getElementById('mem-name')?.value.trim();
+  const phone_no            = document.getElementById('mem-phone')?.value.trim()   || null;
+  const address             = document.getElementById('mem-address')?.value.trim() || null;
+  const family_member_count = parseInt(document.getElementById('mem-count')?.value) || null;
 
-  const { data, error } = await db.from('members').insert({ family_no, person_name }).select().single();
+  if (!family_no || !person_name) { showToast('Family No. and Name are required', 'error'); return null; }
+
+  const { data, error } = await db.from('members')
+    .insert({ family_no, person_name, phone_no, address, family_member_count })
+    .select().single();
   if (error) { showToast('Error: ' + error.message, 'error'); return null; }
 
   if (!familyNo) {
@@ -98,16 +126,33 @@ async function addMember(familyNo = null, personName = null) {
   return data;
 }
 
-function showEditMemberModal(id, familyNo, personName) {
+async function showEditMemberModal(id) {
+  const { data: m, error } = await db.from('members').select('*').eq('id', id).single();
+  if (error || !m) { showToast('Could not load member', 'error'); return; }
+
   showModal(`
     <div class="modal-title">Edit Member</div>
-    <div class="form-group">
-      <label>Family No.</label>
-      <input type="text" id="mem-family-edit" value="${familyNo}" />
+    <div style="display:flex;gap:8px;">
+      <div class="form-group" style="flex:1;">
+        <label>Family No. <span style="color:#c00;">*</span></label>
+        <input type="text" id="mem-family-edit" value="${m.family_no || ''}" />
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label>No. of Family Members</label>
+        <input type="number" id="mem-count-edit" value="${m.family_member_count || ''}" min="1" />
+      </div>
     </div>
     <div class="form-group">
-      <label>Person Name</label>
-      <input type="text" id="mem-name-edit" value="${personName}" />
+      <label>Person Name <span style="color:#c00;">*</span></label>
+      <input type="text" id="mem-name-edit" value="${m.person_name || ''}" />
+    </div>
+    <div class="form-group">
+      <label>Phone No.</label>
+      <input type="tel" id="mem-phone-edit" value="${m.phone_no || ''}" placeholder="e.g. 9876543210" />
+    </div>
+    <div class="form-group">
+      <label>Address</label>
+      <input type="text" id="mem-address-edit" value="${m.address || ''}" placeholder="e.g. 12, Harinagar Society" />
     </div>
     <div class="modal-actions">
       <button class="btn-primary" onclick="updateMember('${id}')">Update</button>
@@ -117,10 +162,16 @@ function showEditMemberModal(id, familyNo, personName) {
 }
 
 async function updateMember(id) {
-  const family_no = document.getElementById('mem-family-edit').value.trim();
-  const person_name = document.getElementById('mem-name-edit').value.trim();
-  if (!family_no || !person_name) { showToast('Fill all fields', 'error'); return; }
-  const { error } = await db.from('members').update({ family_no, person_name }).eq('id', id);
+  const family_no           = document.getElementById('mem-family-edit').value.trim();
+  const person_name         = document.getElementById('mem-name-edit').value.trim();
+  const phone_no            = document.getElementById('mem-phone-edit').value.trim()   || null;
+  const address             = document.getElementById('mem-address-edit').value.trim() || null;
+  const family_member_count = parseInt(document.getElementById('mem-count-edit').value) || null;
+
+  if (!family_no || !person_name) { showToast('Fill required fields', 'error'); return; }
+  const { error } = await db.from('members')
+    .update({ family_no, person_name, phone_no, address, family_member_count })
+    .eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Member updated!', 'success');
@@ -155,10 +206,9 @@ async function showDonorHistory(memberId, memberName, familyNo) {
 
   const totalAmount = donations.reduce((s, d) => s + parseFloat(d.amount), 0);
 
-  // Group by event
   const byEvent = {};
   donations.forEach(d => {
-    const evName = d.events?.name || 'Unknown Event';
+    const evName = d.events?.name || 'General';
     if (!byEvent[evName]) byEvent[evName] = [];
     byEvent[evName].push(d);
   });
@@ -178,8 +228,7 @@ async function showDonorHistory(memberId, memberName, familyNo) {
         return `
           <div style="margin-bottom:12px;">
             <div style="font-size:12px;font-weight:700;color:var(--primary);padding:6px 0;border-bottom:1.5px solid var(--border);display:flex;justify-content:space-between;">
-              <span>📅 ${evName}</span>
-              <span>${formatAmount(evTotal)}</span>
+              <span>📅 ${evName}</span><span>${formatAmount(evTotal)}</span>
             </div>
             ${evDonations.map(d => `
               <div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;display:flex;justify-content:space-between;align-items:center;">

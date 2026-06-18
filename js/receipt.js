@@ -40,15 +40,17 @@ const RECEIPT_CSS = `
   .pay-info strong{color:#333}
   .sys-note{text-align:center;font-size:9.5px;color:#888;margin-top:10px;padding:6px 4px;border-top:1px dashed #ddd;line-height:1.6}
   .footer{text-align:center;color:#c00;font-weight:700;font-size:13px;padding:8px 0 4px}
-  .btns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
-  .btn{padding:11px 22px;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit;font-weight:600}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:10px}
+  .btn{padding:10px 18px;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:600}
   .btn-print{background:#c00;color:#fff}
+  .btn-dl{background:#1565C0;color:#fff}
   .btn-wa{background:#25D366;color:#fff}
   .btn-close{background:#e8e8e8;color:#333}
   .pending-badge{display:inline-block;background:#ff9800;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;margin-bottom:6px}
   @media print{
-    body{background:#fff;padding:0}
-    .receipt{box-shadow:none;border:2px solid #c00;width:100%}
+    @page{size:105mm 148mm;margin:4mm}
+    body{background:#fff;padding:0;margin:0}
+    .receipt{box-shadow:none;border:1.5px solid #c00;width:100%;max-width:100%}
     .btns{display:none}
   }`;
 
@@ -108,6 +110,18 @@ async function showReceiptById(receiptId, sendWhatsApp) {
 <link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
 <style>${RECEIPT_CSS}</style>
 <script>
+function downloadReceipt() {
+  const html = '<!DOCTYPE html>' + document.documentElement.outerHTML;
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Receipt-${receipt.receipt_no}.html';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
 function sendWA() {
   const txt = "🙏 *Derasar Boli Receipt*\\n"
     + "Receipt No: ${receipt.receipt_no}\\n"
@@ -180,7 +194,8 @@ function numToGujaratiWords(n) {
   </div>
 </div>
 <div class="btns">
-  <button class="btn btn-print" onclick="window.print()">🖨 Print / PDF</button>
+  <button class="btn btn-print" onclick="window.print()">🖨 Print (A6)</button>
+  <button class="btn btn-dl" onclick="downloadReceipt()">⬇ Download</button>
   <button class="btn btn-wa" onclick="sendWA()">📲 WhatsApp</button>
   <button class="btn btn-close" onclick="window.close()">Close</button>
 </div>
