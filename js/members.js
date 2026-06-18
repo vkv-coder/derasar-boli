@@ -209,64 +209,79 @@ async function deleteMember(id) {
 
 // ========== DONOR HISTORY ==========
 async function showDonorHistory(memberId, memberName, familyNo) {
-  showModal(`<div class="modal-title">📜 ${memberName}</div><p style="color:var(--text-muted);font-size:13px;">Loading history...</p>`);
+  showModal(`<div class="modal-title">📜 ${memberName}</div><p style="color:var(--text-muted);font-size:13px;">Loading receipts...</p>`);
 
-  const { data: donations, error } = await db
-    .from('donations')
-    .select('*, events(name)')
+  const { data: receipts, error } = await db
+    .from('receipts')
+    .select('*, donations(amount)')
     .eq('member_id', memberId)
     .order('created_at', { ascending: false });
 
-  if (error || !donations || donations.length === 0) {
+  if (error || !receipts || receipts.length === 0) {
     document.getElementById('modal-box').innerHTML = `
       <div class="modal-title">📜 ${memberName}</div>
-      <p style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px 0;">No donation history found.</p>
+      <p style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px 0;">No receipts found.</p>
       <div class="modal-actions"><button class="btn-secondary" onclick="closeModal()">Close</button></div>
     `;
     return;
   }
 
-  const totalAmount = donations.reduce((s, d) => s + parseFloat(d.amount), 0);
-
-  const byEvent = {};
-  donations.forEach(d => {
-    const evName = d.events?.name || 'General';
-    if (!byEvent[evName]) byEvent[evName] = [];
-    byEvent[evName].push(d);
-  });
+  const grandTotal = receipts.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
+  const paidTotal  = receipts.filter(r => r.is_paid).reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
 
   document.getElementById('modal-box').innerHTML = `
     <div class="modal-title">📜 ${memberName}</div>
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Family No: ${familyNo} &nbsp;·&nbsp; ${donations.length} donations</div>
-
-    <div style="background:var(--primary);color:white;border-radius:8px;padding:12px;text-align:center;margin-bottom:14px;">
-      <div style="font-size:11px;opacity:.8;">Total Donated (All Time)</div>
-      <div style="font-size:26px;font-weight:800;">${formatAmount(totalAmount)}</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+      Family No: ${familyNo} &nbsp;·&nbsp; ${receipts.length} receipts
     </div>
 
-    <div style="max-height:340px;overflow-y:auto;">
-      ${Object.entries(byEvent).map(([evName, evDonations]) => {
-        const evTotal = evDonations.reduce((s, d) => s + parseFloat(d.amount), 0);
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <div style="flex:1;background:var(--primary);color:white;border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:10px;opacity:.8;">Total Donated</div>
+        <div style="font-size:20px;font-weight:800;">${formatAmount(grandTotal)}</div>
+      </div>
+      <div style="flex:1;background:#4CAF50;color:white;border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:10px;opacity:.8;">Paid</div>
+        <div style="font-size:20px;font-weight:800;">${formatAmount(paidTotal)}</div>
+      </div>
+      ${grandTotal > paidTotal ? `
+      <div style="flex:1;background:#ff9800;color:white;border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:10px;opacity:.8;">Pending</div>
+        <div style="font-size:20px;font-weight:800;">${formatAmount(grandTotal - paidTotal)}</div>
+      </div>` : ''}
+    </div>
+
+    <div style="max-height:380px;overflow-y:auto;">
+      ${receipts.map(r => {
+        const dt = new Date(r.created_at).toLocaleDateString('en-IN', {day:'2-digit',month:'2-digit',year:'numeric'});
         return `
-          <div style="margin-bottom:12px;">
-            <div style="font-size:12px;font-weight:700;color:var(--primary);padding:6px 0;border-bottom:1.5px solid var(--border);display:flex;justify-content:space-between;">
-              <span>📅 ${evName}</span><span>${formatAmount(evTotal)}</span>
+        <div style="border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <div>
+              <strong style="color:var(--primary);font-size:14px;">ન. ${r.receipt_no}</strong>
+              <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">${dt}</span>
             </div>
-            ${evDonations.map(d => `
-              <div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;display:flex;justify-content:space-between;align-items:center;">
-                <div>
-                  <div style="font-weight:600;">${formatAmount(d.amount)}</div>
-                  <div style="font-size:11px;color:var(--text-muted);">${new Date(d.created_at).toLocaleDateString('en-IN')}${d.note ? ' · ' + d.note : ''}</div>
-                </div>
-                <button class="btn-sm btn-secondary" onclick="showDonationReceipt('${d.id}')" title="View Receipt">🧾</button>
-              </div>
-            `).join('')}
+            <span style="font-size:11px;padding:2px 8px;border-radius:10px;font-weight:700;
+              background:${r.is_paid ? '#e8f5e9' : '#fff3e0'};
+              color:${r.is_paid ? '#2e7d32' : '#e65100'};">
+              ${r.is_paid ? '✅ Paid' : '⏳ Pending'}
+            </span>
           </div>
-        `;
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-size:13px;">
+              <strong>${formatAmount(parseFloat(r.total_amount))}</strong>
+              <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">${r.payment_mode || ''}</span>
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn-sm btn-secondary" onclick="showReceiptById('${r.id}',false)">🧾 View</button>
+              <button class="btn-sm" style="background:#25D366;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;" onclick="showReceiptById('${r.id}',true)">📲 Send</button>
+            </div>
+          </div>
+        </div>`;
       }).join('')}
     </div>
 
-    <div class="modal-actions" style="margin-top:12px;">
+    <div class="modal-actions" style="margin-top:10px;">
       <button class="btn-secondary" onclick="closeModal()">Close</button>
     </div>
   `;
