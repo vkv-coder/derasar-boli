@@ -23,11 +23,11 @@ async function renderMembers() {
 }
 
 async function loadMembersStats() {
-  const { data } = await db.from('members').select('family_no, phone_no');
+  const { data } = await db.from('members').select('family_no, phone_no, family_member_count');
   const el = document.getElementById('members-stats');
   if (!el || !data) return;
-  const totalPersons   = data.length;
   const uniqueFamilies = new Set(data.map(m => m.family_no).filter(Boolean)).size;
+  const totalPersons   = data.reduce((s, m) => s + (m.family_member_count || 0), 0);
   const missingPhone   = data.filter(m => !m.phone_no).length;
   const chip = (icon, val, label, warn) =>
     `<div style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;
@@ -92,7 +92,8 @@ async function loadMembersList(query = '') {
       </tbody>
     </table>
     </div>
-    <p style="font-size:12px;color:var(--text-muted);margin-top:10px;">Total: ${data.length} members
+    <p style="font-size:12px;color:var(--text-muted);margin-top:10px;">${data.length} families
+      &nbsp;·&nbsp; ${data.reduce((s,m)=>s+(m.family_member_count||0),0)} persons
       &nbsp;·&nbsp; Missing phone: ${data.filter(m => !m.phone_no).length}
     </p>
   `;
