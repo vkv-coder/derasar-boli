@@ -10,13 +10,35 @@ async function renderMembers() {
         <h3>Members List</h3>
         <button class="btn-accent btn-sm" onclick="showAddMemberModal()">+ Add Member</button>
       </div>
+      <div id="members-stats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+        <div style="color:var(--text-muted);font-size:13px;">Loading stats...</div>
+      </div>
       <div class="search-box" style="margin-bottom:14px;">
         <input type="text" id="member-search" placeholder="Search by name, family no or phone..." oninput="searchMembers()" />
       </div>
       <div id="members-list">Loading...</div>
     </div>
   `;
-  await loadMembersList();
+  await Promise.all([loadMembersStats(), loadMembersList()]);
+}
+
+async function loadMembersStats() {
+  const { data } = await db.from('members').select('family_no, phone_no');
+  const el = document.getElementById('members-stats');
+  if (!el || !data) return;
+  const totalPersons   = data.length;
+  const uniqueFamilies = new Set(data.map(m => m.family_no).filter(Boolean)).size;
+  const missingPhone   = data.filter(m => !m.phone_no).length;
+  const chip = (icon, val, label, warn) =>
+    `<div style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;
+      background:${warn && val > 0 ? '#fff0f0' : '#FFF8F0'};border:1.5px solid ${warn && val > 0 ? '#f44336' : 'var(--accent)'};
+      color:${warn && val > 0 ? '#c62828' : 'var(--primary)'};">
+      ${icon} <span>${val}</span> <span style="font-weight:400;">${label}</span>
+    </div>`;
+  el.innerHTML =
+    chip('👨‍👩‍👧', uniqueFamilies, 'Families') +
+    chip('👤', totalPersons, 'Members') +
+    chip(missingPhone > 0 ? '⚠️' : '✅', missingPhone, 'Missing Phone', true);
 }
 
 async function loadMembersList(query = '') {
@@ -121,7 +143,7 @@ async function addMember(familyNo = null, personName = null) {
   if (!familyNo) {
     closeModal();
     showToast('Member added!', 'success');
-    await loadMembersList();
+    await Promise.all([loadMembersStats(), loadMembersList()]);
   }
   return data;
 }
@@ -175,14 +197,14 @@ async function updateMember(id) {
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Member updated!', 'success');
-  await loadMembersList();
+  await Promise.all([loadMembersStats(), loadMembersList()]);
 }
 
 async function deleteMember(id) {
   if (!confirm('Delete this member?')) return;
   await db.from('members').delete().eq('id', id);
   showToast('Member deleted');
-  await loadMembersList();
+  await Promise.all([loadMembersStats(), loadMembersList()]);
 }
 
 // ========== DONOR HISTORY ==========

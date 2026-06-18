@@ -61,6 +61,8 @@ async function showReceiptById(receiptId, sendWhatsApp) {
 
   const { data: donations } = await db.from('donations').select('*').eq('receipt_id', receiptId);
   const { data: ev } = await db.from('events').select('name').eq('id', receipt.event_id).single();
+  const { data: memberData } = await db.from('members').select('phone_no').eq('id', receipt.member_id).single();
+  const memberPhone = (memberData?.phone_no || '').replace(/\D/g, '');
 
   // Resolve head names
   const rows = [];
@@ -110,6 +112,8 @@ async function showReceiptById(receiptId, sendWhatsApp) {
 <link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
 <style>${RECEIPT_CSS}</style>
 <script>
+const MEMBER_PHONE = '${memberPhone}';
+const AUTO_SEND = ${sendWhatsApp ? 'true' : 'false'};
 function downloadReceipt() {
   const html = '<!DOCTYPE html>' + document.documentElement.outerHTML;
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
@@ -123,17 +127,21 @@ function downloadReceipt() {
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 function sendWA() {
+  downloadReceipt();
   const txt = "🙏 *Derasar Boli Receipt*\\n"
     + "Receipt No: ${receipt.receipt_no}\\n"
     + "Date: ${dateStr}\\n"
     + "Name: ${receipt.receipt_name}\\n"
-    + "Event: ${ev?.name || ''}\\n"
     + "${rows.map(r => r.sno + '. ' + r.headName + ': ₹' + r.amount.toLocaleString('en-IN')).join('\\n')}\\n"
     + "Total: ₹${total.toLocaleString('en-IN')} (${numToGujaratiWords(total)} રૂપિયા)\\n"
     + "${isPaid ? 'Payment: ' + (payModeDisplay[payMode] || payMode) : 'Payment: PENDING'}\\n"
     + "🙏 જય જિનેન્દ્ર 🙏";
-  window.open('https://wa.me/?text=' + encodeURIComponent(txt));
+  const waNum = MEMBER_PHONE.length === 10 ? '91' + MEMBER_PHONE : MEMBER_PHONE;
+  window.open('https://wa.me/' + waNum + '?text=' + encodeURIComponent(txt));
 }
+document.addEventListener('DOMContentLoaded', function() {
+  if (AUTO_SEND) setTimeout(sendWA, 400);
+});
 function numToGujaratiWords(n) {
   if (!n || n === 0) return 'શૂન્ય';
   const ones = ['','એક','બે','ત્રણ','ચાર','પાંચ','છ','સાત','આઠ','નવ','દસ','અગિયાર','બાર','તેર','ચૌદ','પંદર','સોળ','સત્તર','અઢાર','ઓગણીસ'];
@@ -202,22 +210,10 @@ function numToGujaratiWords(n) {
 </body>
 </html>`;
 
-  const win = window.open('', '_blank', 'width=430,height=780,scrollbars=yes');
+  const win = window.open('', '_blank', 'width=430,height=800,scrollbars=yes');
   if (!win) { showToast('Allow pop-ups to view receipt', 'error'); return; }
   win.document.write(html);
   win.document.close();
-
-  if (sendWhatsApp) {
-    const txt = '🙏 *Derasar Boli Receipt*\n'
-      + 'Receipt No: ' + receipt.receipt_no + '\n'
-      + 'Date: ' + dateStr + '\n'
-      + 'Name: ' + receipt.receipt_name + '\n'
-      + rows.map(r => r.sno + '. ' + r.headName + ': ₹' + r.amount.toLocaleString('en-IN')).join('\n') + '\n'
-      + 'Total: ₹' + total.toLocaleString('en-IN') + ' (' + numToGujaratiWords(total) + ' રૂપિયા)\n'
-      + (isPaid ? 'Payment: ' + (payModeDisplay[payMode] || payMode) : 'Payment: PENDING') + '\n'
-      + '🙏 જય જિનેન્દ્ર 🙏';
-    window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
-  }
 }
 
 // ─── SINGLE-DONATION RECEIPT (backward compat) ────────────────────────────────
