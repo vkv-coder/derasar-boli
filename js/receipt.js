@@ -111,36 +111,51 @@ async function showReceiptById(receiptId, sendWhatsApp) {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
 <style>${RECEIPT_CSS}</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
 const MEMBER_PHONE = '${memberPhone}';
 const AUTO_SEND = ${sendWhatsApp ? 'true' : 'false'};
+const RECEIPT_NO = '${receipt.receipt_no}';
+
 function downloadReceipt() {
-  const html = '<!DOCTYPE html>' + document.documentElement.outerHTML;
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const h = '<!DOCTYPE html>' + document.documentElement.outerHTML;
+  const blob = new Blob([h], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = 'Receipt-${receipt.receipt_no}.html';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  a.href = url; a.download = 'Receipt-' + RECEIPT_NO + '.html';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
 }
-function sendWA() {
-  downloadReceipt();
-  const txt = "🙏 *Derasar Boli Receipt*\\n"
-    + "Receipt No: ${receipt.receipt_no}\\n"
-    + "Date: ${dateStr}\\n"
-    + "Name: ${receipt.receipt_name}\\n"
-    + "${rows.map(r => r.sno + '. ' + r.headName + ': ₹' + r.amount.toLocaleString('en-IN')).join('\\n')}\\n"
-    + "Total: ₹${total.toLocaleString('en-IN')} (${numToGujaratiWords(total)} રૂપિયા)\\n"
-    + "${isPaid ? 'Payment: ' + (payModeDisplay[payMode] || payMode) : 'Payment: PENDING'}\\n"
-    + "🙏 જય જિનેન્દ્ર 🙏";
+
+async function sendWA() {
   const waNum = MEMBER_PHONE.length === 10 ? '91' + MEMBER_PHONE : MEMBER_PHONE;
-  window.open('https://wa.me/' + waNum + '?text=' + encodeURIComponent(txt));
+  const waUrl = 'https://wa.me/' + waNum;
+  const el = document.querySelector('.receipt');
+  document.querySelector('.btns').style.display = 'none';
+  try {
+    const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+    document.querySelector('.btns').style.display = '';
+    canvas.toBlob(async function(blob) {
+      const file = new File([blob], 'Receipt-' + RECEIPT_NO + '.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: 'Derasar Boli Receipt - ' + RECEIPT_NO }); return; }
+        catch(e) { if (e.name === 'AbortError') return; }
+      }
+      // Fallback: download image then open WhatsApp
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'Receipt-' + RECEIPT_NO + '.png';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); window.open(waUrl); }, 700);
+    }, 'image/png');
+  } catch(err) {
+    document.querySelector('.btns').style.display = '';
+    window.open(waUrl);
+  }
 }
+
 document.addEventListener('DOMContentLoaded', function() {
-  if (AUTO_SEND) setTimeout(sendWA, 400);
+  if (AUTO_SEND) setTimeout(sendWA, 600);
 });
 function numToGujaratiWords(n) {
   if (!n || n === 0) return 'શૂન્ય';
