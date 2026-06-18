@@ -145,9 +145,16 @@ async function sendWA() {
       const file = new File([blob], fileName, { type: 'image/png' });
       if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
 
-      // Always download PNG and open WhatsApp to the recipient's number directly.
-      // (Web Share API removed — it opens a generic share menu and cannot
-      //  pre-select a WhatsApp contact, which defeats the purpose.)
+      // MOBILE: Web Share API attaches the PNG directly in the share sheet.
+      // DESKTOP: download PNG then open WhatsApp to the recipient's number.
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: 'Receipt ' + RECEIPT_NO, text: '🙏 Receipt No. ' + RECEIPT_NO });
+          return;
+        } catch(e) { if (e.name === 'AbortError') return; }
+      }
+      // Desktop fallback
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = fileName;
@@ -227,8 +234,8 @@ function numToGujaratiWords(n) {
   </div>
 </div>
 <div id="wa-info" style="display:none;background:#e8f5e9;border:1.5px solid #4CAF50;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:12px;color:#1b5e20;text-align:center;line-height:1.6;">
-  ✅ Receipt PNG saved to Downloads.<br>
-  In WhatsApp: tap <strong>📎 Attach</strong> → Files/Gallery → select the PNG → Send.
+  ✅ Receipt PNG downloaded. WhatsApp opened to recipient.<br>
+  In WhatsApp: tap <strong>📎 Attach</strong> → select the PNG from Downloads → Send.
 </div>
 <div class="btns">
   <button class="btn btn-print" onclick="window.print()">🖨 Print (A6)</button>
