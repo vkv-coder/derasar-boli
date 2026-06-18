@@ -211,11 +211,11 @@ async function deleteMember(id) {
 async function showDonorHistory(memberId, memberName, familyNo) {
   showModal(`<div class="modal-title">📜 ${memberName}</div><p style="color:var(--text-muted);font-size:13px;">Loading receipts...</p>`);
 
-  const { data: receipts, error } = await db
-    .from('receipts')
-    .select('*, donations(amount)')
-    .eq('member_id', memberId)
-    .order('created_at', { ascending: false });
+  const [{ data: receipts, error }, { data: memberFull }] = await Promise.all([
+    db.from('receipts').select('*, donations(amount)').eq('member_id', memberId).order('created_at', { ascending: false }),
+    db.from('members').select('phone_no').eq('id', memberId).single()
+  ]);
+  const memberPhone = (memberFull?.phone_no || '').replace(/\D/g, '');
 
   if (error || !receipts || receipts.length === 0) {
     document.getElementById('modal-box').innerHTML = `
@@ -233,6 +233,9 @@ async function showDonorHistory(memberId, memberName, familyNo) {
     <div class="modal-title">📜 ${memberName}</div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
       Family No: ${familyNo} &nbsp;·&nbsp; ${receipts.length} receipts
+      ${memberPhone
+        ? `&nbsp;·&nbsp; 📞 ${memberPhone}`
+        : `&nbsp;·&nbsp; <span style="color:#f44;font-weight:600;">⚠ No phone — WhatsApp will open without number</span>`}
     </div>
 
     <div style="display:flex;gap:8px;margin-bottom:14px;">
@@ -273,8 +276,8 @@ async function showDonorHistory(memberId, memberName, familyNo) {
               <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">${r.payment_mode || ''}</span>
             </div>
             <div style="display:flex;gap:6px;">
-              <button class="btn-sm btn-secondary" onclick="showReceiptById('${r.id}',false)">🧾 View</button>
-              <button class="btn-sm" style="background:#25D366;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;" onclick="showReceiptById('${r.id}',true)">📲 Send</button>
+              <button class="btn-sm btn-secondary" onclick="showReceiptById('${r.id}',false,'${memberPhone}')">🧾 View</button>
+              <button class="btn-sm" style="background:#25D366;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;" onclick="showReceiptById('${r.id}',true,'${memberPhone}')">📲 Send</button>
             </div>
           </div>
         </div>`;

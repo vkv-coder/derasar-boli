@@ -55,14 +55,15 @@ const RECEIPT_CSS = `
   }`;
 
 // ─── MULTI-HEAD RECEIPT (via receipts table) ──────────────────────────────────
-async function showReceiptById(receiptId, sendWhatsApp) {
+async function showReceiptById(receiptId, sendWhatsApp, phoneHint) {
   const { data: receipt, error: rErr } = await db.from('receipts').select('*').eq('id', receiptId).single();
   if (rErr || !receipt) { showToast('Could not load receipt', 'error'); return; }
 
   const { data: donations } = await db.from('donations').select('*').eq('receipt_id', receiptId);
   const { data: ev } = await db.from('events').select('name').eq('id', receipt.event_id).single();
   const { data: memberData } = await db.from('members').select('phone_no').eq('id', receipt.member_id).single();
-  const memberPhone = (memberData?.phone_no || '').replace(/\D/g, '');
+  // phoneHint passed from member history takes priority (covers case where DB has no phone yet)
+  const memberPhone = ((phoneHint || memberData?.phone_no || '')).replace(/\D/g, '');
 
   // Resolve head names
   const rows = [];
