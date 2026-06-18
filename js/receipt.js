@@ -143,9 +143,10 @@ async function sendWA() {
       const file = new File([blob], fileName, { type: 'image/png' });
       if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
 
-      // MOBILE: Web Share API — opens share sheet with image attached
-      // User picks WhatsApp → image already attached → just pick contact → send
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      // Web Share API only on mobile: desktop Chrome also supports it but
+      // opens the OS share menu instead of going straight to WhatsApp + number.
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
           await navigator.share({
             files: [file],
