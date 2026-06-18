@@ -26,6 +26,11 @@ async function renderReports() {
     </div>
     <div id="report-content"></div>
   `;
+
+  if (events && events.length === 1) {
+    document.getElementById('report-event-select').value = events[0].id;
+    loadReport();
+  }
 }
 
 async function loadReport() {
@@ -37,14 +42,16 @@ async function loadReport() {
   el.innerHTML = '<p style="color:var(--text-muted);padding:16px;">Loading...</p>';
 
   const [
+    { data: receipts },
     { data: donations },
     { data: swapnas },
     { data: generalHeads },
     { data: eventData }
   ] = await Promise.all([
+    db.from('receipts').select('*').eq('event_id', eventId).order('created_at'),
     db.from('donations').select('*').eq('event_id', eventId).order('created_at'),
     db.from('swapna').select('*, swapna_items(*)').eq('event_id', eventId).order('display_order'),
-    db.from('general_heads').select('*').eq('event_id', eventId).order('display_order'),
+    db.from('general_heads').select('*').is('event_id', null).order('display_order'),
     db.from('events').select('*').eq('id', eventId).single()
   ]);
 
@@ -55,158 +62,206 @@ async function loadReport() {
     return;
   }
 
-  const swapnaItemNames = {};
-  const swapnaGroupNames = {};
+  // ── Lookup maps ──────────────────────────────────────────────────────────────
+  const receiptMap = {};
+  (receipts || []).forEach(r => { receiptMap[r.id] = r; });
+
+  const swapnaItemNames = {}, swapnaGroupNames = {}, generalHeadNames = {};
   (swapnas || []).forEach(sw => {
     (sw.swapna_items || []).forEach(item => {
       swapnaItemNames[item.id] = item.name;
       swapnaGroupNames[item.id] = sw.name;
     });
   });
-  const generalHeadNames = {};
   (generalHeads || []).forEach(h => { generalHeadNames[h.id] = h.name; });
 
-  const swapnaTotals = {};
-  const generalTotals = {};
-  let grandTotal = 0;
+  // ── Aggregate ────────────────────────────────────────────────────────────────
+  let grandTotal = 0, paidTotal = 0, pendingTotal = 0;
+  const headTotals = {}; // id → { name, paid, pending }
 
-  donations.forEach(d => {
-    grandTotal += parseFloat(d.amount);
-    if (d.head_type === 'swapna_item' && d.swapna_item_id) {
-      if (!swapnaTotals[d.swapna_item_id]) swapnaTotals[d.swapna_item_id] = { total: 0, donors: [] };
-      swapnaTotals[d.swapna_item_id].total += parseFloat(d.amount);
-      swapnaTotals[d.swapna_item_id].donors.push(d);
-    }
-    if (d.head_type === 'general_head' && d.general_head_id) {
-      if (!generalTotals[d.general_head_id]) generalTotals[d.general_head_id] = { total: 0, donors: [] };
-      generalTotals[d.general_head_id].total += parseFloat(d.amount);
-      generalTotals[d.general_head_id].donors.push(d);
-    }
+  const addHead = (id, name, amount, isPaid) => {
+    if (!headTotals[id]) headTotals[id] = { name, paid: 0, pending: 0 };
+    if (isPaid) headTotals[id].paid += amount;
+    else        headTotals[id].pending += amount;
+  };
+
+  (donations || []).forEach(d => {
+    const amount  = parseFloat(d.amount);
+    const receipt = receiptMap[d.receipt_id];
+    const isPaid  = receipt ? receipt.is_paid : true;
+
+    grandTotal += amount;
+    if (isPaid) paidTotal += amount; else pendingTotal += amount;
+
+    if (d.head_type === 'general_head' && d.general_head_id)
+      addHead(d.general_head_id, generalHeadNames[d.general_head_id] || 'General', amount, isPaid);
+    else if (d.head_type === 'swapna_item' && d.swapna_item_id)
+      addHead(d.swapna_item_id,
+        (swapnaGroupNames[d.swapna_item_id] || 'Swapna') + ' → ' + (swapnaItemNames[d.swapna_item_id] || ''),
+        amount, isPaid);
   });
+
+  const pendingReceipts = (receipts || []).filter(r => !r.is_paid);
+
+  // Donor summary — one row per receipt, sorted by family_no
+  const donorRows = (receipts || [])
+    .slice()
+    .sort((a, b) => (a.family_no || '').localeCompare(b.family_no || '', undefined, { numeric: true }));
 
   const adminActions = isAdmin();
 
+  // ── Render ───────────────────────────────────────────────────────────────────
   el.innerHTML = `
-    <!-- Summary -->
+
+    <!-- 1. Summary Banner -->
     <div class="card" style="background:var(--primary);color:white;">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
-        <div>
-          <div style="font-size:13px;opacity:0.8;">${eventData.name}</div>
-          <div style="font-size:32px;font-weight:800;margin-top:4px;">${formatAmount(grandTotal)}</div>
-          <div style="font-size:12px;opacity:0.7;margin-top:2px;">${donations.length} total donations</div>
+      <div style="font-size:14px;opacity:.8;margin-bottom:10px;">${eventData.name}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+        <div style="flex:1;min-width:110px;">
+          <div style="font-size:11px;opacity:.7;">Grand Total</div>
+          <div style="font-size:30px;font-weight:800;">${formatAmount(grandTotal)}</div>
+          <div style="font-size:11px;opacity:.6;">${(receipts||[]).length} receipts · ${donations.length} entries</div>
         </div>
-        <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end;">
-          <button class="btn-accent" onclick="printReport()">🖨 Print</button>
-          <button class="btn-accent" onclick="exportReportCSV()">📥 CSV</button>
-          <button class="btn-accent" onclick="exportReportExcel()">📊 Excel</button>
+        <div style="flex:1;min-width:110px;background:rgba(255,255,255,.13);border-radius:8px;padding:10px;">
+          <div style="font-size:11px;opacity:.75;">✅ Collected</div>
+          <div style="font-size:22px;font-weight:700;">${formatAmount(paidTotal)}</div>
         </div>
+        <div style="flex:1;min-width:110px;background:rgba(255,152,0,.35);border-radius:8px;padding:10px;">
+          <div style="font-size:11px;opacity:.75;">⏳ Pending</div>
+          <div style="font-size:22px;font-weight:700;">${formatAmount(pendingTotal)}</div>
+          <div style="font-size:11px;opacity:.65;">${pendingReceipts.length} receipt(s)</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button onclick="printReport()"      style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:white;padding:7px 14px;border-radius:6px;font-size:12px;cursor:pointer;">🖨 Print</button>
+        <button onclick="exportReportCSV()"  style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:white;padding:7px 14px;border-radius:6px;font-size:12px;cursor:pointer;">📥 CSV</button>
+        <button onclick="exportReportExcel()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:white;padding:7px 14px;border-radius:6px;font-size:12px;cursor:pointer;">📊 Excel</button>
       </div>
     </div>
 
-    <!-- Swapna Report -->
-    ${swapnas && swapnas.length > 0 ? `
+    <!-- 2. Head-wise Collection -->
     <div class="card">
-      <div class="card-title">🔶 Swapna Summary</div>
-      ${swapnas.map(sw => {
-        const items = sw.swapna_items || [];
-        const swTotal = items.reduce((sum, item) => sum + (swapnaTotals[item.id]?.total || 0), 0);
-        return `
-          <div style="margin-bottom:16px;">
-            <div style="display:flex;justify-content:space-between;font-weight:700;color:var(--primary);padding:8px 0;border-bottom:2px solid var(--border);">
-              <span>${sw.name}</span>
-              <span>${formatAmount(swTotal)}</span>
-            </div>
-            ${items.map(item => {
-              const t = swapnaTotals[item.id];
-              if (!t) return `<div style="padding:6px 0 6px 12px;font-size:13px;display:flex;justify-content:space-between;border-bottom:1px solid var(--border);"><span>${item.name}</span><span style="color:var(--text-muted);">₹0</span></div>`;
-              return `
-                <div style="padding:6px 0 6px 12px;border-bottom:1px solid var(--border);">
-                  <div style="display:flex;justify-content:space-between;font-size:13px;">
-                    <span>${item.name}</span>
-                    <strong>${formatAmount(t.total)}</strong>
-                  </div>
-                  ${t.donors.map(d => `
-                    <div style="font-size:11px;color:var(--text-muted);padding-left:8px;margin-top:2px;">
-                      • ${d.donor_name} (Family: ${d.family_no || '—'}) — ${formatAmount(d.amount)}
-                    </div>
-                  `).join('')}
-                </div>
-              `;
-            }).join('')}
-          </div>
-        `;
-      }).join('')}
-    </div>
-    ` : ''}
-
-    <!-- General Heads Report -->
-    ${generalHeads && generalHeads.length > 0 ? `
-    <div class="card">
-      <div class="card-title">🔷 General Heads Summary</div>
-      ${generalHeads.map(h => {
-        const t = generalTotals[h.id];
-        if (!t) return `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;"><span>${h.name}</span><span style="color:var(--text-muted);">₹0</span></div>`;
-        return `
-          <div style="padding:10px 0;border-bottom:1px solid var(--border);">
-            <div style="display:flex;justify-content:space-between;font-size:14px;">
-              <strong>${h.name}</strong>
-              <strong style="color:var(--primary);">${formatAmount(t.total)}</strong>
-            </div>
-            ${t.donors.map(d => `
-              <div style="font-size:11px;color:var(--text-muted);padding-left:8px;margin-top:2px;">
-                • ${d.donor_name} (Family: ${d.family_no || '—'}) — ${formatAmount(d.amount)} ${d.note ? '| ' + d.note : ''}
-              </div>
-            `).join('')}
-          </div>
-        `;
-      }).join('')}
-    </div>
-    ` : ''}
-
-    <!-- All Donations Table -->
-    <div class="card">
-      <div class="card-title">All Donations</div>
+      <div class="card-title">🔷 Head-wise Collection</div>
       <div style="overflow-x:auto;">
         <table class="data-table">
           <thead>
-            <tr><th>#</th><th>Donor</th><th>Family No.</th><th>Head</th><th>Amount</th><th>Note</th><th>Time</th><th>Actions</th></tr>
+            <tr>
+              <th>Donation Head</th>
+              <th style="text-align:right;color:#4CAF50;">✅ Collected</th>
+              <th style="text-align:right;color:#ff9800;">⏳ Pending</th>
+              <th style="text-align:right;">Total</th>
+            </tr>
           </thead>
           <tbody>
-            ${donations.map((d, i) => {
-              const isSwapna = d.head_type === 'swapna_item';
-              const headLabel = isSwapna
-                ? (swapnaGroupNames[d.swapna_item_id] || 'Swapna') + ' → ' + (swapnaItemNames[d.swapna_item_id] || '')
-                : (generalHeadNames[d.general_head_id] || 'General');
-              return `
+            ${Object.values(headTotals)
+              .sort((a, b) => (b.paid + b.pending) - (a.paid + a.pending))
+              .map(h => `
+                <tr>
+                  <td>${h.name}</td>
+                  <td style="text-align:right;color:#4CAF50;font-weight:600;">${formatAmount(h.paid)}</td>
+                  <td style="text-align:right;color:${h.pending > 0 ? '#ff9800' : 'var(--text-muted)'};font-weight:600;">${formatAmount(h.pending)}</td>
+                  <td style="text-align:right;font-weight:700;color:var(--primary);">${formatAmount(h.paid + h.pending)}</td>
+                </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:var(--primary);color:white;font-weight:700;">
+              <td>Total</td>
+              <td style="text-align:right;">${formatAmount(paidTotal)}</td>
+              <td style="text-align:right;">${formatAmount(pendingTotal)}</td>
+              <td style="text-align:right;">${formatAmount(grandTotal)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- 3. Pending Members -->
+    <div class="card" style="border-left:4px solid ${pendingReceipts.length ? '#ff9800' : '#4CAF50'};">
+      <div class="card-title">${pendingReceipts.length ? `⏳ Pending Payments (${pendingReceipts.length})` : '✅ No Pending Payments'}</div>
+      ${pendingReceipts.length ? `
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead>
+            <tr><th>Name</th><th>Family</th><th>Receipt No.</th><th style="text-align:right;">Amount</th><th>Date</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            ${pendingReceipts.map(r => `
               <tr>
-                <td>${i + 1}</td>
-                <td>${d.donor_name}</td>
-                <td>${d.family_no || '—'}</td>
-                <td><span class="badge ${isSwapna ? 'badge-swapna' : 'badge-general'}" title="${headLabel}">${isSwapna ? 'Swapna' : 'General'}</span></td>
-                <td><strong>${formatAmount(d.amount)}</strong></td>
-                <td style="font-size:12px;">${d.note || '—'}</td>
-                <td style="font-size:11px;color:var(--text-muted);">${new Date(d.created_at).toLocaleString('en-IN')}</td>
+                <td><strong>${r.receipt_name}</strong></td>
+                <td>${r.family_no || '—'}</td>
+                <td style="font-size:12px;color:var(--text-muted);">${r.receipt_no}</td>
+                <td style="text-align:right;font-weight:700;color:#ff9800;">${formatAmount(r.total_amount)}</td>
+                <td style="font-size:11px;color:var(--text-muted);">${new Date(r.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'2-digit',year:'numeric'})}</td>
                 <td>
-                  <div style="display:flex;gap:4px;">
-                    <button class="btn-sm btn-secondary" title="Receipt" onclick="showDonationReceipt('${d.id}')">🧾</button>
-                    ${adminActions ? `
-                      <button class="btn-sm" style="background:#4CAF50;color:white;" title="Edit" onclick="showEditDonationModal('${d.id}','reports')">✏️</button>
-                      <button class="btn-sm btn-danger" title="Delete" onclick="deleteDonation('${d.id}','reports')">✕</button>
-                    ` : ''}
+                  <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                    <button class="btn-sm btn-secondary" onclick="showReceiptById('${r.id}',false)">🧾 View</button>
+                    <button class="btn-sm btn-primary"   onclick="collectPaymentModal('${r.id}','${r.receipt_no}',${r.total_amount})">💰 Collect</button>
                   </div>
                 </td>
-              </tr>`;
-            }).join('')}
+              </tr>`).join('')}
           </tbody>
+          <tfoot>
+            <tr style="background:#fff3e0;font-weight:700;">
+              <td colspan="3">Total Pending</td>
+              <td style="text-align:right;color:#ff9800;">${formatAmount(pendingTotal)}</td>
+              <td colspan="2"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>` : '<p style="color:#4CAF50;font-size:13px;">All payments collected.</p>'}
+    </div>
+
+    <!-- 4. All Donors -->
+    <div class="card">
+      <div class="card-title">👥 All Donors — Paid & Pending</div>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Name</th>
+              <th>Family No.</th>
+              <th>Receipt No.</th>
+              <th style="text-align:right;color:#4CAF50;">✅ Paid</th>
+              <th style="text-align:right;color:#ff9800;">⏳ Pending</th>
+              <th style="text-align:right;">Total</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${donorRows.map((r, i) => `
+              <tr style="${!r.is_paid ? 'background:#fff8ee;' : ''}">
+                <td>${i + 1}</td>
+                <td><strong>${r.receipt_name}</strong></td>
+                <td>${r.family_no || '—'}</td>
+                <td style="font-size:11px;color:var(--text-muted);">${r.receipt_no}</td>
+                <td style="text-align:right;color:#4CAF50;font-weight:600;">${r.is_paid ? formatAmount(r.total_amount) : '—'}</td>
+                <td style="text-align:right;color:#ff9800;font-weight:600;">${!r.is_paid ? formatAmount(r.total_amount) : '—'}</td>
+                <td style="text-align:right;font-weight:700;color:var(--primary);">${formatAmount(r.total_amount)}</td>
+                <td>
+                  <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                    <button class="btn-sm btn-secondary" onclick="showReceiptById('${r.id}',false)">🧾</button>
+                    ${!r.is_paid && adminActions ? `<button class="btn-sm btn-primary" onclick="collectPaymentModal('${r.id}','${r.receipt_no}',${r.total_amount})">💰</button>` : ''}
+                  </div>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:var(--primary);color:white;font-weight:700;">
+              <td colspan="4">${donorRows.length} receipts</td>
+              <td style="text-align:right;">${formatAmount(paidTotal)}</td>
+              <td style="text-align:right;">${formatAmount(pendingTotal)}</td>
+              <td style="text-align:right;">${formatAmount(grandTotal)}</td>
+              <td></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
   `;
 }
 
-function printReport() {
-  window.print();
-}
+function printReport() { window.print(); }
 
 // ========== CSV EXPORT ==========
 async function exportReportCSV() {
@@ -214,32 +269,33 @@ async function exportReportCSV() {
     showToast('No data to export', 'error'); return;
   }
 
-  const [{ data: eventData }, { data: swapnas }, { data: generalHeads }] = await Promise.all([
+  const [{ data: eventData }, { data: swapnas }, { data: generalHeads }, { data: receipts }] = await Promise.all([
     db.from('events').select('name').eq('id', currentReportEventId).single(),
     db.from('swapna').select('*, swapna_items(*)').eq('event_id', currentReportEventId),
-    db.from('general_heads').select('*').eq('event_id', currentReportEventId)
+    db.from('general_heads').select('*').is('event_id', null),
+    db.from('receipts').select('*').eq('event_id', currentReportEventId)
   ]);
 
-  const swapnaItemNames = {}, swapnaGroupNames = {}, generalHeadNames = {};
+  const swapnaItemNames = {}, swapnaGroupNames = {}, generalHeadNames = {}, receiptMap = {};
   (swapnas || []).forEach(sw => (sw.swapna_items || []).forEach(item => {
-    swapnaItemNames[item.id] = item.name;
-    swapnaGroupNames[item.id] = sw.name;
+    swapnaItemNames[item.id] = item.name; swapnaGroupNames[item.id] = sw.name;
   }));
   (generalHeads || []).forEach(h => { generalHeadNames[h.id] = h.name; });
+  (receipts || []).forEach(r => { receiptMap[r.id] = r; });
 
-  const headers = ['#', 'Donor Name', 'Family No', 'Head Type', 'Head Name', 'Item', 'Amount', 'Note', 'Date Time'];
+  const headers = ['#', 'Donor Name', 'Family No', 'Receipt No', 'Head', 'Amount', 'Status', 'Date'];
   const rows = currentReportDonations.map((d, i) => {
     const isSwapna = d.head_type === 'swapna_item';
+    const receipt  = receiptMap[d.receipt_id];
     return [
-      i + 1,
-      d.donor_name,
-      d.family_no || '',
-      isSwapna ? 'Swapna' : 'General',
-      isSwapna ? (swapnaGroupNames[d.swapna_item_id] || '') : (generalHeadNames[d.general_head_id] || ''),
-      isSwapna ? (swapnaItemNames[d.swapna_item_id] || '') : '',
+      i + 1, d.donor_name, d.family_no || '',
+      receipt?.receipt_no || '',
+      isSwapna
+        ? (swapnaGroupNames[d.swapna_item_id] || '') + ' → ' + (swapnaItemNames[d.swapna_item_id] || '')
+        : (generalHeadNames[d.general_head_id] || ''),
       d.amount,
-      d.note || '',
-      new Date(d.created_at).toLocaleString('en-IN')
+      receipt ? (receipt.is_paid ? 'Paid' : 'Pending') : 'Paid',
+      new Date(d.created_at).toLocaleDateString('en-IN')
     ];
   });
 
@@ -247,7 +303,7 @@ async function exportReportCSV() {
     .map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
     .join('\n');
 
-  downloadFile(csv, `${eventData?.name || 'donations'}-report.csv`, 'text/csv;charset=utf-8;');
+  downloadFile(csv, `${eventData?.name || 'report'}-donations.csv`, 'text/csv;charset=utf-8;');
   showToast('CSV downloaded!', 'success');
 }
 
@@ -262,40 +318,44 @@ async function exportReportExcel() {
     await loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
   }
 
-  const [{ data: eventData }, { data: swapnas }, { data: generalHeads }] = await Promise.all([
+  const [{ data: eventData }, { data: swapnas }, { data: generalHeads }, { data: receipts }] = await Promise.all([
     db.from('events').select('name').eq('id', currentReportEventId).single(),
     db.from('swapna').select('*, swapna_items(*)').eq('event_id', currentReportEventId),
-    db.from('general_heads').select('*').eq('event_id', currentReportEventId)
+    db.from('general_heads').select('*').is('event_id', null),
+    db.from('receipts').select('*').eq('event_id', currentReportEventId)
   ]);
 
-  const swapnaItemNames = {}, swapnaGroupNames = {}, generalHeadNames = {};
+  const swapnaItemNames = {}, swapnaGroupNames = {}, generalHeadNames = {}, receiptMap = {};
   (swapnas || []).forEach(sw => (sw.swapna_items || []).forEach(item => {
-    swapnaItemNames[item.id] = item.name;
-    swapnaGroupNames[item.id] = sw.name;
+    swapnaItemNames[item.id] = item.name; swapnaGroupNames[item.id] = sw.name;
   }));
   (generalHeads || []).forEach(h => { generalHeadNames[h.id] = h.name; });
+  (receipts || []).forEach(r => { receiptMap[r.id] = r; });
 
-  const wsData = [['#', 'Donor Name', 'Family No', 'Head Type', 'Head Name', 'Item', 'Amount (₹)', 'Note', 'Date Time']];
+  const wsData = [['#', 'Donor Name', 'Family No', 'Receipt No', 'Head', 'Amount (₹)', 'Status', 'Date']];
   currentReportDonations.forEach((d, i) => {
     const isSwapna = d.head_type === 'swapna_item';
+    const receipt  = receiptMap[d.receipt_id];
     wsData.push([
       i + 1, d.donor_name, d.family_no || '',
-      isSwapna ? 'Swapna' : 'General',
-      isSwapna ? (swapnaGroupNames[d.swapna_item_id] || '') : (generalHeadNames[d.general_head_id] || ''),
-      isSwapna ? (swapnaItemNames[d.swapna_item_id] || '') : '',
-      parseFloat(d.amount), d.note || '',
-      new Date(d.created_at).toLocaleString('en-IN')
+      receipt?.receipt_no || '',
+      isSwapna
+        ? (swapnaGroupNames[d.swapna_item_id] || '') + ' → ' + (swapnaItemNames[d.swapna_item_id] || '')
+        : (generalHeadNames[d.general_head_id] || ''),
+      parseFloat(d.amount),
+      receipt ? (receipt.is_paid ? 'Paid' : 'Pending') : 'Paid',
+      new Date(d.created_at).toLocaleDateString('en-IN')
     ]);
   });
 
   const total = currentReportDonations.reduce((s, d) => s + parseFloat(d.amount), 0);
-  wsData.push(['', '', '', '', '', 'TOTAL', total, '', '']);
+  wsData.push(['', '', '', '', 'TOTAL', total, '', '']);
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(wsData);
-  ws['!cols'] = [4, 22, 12, 10, 22, 22, 12, 22, 20].map(w => ({ wch: w }));
+  ws['!cols'] = [4, 24, 12, 14, 28, 14, 10, 14].map(w => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws, 'Donations');
-  XLSX.writeFile(wb, `${eventData?.name || 'donations'}-report.xlsx`);
+  XLSX.writeFile(wb, `${eventData?.name || 'report'}-donations.xlsx`);
   showToast('Excel downloaded!', 'success');
 }
 
@@ -309,11 +369,10 @@ function loadScript(src) {
 
 function downloadFile(content, filename, type) {
   const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
   a.href = url; a.download = filename;
-  document.body.appendChild(a);
-  a.click();
+  document.body.appendChild(a); a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
