@@ -221,7 +221,7 @@ function showDonationModal(headId, headName, headType, prefillMemberId) {
 
     <div class="form-group">
       <label>Donor Type</label>
-      <select id="modal-donor-type" onchange="onModalDonorTypeChange()">
+      <select id="modal-donor-type" onchange="onModalDonorTypeChange()" onclick="onModalDonorTypeChange()">
         <option value="">-- Select --</option>
         <option value="other">Other (Type Name)</option>
         <option value="member">Member (Search)</option>
@@ -254,9 +254,7 @@ function showDonationModal(headId, headName, headType, prefillMemberId) {
 
     <div class="form-group">
       <label>Amount (₹)</label>
-      <input type="number" id="modal-amount" placeholder="0" min="1" />
-    </div>
-    <div class="form-group">
+      <input type="number" id="modal-amount" placeholder="0" min="1" inputmode="numeric" />
     </div>
 
     <div class="modal-actions">
