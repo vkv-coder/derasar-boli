@@ -5,6 +5,7 @@
 let reportEventId = null;
 let reportAllDonations = [];
 let reportSwapnaTree = [];
+let reportSwapnaItems = [];
 let reportGeneralHeads = [];
 
 // ========== RENDER REPORTS PAGE ==========
@@ -59,17 +60,20 @@ async function loadReport() {
   const [
     { data: donations },
     { data: swapnaTree },
+    { data: swapnaItems },
     { data: generalHeads },
     { data: receipts }
   ] = await Promise.all([
     db.from('donations').select('*').eq('event_id', reportEventId).order('created_at', { ascending: true }),
     db.from('swapna').select('*').eq('event_id', reportEventId).order('sort_order'),
+    db.from('swapna_items').select('*'),
     db.from('general_heads').select('*').order('display_order'),
     db.from('receipts').select('*').eq('event_id', reportEventId)
   ]);
 
   reportAllDonations = donations || [];
   reportSwapnaTree = swapnaTree || [];
+  reportSwapnaItems = swapnaItems || [];
   reportGeneralHeads = generalHeads || [];
 
   // Map receipt_id → receipt for quick lookup
@@ -184,13 +188,26 @@ function getSwapnaDescendants(parentId) {
 // ========== GET HEAD NAME FOR DONATION ==========
 function getDonationHeadName(d) {
   if (d.head_type === 'swapna_item' && d.swapna_item_id) {
-    const item = reportSwapnaTree.find(s => s.id === d.swapna_item_id);
+    // Look in swapna_items table first
+    const item = reportSwapnaItems.find(s => s.id === d.swapna_item_id);
     if (item) {
-      const parent = reportSwapnaTree.find(s => s.id === item.parent_id);
-      const grandParent = parent ? reportSwapnaTree.find(s => s.id === parent.parent_id) : null;
-      if (grandParent) return `${grandParent.name} → ${parent.name} → ${item.name}`;
-      if (parent) return `${parent.name} → ${item.name}`;
+      // Find parent swapna head
+      const parent = reportSwapnaTree.find(s => s.id === item.swapna_id);
+      if (parent) {
+        const grandParent = reportSwapnaTree.find(s => s.id === parent.parent_id);
+        if (grandParent) return `${grandParent.name} → ${parent.name} → ${item.name}`;
+        return `${parent.name} → ${item.name}`;
+      }
       return item.name;
+    }
+    // Fallback: look in swapna tree
+    const sw = reportSwapnaTree.find(s => s.id === d.swapna_item_id);
+    if (sw) {
+      const parent = reportSwapnaTree.find(s => s.id === sw.parent_id);
+      const grandParent = parent ? reportSwapnaTree.find(s => s.id === parent.parent_id) : null;
+      if (grandParent) return `${grandParent.name} → ${parent.name} → ${sw.name}`;
+      if (parent) return `${parent.name} → ${sw.name}`;
+      return sw.name;
     }
   }
   if (d.head_type === 'swapna' && d.swapna_id) {
