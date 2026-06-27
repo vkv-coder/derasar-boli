@@ -234,8 +234,19 @@ function showDonationModal(headId, headName, headType, prefillMemberId) {
         <input type="text" id="modal-other-name" placeholder="Donor name" />
       </div>
       <div class="form-group">
-        <label>Phone No. (10 digits)</label>
-        <input type="tel" id="modal-other-phone" placeholder="_ _ _ _ _ _ _ _ _ _" maxlength="10" inputmode="numeric" style="letter-spacing:3px;font-size:15px;font-weight:600;" oninput="this.value=this.value.replace(/[^0-9]/g,'')" />
+        <label>Phone No. (10 digits — optional)</label>
+        <div style="display:flex;gap:4px;justify-content:center;margin-top:6px;" id="phone-boxes">
+          ${[...Array(10)].map((_,i) => `
+            <input type="tel" inputmode="numeric" maxlength="1"
+              id="ph-${i}"
+              oninput="phoneBoxInput(this,${i})"
+              onkeydown="phoneBoxKey(event,${i})"
+              onpaste="phoneBoxPaste(event,${i})"
+              style="width:28px;height:36px;text-align:center;font-size:16px;font-weight:700;border:2px solid var(--border);border-radius:6px;outline:none;padding:0;"
+            />
+          `).join('')}
+        </div>
+        <input type="hidden" id="modal-other-phone" />
       </div>
     </div>
 
@@ -268,6 +279,50 @@ function onModalDonorTypeChange() {
   const type = document.getElementById('modal-donor-type').value;
   document.getElementById('modal-other-fields').style.display = type === 'other' ? 'block' : 'none';
   document.getElementById('modal-member-fields').style.display = type === 'member' ? 'block' : 'none';
+}
+
+// ========== 10-BOX PHONE INPUT ==========
+function phoneBoxInput(el, index) {
+  el.value = el.value.replace(/[^0-9]/g, "");
+  if (el.value.length === 1 && index < 9) {
+    document.getElementById("ph-" + (index + 1)).focus();
+  }
+  updateHiddenPhone();
+}
+
+function phoneBoxKey(e, index) {
+  if (e.key === "Backspace") {
+    const el = document.getElementById("ph-" + index);
+    if (!el.value && index > 0) {
+      document.getElementById("ph-" + (index - 1)).focus();
+    }
+    updateHiddenPhone();
+  }
+}
+
+function phoneBoxPaste(e, startIndex) {
+  e.preventDefault();
+  const pasted = (e.clipboardData || window.clipboardData).getData("text").replace(/[^0-9]/g, "");
+  for (let i = 0; i < pasted.length && (startIndex + i) < 10; i++) {
+    document.getElementById("ph-" + (startIndex + i)).value = pasted[i];
+  }
+  updateHiddenPhone();
+  const next = Math.min(startIndex + pasted.length, 9);
+  document.getElementById("ph-" + next).focus();
+}
+
+function updateHiddenPhone() {
+  let val = "";
+  for (let i = 0; i < 10; i++) {
+    const box = document.getElementById("ph-" + i);
+    if (box) val += box.value;
+  }
+  const hidden = document.getElementById("modal-other-phone");
+  if (hidden) hidden.value = val;
+  for (let i = 0; i < 10; i++) {
+    const box = document.getElementById("ph-" + i);
+    if (box) box.style.borderColor = box.value ? "var(--primary)" : "var(--border)";
+  }
 }
 
 let modalMemberTimer = null;
@@ -337,6 +392,8 @@ async function saveDonationFromModal(headId, headName, headType) {
     donorName = document.getElementById('modal-other-name').value.trim();
     phone = document.getElementById('modal-other-phone').value.trim();
     if (!donorName) { showToast('Enter donor name', 'error'); return; }
+    if (phone && phone.length !== 10) { showToast('Phone must be exactly 10 digits or leave empty', 'error'); return; }
+    if (!phone) phone = null;
   } else if (donorType === 'member') {
     if (!modalSelectedMember) { showToast('Select a member', 'error'); return; }
     memberId = modalSelectedMember.id;
