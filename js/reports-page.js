@@ -156,11 +156,13 @@ async function applyReportFilter() {
     const [type, id] = val.split('_');
 
     if (type === 'swapna') {
-      // Get all descendants of this swapna head
-      const descendantIds = getSwapnaDescendants(id);
+      const descendantSwapnaIds = getSwapnaDescendants(id);
+      const descendantItemIds = reportSwapnaItems
+        .filter(item => descendantSwapnaIds.includes(item.swapna_id))
+        .map(item => item.id);
       filtered = reportAllDonations.filter(d =>
-        (d.swapna_id && descendantIds.includes(d.swapna_id)) ||
-        (d.swapna_item_id && descendantIds.includes(d.swapna_item_id))
+        (d.swapna_id && descendantSwapnaIds.includes(d.swapna_id)) ||
+        (d.swapna_item_id && descendantItemIds.includes(d.swapna_item_id))
       );
     } else if (type === 'general') {
       // Get all sub-heads under this general head
@@ -408,36 +410,17 @@ async function downloadExcelReport() {
 
   const wb = XLSX.utils.book_new();
 
-  // ---- Summary Sheet ----
-  const totalEntered = reportAllDonations.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
-  const totalReceived = reportAllDonations.reduce((s, d) => s + parseFloat(d.received_amount || 0), 0);
-  const summaryData = [
-    ['Derasar Boli - Report Summary'],
-    ['Generated on', new Date().toLocaleString('en-IN')],
-    [],
-    ['Total Donations', reportAllDonations.length],
-    ['Total Amount Entered', totalEntered],
-    ['Total Amount Received', totalReceived],
-    ['Pending', reportAllDonations.filter(d => !d.received_amount).length],
-    ['Verified', reportAllDonations.filter(d => d.received_amount && parseFloat(d.received_amount) === parseFloat(d.amount) && d.receipt_id).length],
-    ['Mismatch', reportAllDonations.filter(d => d.received_amount && parseFloat(d.received_amount) !== parseFloat(d.amount)).length],
-  ];
-  const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
-  XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
+  // Helper: style cells
+  const headerStyle = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '7B3F00' } }, alignment: { horizontal: 'center' } };
+  const totalStyle  = { font: { bold: true }, fill: { fgColor: { rgb: 'FFF4E0' } } };
+  const lockedStyle = { fill: { fgColor: { rgb: 'EEEEEE' } }, protection: { locked: true } };
 
-  // ---- One sheet per Main Swapna Head ----
-  const mainSwapnaHeads = reportSwapnaTree.filter(s => !s.parent_id);
-  mainSwapnaHeads.forEach(mainHead => {
-    const descendantIds = getSwapnaDescendants(mainHead.id);
-    const filtered = reportAllDonations.filter(d =>
-      (d.swapna_id && descendantIds.includes(d.swapna_id)) ||
-      (d.swapna_item_id && descendantIds.includes(d.swapna_item_id))
-    );
-
+  // Helper: build a head sheet and return { sheetName, entered, received, pending, verified, mismatch }
+  function buildHeadSheet(wb, sheetLabel, donations) {
     const rows = [
-      ['#', 'Donor Name', 'Phone', 'Family No', 'Head / Sub-head', 'Amt Entered', 'Amt Received', 'Status', 'Receipt No']
+      ['#', 'Donor Name', 'Phone', 'Family No', 'Head / Sub-head', 'Amt Entered (₹)', 'Amt Received (₹)\n[Enter in App only]', 'Status', 'Receipt No']
     ];
-    filtered.forEach((d, i) => {
+    donations.forEach((d, i) => {
       const status = getDonationStatus(d);
       const receiptNo = d._receipt ? d._receipt.receipt_no : '';
       rows.push([
@@ -453,26 +436,54 @@ async function downloadExcelReport() {
       ]);
     });
 
-    // Add total row
-    if (filtered.length > 0) {
+    const entered  = donations.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
+    const received = donations.reduce((s, d) => s + parseFloat(d.received_amount || 0), 0);
+    const pending  = donations.filter(d => !d.received_amount && d.received_amount !== 0).length;
+    const verified = donations.filter(d => d.received_amount && parseFloat(d.received_amount) === parseFloat(d.amount) && d.receipt_id).length;
+    const mismatch = donations.filter(d => d.received_amount && parseFloat(d.received_amount) !== parseFloat(d.amount)).length;
+
+    if (donations.length > 0) {
       rows.push([]);
-      rows.push(['', 'TOTAL', '', '', '',
-        filtered.reduce((s, d) => s + parseFloat(d.amount || 0), 0),
-        filtered.reduce((s, d) => s + parseFloat(d.received_amount || 0), 0),
-        '', ''
-      ]);
+      rows.push(['', 'TOTAL', '', '', '', entered, received, '', '']);
     }
 
-    const sheetName = mainHead.name.substring(0, 28).replace(/[\\\/\?\*\[\]]/g, '');
+    const safeName = sheetLabel.substring(0, 28).replace(/[\\\/\?\*\[\]]/g, '').trim() || 'Sheet';
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [
-      {wch:4},{wch:20},{wch:13},{wch:10},{wch:40},{wch:14},{wch:14},{wch:12},{wch:14}
-    ];
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    ws['!cols'] = [{wch:4},{wch:22},{wch:13},{wch:10},{wch:42},{wch:16},{wch:20},{wch:12},{wch:14}];
+
+    // Mark Amt Received column (col G = index 6) as grey/locked visually
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+    for (let R = 1; R <= range.e.r; R++) {
+      const cellAddr = XLSX.utils.encode_cell({ r: R, c: 6 });
+      if (ws[cellAddr]) {
+        ws[cellAddr].s = lockedStyle;
+      }
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, safeName);
+    return { sheetName: safeName, entered, received, pending, verified, mismatch };
+  }
+
+  // ---- Build all head sheets and collect index data ----
+  const indexRows = [];
+
+  // Swapna heads
+  const mainSwapnaHeads = reportSwapnaTree.filter(s => !s.parent_id).sort((a,b) => (a.sort_order||0)-(b.sort_order||0));
+  mainSwapnaHeads.forEach(mainHead => {
+    const descendantSwapnaIds = getSwapnaDescendants(mainHead.id);
+    const descendantItemIds = reportSwapnaItems
+      .filter(item => descendantSwapnaIds.includes(item.swapna_id))
+      .map(item => item.id);
+    const filtered = reportAllDonations.filter(d =>
+      (d.swapna_id && descendantSwapnaIds.includes(d.swapna_id)) ||
+      (d.swapna_item_id && descendantItemIds.includes(d.swapna_item_id))
+    );
+    const result = buildHeadSheet(wb, mainHead.name, filtered);
+    indexRows.push(result);
   });
 
-  // ---- General Heads Sheet ----
-  const mainGeneralHeads = reportGeneralHeads.filter(h => !h.parent_id);
+  // General heads
+  const mainGeneralHeads = reportGeneralHeads.filter(h => !h.parent_id).sort((a,b) => (a.display_order||0)-(b.display_order||0));
   mainGeneralHeads.forEach(mainHead => {
     const subIds = reportGeneralHeads
       .filter(h => h.parent_id === mainHead.id || h.id === mainHead.id)
@@ -480,48 +491,15 @@ async function downloadExcelReport() {
     const filtered = reportAllDonations.filter(d =>
       d.general_head_id && subIds.includes(d.general_head_id)
     );
-
     if (filtered.length === 0) return;
-
-    const rows = [
-      ['#', 'Donor Name', 'Phone', 'Family No', 'Head / Sub-head', 'Amt Entered', 'Amt Received', 'Status', 'Receipt No']
-    ];
-    filtered.forEach((d, i) => {
-      const status = getDonationStatus(d);
-      const receiptNo = d._receipt ? d._receipt.receipt_no : '';
-      rows.push([
-        i + 1,
-        d.donor_name || '',
-        d.phone || '',
-        d.family_no || '',
-        getDonationHeadName(d),
-        parseFloat(d.amount || 0),
-        parseFloat(d.received_amount || 0),
-        status.label,
-        receiptNo
-      ]);
-    });
-
-    if (filtered.length > 0) {
-      rows.push([]);
-      rows.push(['', 'TOTAL', '', '', '',
-        filtered.reduce((s, d) => s + parseFloat(d.amount || 0), 0),
-        filtered.reduce((s, d) => s + parseFloat(d.received_amount || 0), 0),
-        '', ''
-      ]);
-    }
-
-    const sheetName = ('Gen-' + mainHead.name).substring(0, 28).replace(/[\\\/\?\*\[\]]/g, '');
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [
-      {wch:4},{wch:20},{wch:13},{wch:10},{wch:40},{wch:14},{wch:14},{wch:12},{wch:14}
-    ];
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    const label = 'Gen - ' + mainHead.name;
+    const result = buildHeadSheet(wb, label, filtered);
+    indexRows.push(result);
   });
 
   // ---- All Donations Sheet ----
   const allRows = [
-    ['#', 'Donor Name', 'Phone', 'Family No', 'Head Type', 'Head / Sub-head', 'Amt Entered', 'Amt Received', 'Status', 'Receipt No', 'Date']
+    ['#', 'Donor Name', 'Phone', 'Family No', 'Head Type', 'Head / Sub-head', 'Amt Entered (₹)', 'Amt Received (₹)\n[Enter in App only]', 'Status', 'Receipt No', 'Date']
   ];
   reportAllDonations.forEach((d, i) => {
     const status = getDonationStatus(d);
@@ -540,15 +518,78 @@ async function downloadExcelReport() {
       new Date(d.created_at).toLocaleDateString('en-IN')
     ]);
   });
+  // Total row
+  allRows.push([]);
+  allRows.push(['', 'GRAND TOTAL', '', '', '', '',
+    reportAllDonations.reduce((s,d) => s + parseFloat(d.amount||0), 0),
+    reportAllDonations.reduce((s,d) => s + parseFloat(d.received_amount||0), 0),
+    '', '', ''
+  ]);
+
   const allWs = XLSX.utils.aoa_to_sheet(allRows);
-  allWs['!cols'] = [
-    {wch:4},{wch:20},{wch:13},{wch:10},{wch:10},{wch:40},{wch:14},{wch:14},{wch:12},{wch:14},{wch:12}
-  ];
+  allWs['!cols'] = [{wch:4},{wch:22},{wch:13},{wch:10},{wch:10},{wch:42},{wch:16},{wch:20},{wch:12},{wch:14},{wch:12}];
+  // Grey out Amt Received col (col H = index 7)
+  const allRange = XLSX.utils.decode_range(allWs['!ref'] || 'A1');
+  for (let R = 1; R <= allRange.e.r; R++) {
+    const cellAddr = XLSX.utils.encode_cell({ r: R, c: 7 });
+    if (allWs[cellAddr]) allWs[cellAddr].s = lockedStyle;
+  }
   XLSX.utils.book_append_sheet(wb, allWs, 'All Donations');
 
-  // Download
+  // ---- INDEX Sheet (first sheet) ----
+  const totalEntered  = reportAllDonations.reduce((s,d) => s + parseFloat(d.amount||0), 0);
+  const totalReceived = reportAllDonations.reduce((s,d) => s + parseFloat(d.received_amount||0), 0);
+  const totalPending  = reportAllDonations.filter(d => !d.received_amount && d.received_amount !== 0).length;
+  const totalVerified = reportAllDonations.filter(d => d.received_amount && parseFloat(d.received_amount) === parseFloat(d.amount) && d.receipt_id).length;
+  const totalMismatch = reportAllDonations.filter(d => d.received_amount && parseFloat(d.received_amount) !== parseFloat(d.amount)).length;
+
   const eventSelect = document.getElementById('report-event-select');
-  const eventName = eventSelect ? eventSelect.options[eventSelect.selectedIndex]?.text || 'Report' : 'Report';
+  const eventName = eventSelect ? eventSelect.options[eventSelect.selectedIndex]?.text || 'Paryushan 2026' : 'Paryushan 2026';
+
+  const idxData = [
+    ['🛕 Derasar Boli - ' + eventName],
+    ['Generated on: ' + new Date().toLocaleString('en-IN')],
+    ['⚠️ Amt Received column is READ ONLY — Enter amounts in the App only'],
+    [],
+    ['', 'Head Name', 'Amt Entered (₹)', 'Amt Received (₹)', 'Pending', 'Verified', 'Mismatch', 'Click to Open'],
+  ];
+
+  indexRows.forEach((row, i) => {
+    idxData.push([
+      i + 1,
+      row.sheetName,
+      row.entered,
+      row.received,
+      row.pending,
+      row.verified,
+      row.mismatch,
+      { f: `HYPERLINK("#'${row.sheetName}'!A1","→ Go to Sheet")` }
+    ]);
+  });
+
+  // Also add All Donations link
+  idxData.push([
+    '',
+    'ALL DONATIONS (Full List)',
+    totalEntered,
+    totalReceived,
+    totalPending,
+    totalVerified,
+    totalMismatch,
+    { f: `HYPERLINK("#'All Donations'!A1","→ Go to Sheet")` }
+  ]);
+
+  idxData.push([]);
+  idxData.push(['', 'GRAND TOTAL', totalEntered, totalReceived, totalPending, totalVerified, totalMismatch, '']);
+
+  const idxWs = XLSX.utils.aoa_to_sheet(idxData);
+  idxWs['!cols'] = [{wch:4},{wch:42},{wch:16},{wch:16},{wch:10},{wch:10},{wch:10},{wch:16}];
+
+  // Insert Index as FIRST sheet
+  wb.SheetNames.unshift('Index');
+  wb.Sheets['Index'] = idxWs;
+
+  // Download
   const fileName = `DerasarBoli_${eventName.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.xlsx`;
   XLSX.writeFile(wb, fileName);
   showToast('✅ Excel downloaded!', 'success');
