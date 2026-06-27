@@ -98,7 +98,7 @@ function renderMainHead(head, children, allData) {
 
   return `
     <div style="border:2px solid var(--primary);border-radius:10px;margin-bottom:12px;overflow:hidden;">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--primary-light, #fdf3e3);cursor:pointer;"
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#ffffff;cursor:pointer;"
            onclick="toggleHead('${head.id}')">
         <strong style="color:var(--primary);font-size:15px;">
           ${isExpanded ? '▼' : '▶'} ${head.name}
