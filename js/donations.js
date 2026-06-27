@@ -234,8 +234,8 @@ function showDonationModal(headId, headName, headType, prefillMemberId) {
         <input type="text" id="modal-other-name" placeholder="Donor name" />
       </div>
       <div class="form-group">
-        <label>Phone No.</label>
-        <input type="tel" id="modal-other-phone" placeholder="Mobile number" />
+        <label>Phone No. (10 digits)</label>
+        <input type="tel" id="modal-other-phone" placeholder="_ _ _ _ _ _ _ _ _ _" maxlength="10" inputmode="numeric" style="letter-spacing:3px;font-size:15px;font-weight:600;" oninput="this.value=this.value.replace(/[^0-9]/g,'')" />
       </div>
     </div>
 
@@ -257,8 +257,6 @@ function showDonationModal(headId, headName, headType, prefillMemberId) {
       <input type="number" id="modal-amount" placeholder="0" min="1" />
     </div>
     <div class="form-group">
-      <label>Note (optional)</label>
-      <input type="text" id="modal-note" placeholder="Any note..." />
     </div>
 
     <div class="modal-actions">
@@ -327,7 +325,7 @@ function clearModalMember() {
 async function saveDonationFromModal(headId, headName, headType) {
   const donorType = document.getElementById('modal-donor-type').value;
   const amount = parseFloat(document.getElementById('modal-amount').value);
-  const note = document.getElementById('modal-note').value.trim();
+  const note = '';
 
   if (!donorType) { showToast('Select donor type', 'error'); return; }
   if (!amount || amount <= 0) { showToast('Enter valid amount', 'error'); return; }
@@ -461,8 +459,6 @@ async function showEditDonationModal(id, refreshFn) {
       <input type="number" id="edit-don-amount" value="${d.amount}" min="1" />
     </div>
     <div class="form-group">
-      <label>Note (optional)</label>
-      <input type="text" id="edit-don-note" value="${d.note || ''}" placeholder="Any note..." />
     </div>
     <div class="modal-actions">
       <button class="btn-primary" onclick="updateDonation('${id}','${refreshFn}')">Update</button>
