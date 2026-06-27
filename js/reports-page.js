@@ -64,11 +64,11 @@ async function loadReport() {
     { data: generalHeads },
     { data: receipts }
   ] = await Promise.all([
-    db.from('donations').select('*').eq('event_id', reportEventId).order('created_at', { ascending: true }),
+    db.from('donations').select('*').or(`event_id.eq.${reportEventId},event_id.is.null`).order('created_at', { ascending: true }),
     db.from('swapna').select('*').eq('event_id', reportEventId).order('sort_order'),
     db.from('swapna_items').select('*'),
     db.from('general_heads').select('*').order('display_order'),
-    db.from('receipts').select('*').eq('event_id', reportEventId)
+    db.from('receipts').select('*').or(`event_id.eq.${reportEventId},event_id.is.null`)
   ]);
 
   reportAllDonations = donations || [];
