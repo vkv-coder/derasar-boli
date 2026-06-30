@@ -4,6 +4,7 @@
 
 let selectedEventForHeads = null;
 let expandedHeads = {};  // track which heads are expanded
+let expandedGeneralHeads = {};  // track which general heads are expanded
 
 const DEFAULT_GENERAL_HEADS = [
   'sadharan', 'gyan khate', 'jivdaya khate', 'Angi khate',
@@ -33,7 +34,7 @@ async function renderHeads() {
         <h3>🔷 General Donation Heads</h3>
         <div style="display:flex;gap:8px;">
           <button class="btn-sm btn-secondary" onclick="loadDefaultHeads()">Load Defaults</button>
-          <button class="btn-accent btn-sm" onclick="showAddGeneralHeadModal()">+ Add Head</button>
+          <button class="btn-accent btn-sm" onclick="showAddGeneralHeadModal()">+ Add Main Head</button>
         </div>
       </div>
       <div id="general-heads-list">Loading...</div>
@@ -255,7 +256,7 @@ async function deleteSwapnaItem(id) {
   await loadSwapnaList();
 }
 
-// ========== GENERAL HEADS (independent of event) ==========
+// ========== GENERAL HEADS (independent of event) - NESTED DISPLAY ==========
 async function loadGeneralHeadsList() {
   const { data, error } = await db
     .from('general_heads')
@@ -270,25 +271,52 @@ async function loadGeneralHeadsList() {
     return;
   }
 
-  el.innerHTML = `
-    <table class="data-table">
-      <thead><tr><th>#</th><th>Head Name</th><th>Actions</th></tr></thead>
-      <tbody>
-        ${data.map((h, i) => `
-          <tr>
-            <td>${i + 1}</td>
-            <td>${h.name}</td>
-            <td>
+  // Separate main heads (parent_id IS NULL) from sub-heads
+  const mainHeads = data.filter(h => !h.parent_id);
+  const subHeads = data.filter(h => h.parent_id);
+
+  el.innerHTML = mainHeads.map((head, i) => renderGeneralMainHead(head, i + 1, subHeads)).join('');
+}
+
+function renderGeneralMainHead(head, num, subHeads) {
+  const isExpanded = expandedGeneralHeads[head.id];
+  const mySubHeads = subHeads.filter(s => s.parent_id === head.id).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
+  const hasSubHeads = mySubHeads.length > 0;
+
+  return `
+    <div style="border:2px solid var(--primary);border-radius:10px;margin-bottom:12px;overflow:hidden;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#ffffff;cursor:pointer;"
+           onclick="toggleGeneralHead('${head.id}')">
+        <strong style="color:var(--primary);font-size:15px;">
+          ${hasSubHeads ? (isExpanded ? '▼' : '▶') : '◦'} ${num}. ${head.name}
+          ${hasSubHeads ? `<span style="font-size:11px;font-weight:400;color:var(--text-muted);"> (${mySubHeads.length} sub)</span>` : ''}
+        </strong>
+        <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
+          <button class="btn-sm btn-secondary" onclick="showAddGeneralSubHeadModal('${head.id}','${head.name.replace(/'/g,"\\'")}')">+ Sub</button>
+          <button class="btn-sm btn-secondary" onclick="showEditGeneralHeadModal('${head.id}','${head.name.replace(/'/g,"\\'")}')">Edit</button>
+          <button class="btn-sm btn-danger" onclick="deleteGeneralHead('${head.id}')">Delete</button>
+        </div>
+      </div>
+      ${isExpanded && hasSubHeads ? `
+        <div style="padding:8px 16px 12px 24px;">
+          ${mySubHeads.map(sub => `
+            <div class="list-item" style="padding:6px 0;display:flex;align-items:center;justify-content:space-between;">
+              <span style="font-size:13px;color:var(--text);">└ ${sub.name}</span>
               <div style="display:flex;gap:6px;">
-                <button class="btn-sm btn-secondary" onclick="showEditGeneralHeadModal('${h.id}','${h.name.replace(/'/g,"\\'")}')">Edit</button>
-                <button class="btn-sm btn-danger" onclick="deleteGeneralHead('${h.id}')">Delete</button>
+                <button class="btn-sm btn-secondary" onclick="showEditGeneralHeadModal('${sub.id}','${sub.name.replace(/'/g,"\\'")}')">Edit</button>
+                <button class="btn-sm btn-danger" onclick="deleteGeneralHead('${sub.id}')">✕</button>
               </div>
-            </td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    </div>
   `;
+}
+
+function toggleGeneralHead(id) {
+  expandedGeneralHeads[id] = !expandedGeneralHeads[id];
+  loadGeneralHeadsList();
 }
 
 async function loadDefaultHeads() {
@@ -302,10 +330,10 @@ async function loadDefaultHeads() {
 
 function showAddGeneralHeadModal() {
   showModal(`
-    <div class="modal-title">Add General Head</div>
+    <div class="modal-title">Add Main Head</div>
     <div class="form-group">
       <label>Head Name</label>
-      <input type="text" id="gh-name" placeholder="e.g. Jivdaya" />
+      <input type="text" id="gh-name" placeholder="e.g. જ્ઞાન ખાતે" />
     </div>
     <div class="modal-actions">
       <button class="btn-primary" onclick="addGeneralHead()">Save</button>
@@ -321,6 +349,31 @@ async function addGeneralHead() {
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Head added!', 'success');
+  await loadGeneralHeadsList();
+}
+
+function showAddGeneralSubHeadModal(parentId, parentName) {
+  showModal(`
+    <div class="modal-title">Add Sub-head to ${parentName}</div>
+    <div class="form-group">
+      <label>Sub-head Name</label>
+      <input type="text" id="gh-sub-name" placeholder="e.g. સ્વસ્તિક" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="addGeneralSubHead('${parentId}')">Save</button>
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+    </div>
+  `);
+}
+
+async function addGeneralSubHead(parentId) {
+  const name = document.getElementById('gh-sub-name').value.trim();
+  if (!name) { showToast('Enter sub-head name', 'error'); return; }
+  const { error } = await db.from('general_heads').insert({ name, parent_id: parentId });
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  closeModal();
+  showToast('Sub-head added!', 'success');
+  expandedGeneralHeads[parentId] = true;
   await loadGeneralHeadsList();
 }
 
@@ -348,7 +401,7 @@ async function updateGeneralHead(id) {
 }
 
 async function deleteGeneralHead(id) {
-  if (!confirm('Delete this head?')) return;
+  if (!confirm('Delete this head? If it has sub-heads, they will also need to be deleted separately.')) return;
   await db.from('general_heads').delete().eq('id', id);
   showToast('Head deleted');
   await loadGeneralHeadsList();
