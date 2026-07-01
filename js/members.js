@@ -23,7 +23,7 @@ async function renderMembers() {
 }
 
 async function loadMembersStats() {
-  const { data } = await db.from('members').select('family_no, phone_no, family_member_count');
+  const { data } = await db.from('members').select('family_no, phone_no, family_member_count').eq('org_id', currentOrgId);
   const el = document.getElementById('members-stats');
   if (!el || !data) return;
   const uniqueFamilies = new Set(data.map(m => m.family_no).filter(Boolean)).size;
@@ -54,7 +54,7 @@ function sortFamilyNo(data) {
 }
 
 async function loadMembersList(query = '') {
-  let req = db.from('members').select('*');
+  let req = db.from('members').select('*').eq('org_id', currentOrgId);
   if (query) req = req.or(`person_name.ilike.%${query}%,family_no.ilike.%${query}%,phone_no.ilike.%${query}%`);
   const { data: raw, error } = await req;
   const data = raw ? sortFamilyNo(raw) : raw;
@@ -150,7 +150,7 @@ async function addMember(familyNo = null, personName = null) {
   if (!family_no || !person_name) { showToast('Family No. and Name are required', 'error'); return null; }
 
   const { data, error } = await db.from('members')
-    .insert({ family_no, person_name, phone_no, address, family_member_count })
+    .insert({ family_no, person_name, phone_no, address, family_member_count, org_id: currentOrgId })
     .select().single();
   if (error) { showToast('Error: ' + error.message, 'error'); return null; }
 
@@ -221,7 +221,6 @@ async function deleteMember(id) {
   await Promise.all([loadMembersStats(), loadMembersList()]);
 }
 
-// ========== DONOR HISTORY ==========
 async function showDonorHistory(memberId, memberName, familyNo) {
   showModal(`<div class="modal-title">📜 ${memberName}</div><p style="color:var(--text-muted);font-size:13px;">Loading receipts...</p>`);
 
@@ -247,11 +246,8 @@ async function showDonorHistory(memberId, memberName, familyNo) {
     <div class="modal-title">📜 ${memberName}</div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
       Family No: ${familyNo} &nbsp;·&nbsp; ${receipts.length} receipts
-      ${memberPhone
-        ? `&nbsp;·&nbsp; 📞 ${memberPhone}`
-        : `&nbsp;·&nbsp; <span style="color:#f44;font-weight:600;">⚠ No phone — WhatsApp will open without number</span>`}
+      ${memberPhone ? `&nbsp;·&nbsp; 📞 ${memberPhone}` : `&nbsp;·&nbsp; <span style="color:#f44;font-weight:600;">⚠ No phone</span>`}
     </div>
-
     <div style="display:flex;gap:8px;margin-bottom:14px;">
       <div style="flex:1;background:var(--primary);color:white;border-radius:8px;padding:10px;text-align:center;">
         <div style="font-size:10px;opacity:.8;">Total Donated</div>
@@ -267,7 +263,6 @@ async function showDonorHistory(memberId, memberName, familyNo) {
         <div style="font-size:20px;font-weight:800;">${formatAmount(grandTotal - paidTotal)}</div>
       </div>` : ''}
     </div>
-
     <div style="max-height:380px;overflow-y:auto;">
       ${receipts.map(r => {
         const dt = new Date(r.created_at).toLocaleDateString('en-IN', {day:'2-digit',month:'2-digit',year:'numeric'});
@@ -297,7 +292,6 @@ async function showDonorHistory(memberId, memberName, familyNo) {
         </div>`;
       }).join('')}
     </div>
-
     <div class="modal-actions" style="margin-top:10px;">
       <button class="btn-secondary" onclick="closeModal()">Close</button>
     </div>
