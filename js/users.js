@@ -20,20 +20,10 @@ async function renderUsers() {
 }
 
 async function loadUsersList() {
-  const { data, error } = await db
+  const { data: users, error } = await db
     .from('profiles')
-    .select('*, auth_email:id')
-    .order('created_at');
-
-  // Get emails from auth.users via a join
-  const { data: users, error: err } = await db
-    .from('profiles')
-    .select(`
-      id,
-      full_name,
-      role,
-      created_at
-    `)
+    .select('id, full_name, role, created_at')
+    .eq('org_id', currentOrgId)
     .order('created_at');
 
   const el = document.getElementById('users-list');
@@ -46,7 +36,7 @@ async function loadUsersList() {
     <table class="data-table">
       <thead>
         <tr>
-          <th>Name / Email</th>
+          <th>Name</th>
           <th>Role</th>
           <th>Actions</th>
         </tr>
@@ -54,9 +44,7 @@ async function loadUsersList() {
       <tbody>
         ${users.map(u => `
           <tr>
-            <td>
-              <div style="font-weight:600;">${u.full_name}</div>
-            </td>
+            <td><div style="font-weight:600;">${u.full_name}</div></td>
             <td>
               <span class="badge ${u.role === 'admin' ? 'badge-swapna' : 'badge-general'}">
                 ${u.role === 'admin' ? '🔑 Admin' : '✏️ Operator'}
@@ -109,19 +97,13 @@ function showAddUserModal() {
 
 async function createAppUser() {
   const full_name = document.getElementById('new-user-name').value.trim();
-  const email = document.getElementById('new-user-email').value.trim();
-  const password = document.getElementById('new-user-password').value.trim();
-  const role = document.getElementById('new-user-role').value;
-  const errEl = document.getElementById('add-user-error');
+  const email     = document.getElementById('new-user-email').value.trim();
+  const password  = document.getElementById('new-user-password').value.trim();
+  const role      = document.getElementById('new-user-role').value;
+  const errEl     = document.getElementById('add-user-error');
 
-  if (!full_name || !email || !password) {
-    errEl.textContent = 'Please fill all fields.';
-    return;
-  }
-  if (password.length < 6) {
-    errEl.textContent = 'Password must be at least 6 characters.';
-    return;
-  }
+  if (!full_name || !email || !password) { errEl.textContent = 'Please fill all fields.'; return; }
+  if (password.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; return; }
 
   errEl.textContent = 'Creating user...';
 
@@ -136,12 +118,11 @@ async function createAppUser() {
         'Authorization': `Bearer ${session.access_token}`,
         'apikey': SUPABASE_ANON_KEY
       },
-      body: JSON.stringify({ email, password, full_name, role })
+      body: JSON.stringify({ email, password, full_name, role, org_id: currentOrgId })
     });
     rawText = await response.text();
   } catch (fetchErr) {
     errEl.textContent = 'Network error: ' + fetchErr.message;
-    showToast('❌ Network error: ' + fetchErr.message, 'error');
     return;
   }
 
@@ -149,11 +130,8 @@ async function createAppUser() {
     let msg = rawText;
     try { msg = JSON.parse(rawText).error || rawText; } catch(e) {}
     errEl.textContent = 'Error: ' + msg;
-    showToast('❌ ' + msg, 'error');
     return;
   }
-
-  const result = JSON.parse(rawText);
 
   closeModal();
   showToast(`✅ User "${full_name}" created as ${role}!`, 'success');
@@ -180,31 +158,17 @@ function showChangePasswordModal() {
 }
 
 async function changeMyPassword() {
-  const newPwd = document.getElementById('new-pwd').value.trim();
+  const newPwd     = document.getElementById('new-pwd').value.trim();
   const confirmPwd = document.getElementById('confirm-pwd').value.trim();
-  const errEl = document.getElementById('pwd-error');
+  const errEl      = document.getElementById('pwd-error');
 
-  if (!newPwd || !confirmPwd) {
-    errEl.textContent = 'Please fill both fields.';
-    return;
-  }
-  if (newPwd.length < 6) {
-    errEl.textContent = 'Password must be at least 6 characters.';
-    return;
-  }
-  if (newPwd !== confirmPwd) {
-    errEl.textContent = 'Passwords do not match.';
-    return;
-  }
+  if (!newPwd || !confirmPwd) { errEl.textContent = 'Please fill both fields.'; return; }
+  if (newPwd.length < 6)      { errEl.textContent = 'Password must be at least 6 characters.'; return; }
+  if (newPwd !== confirmPwd)  { errEl.textContent = 'Passwords do not match.'; return; }
 
   errEl.textContent = 'Updating...';
-
   const { error } = await db.auth.updateUser({ password: newPwd });
-  if (error) {
-    errEl.textContent = 'Error: ' + error.message;
-    return;
-  }
-
+  if (error) { errEl.textContent = 'Error: ' + error.message; return; }
   closeModal();
   showToast('✅ Password updated successfully!', 'success');
 }
@@ -226,7 +190,6 @@ async function deleteAppUser(id, name) {
       body: JSON.stringify({ userId: id })
     });
     rawText = await response.text();
-    console.log('DELETE USER RESPONSE:', response.status, rawText);
   } catch (fetchErr) {
     showToast('Network error: ' + fetchErr.message, 'error');
     return;
