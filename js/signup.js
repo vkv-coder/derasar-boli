@@ -45,8 +45,8 @@ async function submitSignup() {
     userId = signInData.user.id;
 
     // Step 3: make sure this login isn't already running a Sangh here
-    const { data: existingProfile } = await db.from('profiles').select('id').eq('id', userId).maybeSingle();
-    if (existingProfile) {
+    const { data: existingProfile } = await db.from('profiles').select('id, org_id').eq('id', userId).maybeSingle();
+    if (existingProfile && existingProfile.org_id) {
       msgEl.textContent = 'This email is already linked to a Sangh on Derasar Boli. One login can manage only one Sangh. Contact support to add another Sangh.';
       await db.auth.signOut();
       setSubmitting(false);
@@ -73,15 +73,15 @@ async function submitSignup() {
     return;
   }
 
-  // Step 5: create profile linked to new org, pending approval, as Admin
-  const { error: profErr } = await db.from('profiles').insert({
+  // Step 5: save profile (upsert — works whether or not a profile row already exists for this login)
+  const { error: profErr } = await db.from('profiles').upsert({
     id: userId,
     full_name: sanghName,
     role: 'admin',
     org_id: orgData.id,
     status: 'pending',
     phone: phone
-  });
+  }, { onConflict: 'id' });
 
   if (profErr) {
     msgEl.textContent = 'Error: ' + profErr.message;
