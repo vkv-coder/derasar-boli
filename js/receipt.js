@@ -1,15 +1,17 @@
 // ==========================================
-// DERASAR BOLI - Receipt Generator (v2)
-// Supports multi-head receipts via receipts table
+// DERASAR BOLI - Receipt Generator (v3 - Multi-tenant)
 // ==========================================
 
-const TEMPLE_HEADER = `
+function buildTempleHeader(org) {
+  if (!org) org = {};
+  return `
   <div class="org-header">
-    <div class="org-namah">|| શ્રી શંખેશ્વર પાર્શ્વનાથાય નમઃ ||</div>
-    <div class="org-name">શ્રી શાંતિલાલ કેશવલાલ શાહ ગોત્રી રોડ<br>શ્વેતાંબર મૂર્તિપૂજક જૈન સંઘ</div>
-    <div class="org-addr">"શાંતિનિકેતન", ૨૫-એ, હરિનગર સોસાયટી,<br>ગોત્રી રોડ, વડોદરા - ૩૯૦ ૦૦૭.</div>
-    <div class="org-reg">PAN : AAFTS8878E &nbsp;|&nbsp; Public Trust Reg. A/3024/Vadodara, dt. 02-08-2004</div>
+    ${org.namah ? `<div class="org-namah">${org.namah}</div>` : ''}
+    <div class="org-name">${org.name || 'Derasar Boli'}</div>
+    ${org.address ? `<div class="org-addr">${org.address}</div>` : ''}
+    ${org.pan_no ? `<div class="org-reg">PAN : ${org.pan_no}</div>` : ''}
   </div>`;
+}
 
 const RECEIPT_CSS = `
   *{box-sizing:border-box;margin:0;padding:0}
@@ -56,7 +58,6 @@ const RECEIPT_CSS = `
     .btns{display:none}
   }`;
 
-// ─── MULTI-HEAD RECEIPT (via receipts table) ──────────────────────────────────
 async function showReceiptById(receiptId, sendWhatsApp, phoneHint) {
   const { data: receipt, error: rErr } = await db.from('receipts').select('*').eq('id', receiptId).single();
   if (rErr || !receipt) { showToast('Could not load receipt', 'error'); return; }
@@ -64,8 +65,12 @@ async function showReceiptById(receiptId, sendWhatsApp, phoneHint) {
   const { data: donations } = await db.from('donations').select('*').eq('receipt_id', receiptId);
   const { data: ev } = await db.from('events').select('name').eq('id', receipt.event_id).single();
   const { data: memberData } = await db.from('members').select('phone_no').eq('id', receipt.member_id).single();
-  // phoneHint passed from member history takes priority (covers case where DB has no phone yet)
   const memberPhone = ((phoneHint || memberData?.phone_no || '')).replace(/\D/g, '');
+
+  // Load org for this receipt
+  const { data: orgData } = await db.from('organizations').select('*').eq('id', receipt.org_id || currentOrgId).single();
+  const org = orgData || currentOrg;
+  const templeHeader = buildTempleHeader(org);
 
   // Resolve head names
   const rows = [];
@@ -87,7 +92,6 @@ async function showReceiptById(receiptId, sendWhatsApp, phoneHint) {
   const total = parseFloat(receipt.total_amount);
   const isPaid = receipt.is_paid;
   const payMode = receipt.payment_mode;
-
   const payModeDisplay = { cash: 'રોકડ (Cash)', cheque: 'ચેક (Cheque)', online: 'ઓનલાઇન / UPI', pending: 'બાકી (Pending)' };
 
   const tableRows = rows.map(r => `
@@ -100,10 +104,8 @@ async function showReceiptById(receiptId, sendWhatsApp, phoneHint) {
   const payInfoHTML = isPaid ? `
     <div class="pay-info">
       <strong>ચૂકવણી પ્રકાર :</strong> ${payModeDisplay[payMode] || payMode}
-      ${(payMode === 'cheque' || payMode === 'online') && receipt.bank_name
-        ? `<br><strong>Bank :</strong> ${receipt.bank_name}` : ''}
-      ${(payMode === 'cheque' || payMode === 'online') && receipt.utr_no
-        ? `<br><strong>${payMode === 'cheque' ? 'Cheque No.' : 'UTR No.'} :</strong> ${receipt.utr_no}` : ''}
+      ${(payMode === 'cheque' || payMode === 'online') && receipt.bank_name ? `<br><strong>Bank :</strong> ${receipt.bank_name}` : ''}
+      ${(payMode === 'cheque' || payMode === 'online') && receipt.utr_no ? `<br><strong>${payMode === 'cheque' ? 'Cheque No.' : 'UTR No.'} :</strong> ${receipt.utr_no}` : ''}
     </div>` : `<div style="text-align:center;margin-bottom:8px;"><span class="pending-badge">⏳ PENDING PAYMENT</span></div>`;
 
   const html = `<!DOCTYPE html>
@@ -130,24 +132,21 @@ function downloadReceipt() {
   setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
 }
 
-// Pre-captured blob so Web Share fires instantly on mobile (user-gesture window).
 let _receiptBlob = null;
-
 async function captureReceiptBlob() {
   try {
-    const canvas = await html2canvas(document.querySelector('.receipt'),
-      { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+    const canvas = await html2canvas(document.querySelector('.receipt'), { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
     canvas.toBlob(function(b) { _receiptBlob = b; }, 'image/png');
   } catch(e) {}
 }
 
 async function sendWA() {
-  const waNum     = MEMBER_PHONE.length === 10 ? '91' + MEMBER_PHONE : MEMBER_PHONE;
-  const waUrl     = 'https://wa.me/' + waNum + '?text=' + encodeURIComponent('🙏 Receipt No. ' + RECEIPT_NO);
-  const fileName  = 'Receipt-' + RECEIPT_NO + '.png';
-  const waBtn     = document.getElementById('wa-btn');
-  const info      = document.getElementById('wa-info');
-  const isMobile  = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const waNum = MEMBER_PHONE.length === 10 ? '91' + MEMBER_PHONE : MEMBER_PHONE;
+  const waUrl = 'https://wa.me/' + waNum + '?text=' + encodeURIComponent('🙏 Receipt No. ' + RECEIPT_NO);
+  const fileName = 'Receipt-' + RECEIPT_NO + '.png';
+  const waBtn = document.getElementById('wa-btn');
+  const info = document.getElementById('wa-info');
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
   async function tryShare(blob) {
     const file = new File([blob], fileName, { type: 'image/png' });
@@ -168,15 +167,11 @@ async function sendWA() {
     setTimeout(function() { window.open(waUrl); }, 500);
   }
 
-  // ── MOBILE ──────────────────────────────────────────────────────────────────
   if (isMobile) {
-    // Blob pre-captured → share fires immediately within the tap gesture.
     if (_receiptBlob) { await tryShare(_receiptBlob); return; }
-    // Blob not ready yet (slow device): capture now and attempt share.
     if (waBtn) { waBtn.textContent = '⏳ Preparing...'; waBtn.disabled = true; }
     try {
-      const canvas = await html2canvas(document.querySelector('.receipt'),
-        { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+      const canvas = await html2canvas(document.querySelector('.receipt'), { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
       canvas.toBlob(async function(blob) {
         _receiptBlob = blob;
         if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
@@ -189,16 +184,12 @@ async function sendWA() {
     return;
   }
 
-  // ── DESKTOP ──────────────────────────────────────────────────────────────────
   if (waBtn) { waBtn.textContent = '⏳ Preparing...'; waBtn.disabled = true; }
   try {
-    const blob = _receiptBlob
-      ? _receiptBlob
-      : await new Promise(async function(res) {
-          const canvas = await html2canvas(document.querySelector('.receipt'),
-            { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
-          canvas.toBlob(res, 'image/png');
-        });
+    const blob = _receiptBlob ? _receiptBlob : await new Promise(async function(res) {
+      const canvas = await html2canvas(document.querySelector('.receipt'), { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+      canvas.toBlob(res, 'image/png');
+    });
     if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
     desktopSend(blob);
   } catch(err) {
@@ -208,10 +199,10 @@ async function sendWA() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-  // Start pre-capturing PNG immediately so it's ready when user taps WhatsApp.
   setTimeout(captureReceiptBlob, 200);
   if (AUTO_SEND) setTimeout(sendWA, 800);
 });
+
 function numToGujaratiWords(n) {
   if (!n || n === 0) return 'શૂન્ય';
   const ones = ['','એક','બે','ત્રણ','ચાર','પાંચ','છ','સાત','આઠ','નવ','દસ','અગિયાર','બાર','તેર','ચૌદ','પંદર','સોળ','સત્તર','અઢાર','ઓગણીસ'];
@@ -230,52 +221,30 @@ function numToGujaratiWords(n) {
 </head>
 <body>
 <div class="receipt">
-  ${TEMPLE_HEADER}
+  ${templeHeader}
   <div class="receipt-body">
     <div class="receipt-title">
       <span class="rt-label">પહોંચ &nbsp;·&nbsp; RECEIPT</span>
       <span class="rt-no">ન.&nbsp;${receipt.receipt_no}</span>
     </div>
     ${!isPaid ? '<div style="text-align:center;margin-bottom:6px;"><span class="pending-badge">⏳ ચૂકવણી બાકી (PENDING)</span></div>' : ''}
-    <div class="meta" style="justify-content:flex-end;">
-      <span>તા. : ${dateStr}</span>
-    </div>
-    <div class="row">
-      <span class="row-label">નામ :</span>
-      <span class="row-value">${receipt.receipt_name}</span>
-    </div>
-    <div class="row">
-      <span class="row-label">કુટુંબ ક્રમ :</span>
-      <span class="row-value">${receipt.family_no || '—'}</span>
-    </div>
+    <div class="meta" style="justify-content:flex-end;"><span>તા. : ${dateStr}</span></div>
+    <div class="row"><span class="row-label">નામ :</span><span class="row-value">${receipt.receipt_name}</span></div>
+    <div class="row"><span class="row-label">કુટુંબ ક્રમ :</span><span class="row-value">${receipt.family_no || '—'}</span></div>
     <table class="heads-table">
-      <thead>
-        <tr>
-          <th style="width:28px;text-align:center;">ક્ર.</th>
-          <th>દાન ની વિગત</th>
-          <th>રકમ</th>
-        </tr>
-      </thead>
+      <thead><tr><th style="width:28px;text-align:center;">ક્ર.</th><th>દાન ની વિગત</th><th>રકમ</th></tr></thead>
       <tbody>${tableRows}</tbody>
     </table>
-
-    <div class="total-row">
-      <span class="lbl">કુલ (Total)</span>
-      <span class="val">₹ ${total.toLocaleString('en-IN')} /-</span>
-    </div>
+    <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
     <div class="words-row">${numToGujaratiWords(total)} રૂપિયા</div>
-
     ${payInfoHTML}
-
     ${receipt.notes ? `<div class="row" style="margin-bottom:8px;"><span class="row-label">નોંધ :</span><span class="row-value" style="font-size:11px;">${receipt.notes}</span></div>` : ''}
-
     <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
     <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
   </div>
 </div>
 <div id="wa-info" style="display:none;background:#e8f5e9;border:1.5px solid #4CAF50;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:12px;color:#1b5e20;text-align:center;line-height:1.6;">
-  ✅ Receipt PNG downloaded. WhatsApp opened to recipient.<br>
-  In WhatsApp: tap <strong>📎 Attach</strong> → select the PNG from Downloads → Send.
+  ✅ Receipt PNG downloaded. WhatsApp opened.<br>In WhatsApp: tap 📎 Attach → select PNG → Send.
 </div>
 <div class="btns">
   <button class="btn btn-print" onclick="window.print()">🖨 Print (A6)</button>
@@ -292,14 +261,14 @@ function numToGujaratiWords(n) {
   win.document.close();
 }
 
-// ─── SINGLE-DONATION RECEIPT (backward compat) ────────────────────────────────
 async function showDonationReceipt(donationId) {
   const { data: d, error } = await db.from('donations').select('*').eq('id', donationId).single();
   if (error || !d) { showToast('Could not load donation', 'error'); return; }
-  // If this donation belongs to a receipts-table record, use the new format
   if (d.receipt_id) { await showReceiptById(d.receipt_id, false); return; }
 
-  const { data: ev } = await db.from('events').select('name').eq('id', d.event_id).single();
+  const org = currentOrg;
+  const templeHeader = buildTempleHeader(org);
+
   let headName = '', itemName = '';
   if (d.head_type === 'general_head' && d.general_head_id) {
     const { data: h } = await db.from('general_heads').select('name').eq('id', d.general_head_id).single();
@@ -326,13 +295,12 @@ async function showDonationReceipt(donationId) {
 </head>
 <body>
 <div class="receipt">
-  ${TEMPLE_HEADER}
+  ${templeHeader}
   <div class="receipt-body">
     <div class="receipt-title">પહોંચ &nbsp;·&nbsp; RECEIPT</div>
     <div class="meta"><span>ન. : ${receiptNo}</span><span>તા. : ${receiptDate}</span></div>
     <div class="row"><span class="row-label">નામ :</span><span class="row-value">${d.donor_name}</span></div>
     <div class="row"><span class="row-label">કુટુંબ ક્રમ :</span><span class="row-value">${d.family_no || '—'}</span></div>
-    ${d.note ? `<div class="row"><span class="row-label">નોંધ :</span><span class="row-value" style="font-size:11px">${d.note}</span></div>` : ''}
     <table class="heads-table">
       <thead><tr><th style="width:28px;text-align:center;">ક્ર.</th><th>દાન ની વિગત</th><th>રકમ</th></tr></thead>
       <tbody><tr><td style="text-align:center;color:#888;">1</td><td>${headName}${itemName ? ' → ' + itemName : ''}</td><td>₹ ${total.toLocaleString('en-IN')}</td></tr></tbody>
@@ -356,7 +324,6 @@ async function showDonationReceipt(donationId) {
   win.document.close();
 }
 
-// ─── NUMBER → GUJARATI WORDS ──────────────────────────────────────────────────
 function numToGujaratiWords(n) {
   if (!n || n === 0) return 'શૂન્ય';
   const ones = ['', 'એક', 'બે', 'ત્રણ', 'ચાર', 'પાંચ', 'છ', 'સાત', 'આઠ', 'નવ',
