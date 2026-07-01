@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Derasar Boli - Demo</title>
+  <link rel="icon" href="temple.png" />
+  <meta name="theme-color" content="#7B3F00" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="demo-entry-screen" class="screen active">
+      <div class="login-box">
+        <div class="logo-area">
+          <img src="temple.png" alt="Shankheshwar Parshwanath" style="width:100px;height:70px;object-fit:cover;border-radius:8px;margin-bottom:8px;" />
+          <h1>Derasar Boli</h1>
+          <p class="subtitle">🙏 Demo (View Only) 🙏</p>
+        </div>
+        <div class="form-group">
+          <label>Your Phone Number</label>
+          <input type="tel" id="demo-phone" placeholder="10-digit mobile number" maxlength="10" />
+        </div>
+        <button class="btn-primary" id="demo-btn" onclick="enterDemo()">View Demo</button>
+        <div id="demo-msg" class="error-msg"></div>
+        <div style="text-align:center;margin-top:16px;font-size:12px;color:var(--text-muted);">
+          You can browse every page. No changes will be saved.
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN APP (same as live app, but locked to Demo Sangh + view-only) -->
+    <div id="main-screen" class="screen" style="display:none;">
+
+      <div id="demo-banner" style="background:#FFF3CD;color:#7B3F00;text-align:center;padding:8px;font-weight:700;font-size:13px;">
+        🔒 DEMO MODE — View Only, no changes are saved
+      </div>
+
+      <!-- Temple Banner -->
+      <div class="temple-banner">
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;">
+          <img src="temple.png" alt="Temple" style="width:48px;height:36px;object-fit:cover;border-radius:4px;border:2px solid var(--primary);" />
+          <div>
+            <div class="gujarati-text">Loading...</div>
+            <div class="sangh-name">Loading...</div>
+          </div>
+          <img src="temple.png" alt="Temple" style="width:48px;height:36px;object-fit:cover;border-radius:4px;border:2px solid var(--primary);" />
+        </div>
+      </div>
+
+      <!-- Top Bar -->
+      <div class="topbar">
+        <div class="topbar-left">
+          <span class="app-title">🛕 Derasar Boli (Demo)</span>
+        </div>
+        <div class="topbar-right">
+          <span id="user-role-badge" class="role-badge"></span>
+          <button class="btn-logout" onclick="location.reload()">Exit Demo</button>
+        </div>
+      </div>
+
+      <!-- Nav Tabs -->
+      <div class="nav-tabs" id="nav-tabs"></div>
+
+      <!-- Page Content -->
+      <div id="page-content" class="page-content"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <div id="modal-overlay" class="modal-overlay" style="display:none">
+    <div class="modal-box" id="modal-box"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/members.js"></script>
+  <script src="js/donors.js"></script>
+  <script src="js/events.js"></script>
+  <script src="js/heads.js"></script>
+  <script src="js/donations.js"></script>
+  <script src="js/reports-page.js"></script>
+  <script src="js/reports.js"></script>
+  <script src="js/receipt.js"></script>
+  <script src="js/users.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/demo.js"></script>
+</body>
+</html>
