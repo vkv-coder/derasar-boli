@@ -1,6 +1,5 @@
 // ==========================================
 // DERASAR BOLI - Donors Tab
-// Shows everyone who has ever donated (from receipts table)
 // ==========================================
 
 let allDonorReceipts = [];
@@ -28,6 +27,7 @@ async function loadDonorsList() {
   const { data: receipts, error } = await db
     .from('receipts')
     .select('*')
+    .eq('org_id', currentOrgId)
     .order('created_at', { ascending: false });
 
   if (error || !receipts) {
@@ -43,7 +43,6 @@ async function loadDonorsList() {
 function groupByDonor(receipts) {
   const map = {};
   receipts.forEach(r => {
-    // Key: member_id if present, else name+family
     const key = r.member_id || (r.receipt_name + '|' + (r.family_no || ''));
     if (!map[key]) {
       map[key] = {
@@ -65,7 +64,6 @@ function groupByDonor(receipts) {
   });
 
   return Object.values(map).sort((a, b) => {
-    // sort by family_no naturally, fallback to name
     const fa = a.family === '—' ? 'ZZZ' : a.family;
     const fb = b.family === '—' ? 'ZZZ' : b.family;
     const parseF = s => { const m = s.match(/^([A-Za-z]+)-?(\d+)$/); return m ? [m[1].toUpperCase(), parseInt(m[2])] : [s, 0]; };
@@ -80,11 +78,10 @@ function renderDonorList(receipts) {
   const statsEl = document.getElementById('donors-stats');
   const listEl  = document.getElementById('donors-list');
 
-  // Stats
-  const totalDonors   = donors.length;
-  const totalPaid     = donors.reduce((s, d) => s + d.paid, 0);
-  const totalPending  = donors.reduce((s, d) => s + d.pending, 0);
-  const withPending   = donors.filter(d => d.pending > 0).length;
+  const totalDonors  = donors.length;
+  const totalPaid    = donors.reduce((s, d) => s + d.paid, 0);
+  const totalPending = donors.reduce((s, d) => s + d.pending, 0);
+  const withPending  = donors.filter(d => d.pending > 0).length;
 
   const chip = (icon, val, label, color) =>
     `<div style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;
@@ -107,9 +104,7 @@ function renderDonorList(receipts) {
     <table class="data-table">
       <thead>
         <tr>
-          <th>#</th>
-          <th>Name</th>
-          <th>Family No.</th>
+          <th>#</th><th>Name</th><th>Family No.</th>
           <th style="text-align:right;color:#4CAF50;">✅ Paid</th>
           <th style="text-align:right;color:#ff9800;">⏳ Pending</th>
           <th style="text-align:right;">Total</th>
@@ -162,13 +157,11 @@ function filterDonors() {
 async function showDonorHistory_tab(donorKey, donorName, familyNo) {
   showModal(`<div class="modal-title">📜 ${donorName}</div><p style="color:var(--text-muted);font-size:13px;">Loading...</p>`);
 
-  // Fetch receipts for this donor
   const receipts = allDonorReceipts.filter(r => {
     const key = r.member_id || (r.receipt_name + '|' + (r.family_no || ''));
     return key === donorKey;
   }).sort((a, b) => b.created_at.localeCompare(a.created_at));
 
-  // Try to get phone from members table if member_id present
   let memberPhone = '';
   const memberId = receipts[0]?.member_id;
   if (memberId) {
@@ -176,8 +169,8 @@ async function showDonorHistory_tab(donorKey, donorName, familyNo) {
     memberPhone = (m?.phone_no || '').replace(/\D/g, '');
   }
 
-  const grandTotal = receipts.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
-  const paidTotal  = receipts.filter(r => r.is_paid).reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
+  const grandTotal   = receipts.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
+  const paidTotal    = receipts.filter(r => r.is_paid).reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
   const pendingTotal = grandTotal - paidTotal;
 
   document.getElementById('modal-box').innerHTML = `
@@ -187,7 +180,6 @@ async function showDonorHistory_tab(donorKey, donorName, familyNo) {
       ${memberPhone ? `&nbsp;·&nbsp; 📞 ${memberPhone}` : ''}
       &nbsp;·&nbsp; ${receipts.length} receipt(s)
     </div>
-
     <div style="display:flex;gap:8px;margin-bottom:14px;">
       <div style="flex:1;background:var(--primary);color:white;border-radius:8px;padding:10px;text-align:center;">
         <div style="font-size:10px;opacity:.8;">Total</div>
@@ -203,7 +195,6 @@ async function showDonorHistory_tab(donorKey, donorName, familyNo) {
         <div style="font-size:20px;font-weight:800;">${formatAmount(pendingTotal)}</div>
       </div>` : ''}
     </div>
-
     <div style="max-height:380px;overflow-y:auto;">
       ${receipts.map(r => {
         const dt = new Date(r.created_at).toLocaleDateString('en-IN', {day:'2-digit',month:'2-digit',year:'numeric'});
@@ -234,7 +225,6 @@ async function showDonorHistory_tab(donorKey, donorName, familyNo) {
         </div>`;
       }).join('')}
     </div>
-
     <div class="modal-actions" style="margin-top:10px;">
       <button class="btn-secondary" onclick="closeModal()">Close</button>
     </div>
