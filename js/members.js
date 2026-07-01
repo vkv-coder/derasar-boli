@@ -23,7 +23,7 @@ async function renderMembers() {
 }
 
 async function loadMembersStats() {
-  const { data } = await db.from('members').select('family_no, phone_no, family_member_count').eq('org_id', currentOrgId);
+  const { data } = await db.from('dr_members').select('family_no, phone_no, family_member_count').eq('org_id', currentOrgId);
   const el = document.getElementById('members-stats');
   if (!el || !data) return;
   const uniqueFamilies = new Set(data.map(m => m.family_no).filter(Boolean)).size;
@@ -54,7 +54,7 @@ function sortFamilyNo(data) {
 }
 
 async function loadMembersList(query = '') {
-  let req = db.from('members').select('*').eq('org_id', currentOrgId);
+  let req = db.from('dr_members').select('*').eq('org_id', currentOrgId);
   if (query) req = req.or(`person_name.ilike.%${query}%,family_no.ilike.%${query}%,phone_no.ilike.%${query}%`);
   const { data: raw, error } = await req;
   const data = raw ? sortFamilyNo(raw) : raw;
@@ -149,7 +149,7 @@ async function addMember(familyNo = null, personName = null) {
 
   if (!family_no || !person_name) { showToast('Family No. and Name are required', 'error'); return null; }
 
-  const { data, error } = await db.from('members')
+  const { data, error } = await db.from('dr_members')
     .insert({ family_no, person_name, phone_no, address, family_member_count, org_id: currentOrgId })
     .select().single();
   if (error) { showToast('Error: ' + error.message, 'error'); return null; }
@@ -163,7 +163,7 @@ async function addMember(familyNo = null, personName = null) {
 }
 
 async function showEditMemberModal(id) {
-  const { data: m, error } = await db.from('members').select('*').eq('id', id).single();
+  const { data: m, error } = await db.from('dr_members').select('*').eq('id', id).single();
   if (error || !m) { showToast('Could not load member', 'error'); return; }
 
   showModal(`
@@ -205,7 +205,7 @@ async function updateMember(id) {
   const family_member_count = parseInt(document.getElementById('mem-count-edit').value) || null;
 
   if (!family_no || !person_name) { showToast('Fill required fields', 'error'); return; }
-  const { error } = await db.from('members')
+  const { error } = await db.from('dr_members')
     .update({ family_no, person_name, phone_no, address, family_member_count })
     .eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
@@ -216,7 +216,7 @@ async function updateMember(id) {
 
 async function deleteMember(id) {
   if (!confirm('Delete this member?')) return;
-  await db.from('members').delete().eq('id', id);
+  await db.from('dr_members').delete().eq('id', id);
   showToast('Member deleted');
   await Promise.all([loadMembersStats(), loadMembersList()]);
 }
@@ -225,8 +225,8 @@ async function showDonorHistory(memberId, memberName, familyNo) {
   showModal(`<div class="modal-title">📜 ${memberName}</div><p style="color:var(--text-muted);font-size:13px;">Loading receipts...</p>`);
 
   const [{ data: receipts, error }, { data: memberFull }] = await Promise.all([
-    db.from('receipts').select('*, donations(amount)').eq('member_id', memberId).order('created_at', { ascending: false }),
-    db.from('members').select('phone_no').eq('id', memberId).single()
+    db.from('dr_receipts').select('*, dr_donations(amount)').eq('member_id', memberId).order('created_at', { ascending: false }),
+    db.from('dr_members').select('phone_no').eq('id', memberId).single()
   ]);
   const memberPhone = (memberFull?.phone_no || '').replace(/\D/g, '');
 

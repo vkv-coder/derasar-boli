@@ -65,7 +65,7 @@ async function logout() {
 
 async function loadProfile() {
   const { data } = await db
-    .from('profiles')
+    .from('dr_profiles')
     .select('*')
     .eq('id', currentUser.id)
     .single();

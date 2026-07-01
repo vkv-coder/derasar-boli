@@ -11,7 +11,7 @@ async function renderEntry() {
   const content = document.getElementById('page-content');
 
   const { data: events } = await db
-    .from('events')
+    .from('dr_events')
     .select('*')
     .eq('is_live', true)
     .eq('org_id', currentOrgId)
@@ -79,8 +79,8 @@ async function loadEventHeadsEntry() {
   el.innerHTML = 'Loading...';
 
   const { data, error } = await db
-    .from('swapna')
-    .select('*, swapna_items(*)')
+    .from('dr_swapna')
+    .select('*, dr_swapna_items(*)')
     .eq('event_id', entryEventId)
     .eq('org_id', currentOrgId)
     .order('sort_order');
@@ -100,7 +100,7 @@ function renderEntryMainHead(head, children, allData) {
   const isExpanded = expandedEntryHeads[head.id];
   const myChildren = children.filter(c => c.parent_id === head.id);
   const hasChildren = myChildren.length > 0;
-  const hasItems = (head.swapna_items || []).length > 0;
+  const hasItems = (head.dr_swapna_items || []).length > 0;
 
   return `
     <div style="border:2px solid var(--primary);border-radius:10px;margin-bottom:10px;overflow:hidden;">
@@ -126,7 +126,7 @@ function renderEntryChildHead(child, allData) {
   const isExpanded = expandedEntryHeads[child.id];
   const grandChildren = allData.filter(s => s.parent_id === child.id);
   const hasGrandChildren = grandChildren.length > 0;
-  const hasItems = (child.swapna_items || []).length > 0;
+  const hasItems = (child.dr_swapna_items || []).length > 0;
 
   return `
     <div style="border:1.5px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;">
@@ -150,7 +150,7 @@ function renderEntryChildHead(child, allData) {
 
 function renderEntryLeafHead(item) {
   const isExpanded = expandedEntryHeads[item.id];
-  const hasItems = (item.swapna_items || []).length > 0;
+  const hasItems = (item.dr_swapna_items || []).length > 0;
 
   return `
     <div style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;overflow:hidden;">
@@ -170,7 +170,7 @@ function renderEntryLeafHead(item) {
 }
 
 function renderEntrySwapnaItems(swapna) {
-  const items = (swapna.swapna_items || []).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+  const items = (swapna.dr_swapna_items || []).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
   return items.map(item => `
     <div style="padding:6px 0;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
       <span style="font-size:13px;">• ${item.name}</span>
@@ -195,7 +195,7 @@ async function toggleEntryHead(id) {
 // ========== GENERAL HEADS ENTRY ==========
 async function loadGeneralHeadsEntry() {
   const { data, error } = await db
-    .from('general_heads')
+    .from('dr_general_heads')
     .select('*')
     .eq('org_id', currentOrgId)
     .order('display_order');
@@ -339,7 +339,7 @@ function searchModalMember() {
     if (q.length < 1) { resultsEl.style.display = 'none'; return; }
 
     const { data } = await db
-      .from('members')
+      .from('dr_members')
       .select('*')
       .eq('org_id', currentOrgId)
       .or(`person_name.ilike.%${q}%,family_no.ilike.%${q}%`)
@@ -420,7 +420,7 @@ async function saveDonationFromModal(headId, headName, headType) {
     org_id: currentOrgId
   };
 
-  const { data: saved, error } = await db.from('donations').insert(record).select().single();
+  const { data: saved, error } = await db.from('dr_donations').insert(record).select().single();
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
   lastSavedDonationId = saved.id;
@@ -497,7 +497,7 @@ function printLastReceipt() {
 
 // ========== EDIT / DELETE DONATIONS ==========
 async function showEditDonationModal(id, refreshFn) {
-  const { data: d, error } = await db.from('donations').select('*').eq('id', id).eq('org_id', currentOrgId).single();
+  const { data: d, error } = await db.from('dr_donations').select('*').eq('id', id).eq('org_id', currentOrgId).single();
   if (error || !d) { showToast('Could not load', 'error'); return; }
 
   showModal(`
@@ -534,7 +534,7 @@ async function updateDonation(id, refreshFn) {
 
   if (!amount || amount <= 0) { showToast('Enter valid amount', 'error'); return; }
 
-  const { error } = await db.from('donations')
+  const { error } = await db.from('dr_donations')
     .update({ amount, note: note || null, donor_name, phone: phone || null })
     .eq('id', id).eq('org_id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
@@ -547,7 +547,7 @@ async function updateDonation(id, refreshFn) {
 
 async function deleteDonation(id, refreshFn) {
   if (!confirm('Delete this donation entry? This cannot be undone.')) return;
-  const { error } = await db.from('donations').delete().eq('id', id).eq('org_id', currentOrgId);
+  const { error } = await db.from('dr_donations').delete().eq('id', id).eq('org_id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Donation deleted');
   if (refreshFn === 'live') loadLiveData();

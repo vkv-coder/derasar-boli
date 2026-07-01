@@ -5,8 +5,6 @@
 let activeTab = '';
 
 // ========== DEMO MODE LOCK ==========
-// If window.isDemoMode is true, every insert/update/delete/upsert is blocked
-// centrally here — no other file needs to know about demo mode.
 (function setupDemoLock() {
   if (typeof db === 'undefined') return;
   const originalFrom = db.from.bind(db);
@@ -45,7 +43,7 @@ async function initApp() {
 
 async function loadOrgBranding() {
   if (!currentOrgId) return;
-  const { data } = await db.from('organizations').select('name, namah_text').eq('id', currentOrgId).single();
+  const { data } = await db.from('dr_organizations').select('name, namah_text').eq('id', currentOrgId).single();
   if (data) {
     if (data.name) {
       document.querySelectorAll('.sangh-name').forEach(el => el.textContent = data.name);

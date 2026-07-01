@@ -19,7 +19,7 @@ async function enterDemo() {
   btn.textContent = 'Loading...';
 
   // Log the visit (best-effort — demo still works even if this fails)
-  await db.from('demo_visitors').insert({ phone });
+  await db.from('dr_demo_visitors').insert({ phone });
 
   // Set up a fake view-only session — no real login needed
   window.isDemoMode = true;

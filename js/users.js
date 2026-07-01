@@ -21,7 +21,7 @@ async function renderUsers() {
 
 async function loadUsersList() {
   const { data: users, error } = await db
-    .from('profiles')
+    .from('dr_profiles')
     .select('id, full_name, role, created_at')
     .eq('org_id', currentOrgId)
     .order('created_at');

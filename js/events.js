@@ -18,7 +18,7 @@ async function renderEvents() {
 
 async function loadEventsList() {
   const { data, error } = await db
-    .from('events')
+    .from('dr_events')
     .select('*')
     .eq('org_id', currentOrgId)
     .order('created_at', { ascending: false });
@@ -88,7 +88,7 @@ async function addEvent() {
   const date = document.getElementById('ev-date').value;
   if (!name) { showToast('Enter event name', 'error'); return; }
 
-  const { error } = await db.from('events').insert({
+  const { error } = await db.from('dr_events').insert({
     name,
     event_date: date || null,
     is_live: false,
@@ -124,7 +124,7 @@ async function updateEvent(id) {
   const date = document.getElementById('ev-date-edit').value;
   if (!name) { showToast('Enter event name', 'error'); return; }
 
-  const { error } = await db.from('events').update({
+  const { error } = await db.from('dr_events').update({
     name,
     event_date: date || null
   }).eq('id', id).eq('org_id', currentOrgId);
@@ -136,7 +136,7 @@ async function updateEvent(id) {
 }
 
 async function toggleLive(id, live) {
-  const { error } = await db.from('events').update({ is_live: live }).eq('id', id).eq('org_id', currentOrgId);
+  const { error } = await db.from('dr_events').update({ is_live: live }).eq('id', id).eq('org_id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast(live ? '🟢 Event is now Live!' : '⏹ Event stopped', live ? 'success' : '');
   await loadEventsList();
@@ -144,7 +144,7 @@ async function toggleLive(id, live) {
 
 async function deleteEvent(id) {
   if (!confirm('Delete this event? All heads and donations under it will also be deleted.')) return;
-  const { error } = await db.from('events').delete().eq('id', id).eq('org_id', currentOrgId);
+  const { error } = await db.from('dr_events').delete().eq('id', id).eq('org_id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Event deleted');
   await loadEventsList();

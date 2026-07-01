@@ -25,7 +25,7 @@ async function renderDonors() {
 
 async function loadDonorsList() {
   const { data: receipts, error } = await db
-    .from('receipts')
+    .from('dr_receipts')
     .select('*')
     .eq('org_id', currentOrgId)
     .order('created_at', { ascending: false });
@@ -165,7 +165,7 @@ async function showDonorHistory_tab(donorKey, donorName, familyNo) {
   let memberPhone = '';
   const memberId = receipts[0]?.member_id;
   if (memberId) {
-    const { data: m } = await db.from('members').select('phone_no').eq('id', memberId).single();
+    const { data: m } = await db.from('dr_members').select('phone_no').eq('id', memberId).single();
     memberPhone = (m?.phone_no || '').replace(/\D/g, '');
   }
 

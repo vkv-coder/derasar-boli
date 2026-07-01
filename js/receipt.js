@@ -59,16 +59,16 @@ const RECEIPT_CSS = `
   }`;
 
 async function showReceiptById(receiptId, sendWhatsApp, phoneHint) {
-  const { data: receipt, error: rErr } = await db.from('receipts').select('*').eq('id', receiptId).single();
+  const { data: receipt, error: rErr } = await db.from('dr_receipts').select('*').eq('id', receiptId).single();
   if (rErr || !receipt) { showToast('Could not load receipt', 'error'); return; }
 
-  const { data: donations } = await db.from('donations').select('*').eq('receipt_id', receiptId);
-  const { data: ev } = await db.from('events').select('name').eq('id', receipt.event_id).single();
-  const { data: memberData } = await db.from('members').select('phone_no').eq('id', receipt.member_id).single();
+  const { data: donations } = await db.from('dr_donations').select('*').eq('receipt_id', receiptId);
+  const { data: ev } = await db.from('dr_events').select('name').eq('id', receipt.event_id).single();
+  const { data: memberData } = await db.from('dr_members').select('phone_no').eq('id', receipt.member_id).single();
   const memberPhone = ((phoneHint || memberData?.phone_no || '')).replace(/\D/g, '');
 
   // Load org for this receipt
-  const { data: orgData } = await db.from('organizations').select('*').eq('id', receipt.org_id || currentOrgId).single();
+  const { data: orgData } = await db.from('dr_organizations').select('*').eq('id', receipt.org_id || currentOrgId).single();
   const org = orgData || currentOrg;
   const templeHeader = buildTempleHeader(org);
 
@@ -78,11 +78,11 @@ async function showReceiptById(receiptId, sendWhatsApp, phoneHint) {
   for (const d of (donations || [])) {
     let headName = '';
     if (d.head_type === 'general_head' && d.general_head_id) {
-      const { data: h } = await db.from('general_heads').select('name').eq('id', d.general_head_id).single();
+      const { data: h } = await db.from('dr_general_heads').select('name').eq('id', d.general_head_id).single();
       headName = h?.name || 'General';
     } else if (d.head_type === 'swapna_item' && d.swapna_item_id) {
-      const { data: item } = await db.from('swapna_items').select('name, swapna(name)').eq('id', d.swapna_item_id).single();
-      headName = (item?.swapna?.name || 'Swapna') + (item?.name ? ' → ' + item.name : '');
+      const { data: item } = await db.from('dr_swapna_items').select('name, dr_swapna(name)').eq('id', d.swapna_item_id).single();
+      headName = (item?.dr_swapna?.name || 'Swapna') + (item?.name ? ' → ' + item.name : '');
     }
     rows.push({ sno: sno++, headName, amount: parseFloat(d.amount) });
   }
@@ -262,7 +262,7 @@ function numToGujaratiWords(n) {
 }
 
 async function showDonationReceipt(donationId) {
-  const { data: d, error } = await db.from('donations').select('*').eq('id', donationId).single();
+  const { data: d, error } = await db.from('dr_donations').select('*').eq('id', donationId).single();
   if (error || !d) { showToast('Could not load donation', 'error'); return; }
   if (d.receipt_id) { await showReceiptById(d.receipt_id, false); return; }
 
@@ -271,11 +271,11 @@ async function showDonationReceipt(donationId) {
 
   let headName = '', itemName = '';
   if (d.head_type === 'general_head' && d.general_head_id) {
-    const { data: h } = await db.from('general_heads').select('name').eq('id', d.general_head_id).single();
+    const { data: h } = await db.from('dr_general_heads').select('name').eq('id', d.general_head_id).single();
     headName = h?.name || '';
   } else if (d.head_type === 'swapna_item' && d.swapna_item_id) {
-    const { data: item } = await db.from('swapna_items').select('name, swapna(name)').eq('id', d.swapna_item_id).single();
-    headName = item?.swapna?.name || 'Swapna';
+    const { data: item } = await db.from('dr_swapna_items').select('name, dr_swapna(name)').eq('id', d.swapna_item_id).single();
+    headName = item?.dr_swapna?.name || 'Swapna';
     itemName = item?.name || '';
   }
 

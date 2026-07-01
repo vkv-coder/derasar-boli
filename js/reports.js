@@ -9,7 +9,7 @@ async function renderLive() {
   const content = document.getElementById('page-content');
 
   const { data: events } = await db
-    .from('events')
+    .from('dr_events')
     .select('*')
     .eq('is_live', true)
     .eq('org_id', currentOrgId)
@@ -56,7 +56,7 @@ async function onLiveEventChange() {
     .on('postgres_changes', {
       event: '*',
       schema: 'public',
-      table: 'donations',
+      table: 'dr_donations',
       filter: `event_id=eq.${liveEventId}`
     }, () => {
       loadLiveData();
@@ -69,7 +69,7 @@ async function loadLiveData() {
 
   // Load all donations for event
   const { data: donations } = await db
-    .from('donations')
+    .from('dr_donations')
     .select('*')
     .eq('event_id', liveEventId)
     .eq('org_id', currentOrgId)
@@ -77,14 +77,14 @@ async function loadLiveData() {
 
   // Load swapna items
   const { data: swapnas } = await db
-    .from('swapna')
-    .select('*, swapna_items(*)')
+    .from('dr_swapna')
+    .select('*, dr_swapna_items(*)')
     .eq('event_id', liveEventId)
     .order('display_order');
 
   // Load general heads
   const { data: generalHeads } = await db
-    .from('general_heads')
+    .from('dr_general_heads')
     .select('*')
     .eq('event_id', liveEventId)
     .order('display_order');
@@ -126,7 +126,7 @@ async function loadLiveData() {
         <div style="margin-bottom:14px;">
           <div style="font-weight:700;color:var(--primary);margin-bottom:6px;">${sw.name}</div>
           <div class="total-grid">
-            ${(sw.swapna_items || []).map(item => {
+            ${(sw.dr_swapna_items || []).map(item => {
               const t = swapnaTotals[item.id] || { total: 0, count: 0 };
               return `
                 <div class="total-card">
