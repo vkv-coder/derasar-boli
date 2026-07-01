@@ -53,10 +53,14 @@ async function logout() {
   currentUser = null;
   currentProfile = null;
   currentOrgId = null;
-  document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('main-screen').style.display = 'none';
-  document.getElementById('login-email').value = '';
-  document.getElementById('login-password').value = '';
+  const loginScreen = document.getElementById('login-screen');
+  const mainScreen = document.getElementById('main-screen');
+  if (loginScreen) loginScreen.style.display = 'flex';
+  if (mainScreen) mainScreen.style.display = 'none';
+  const emailEl = document.getElementById('login-email');
+  const pwEl = document.getElementById('login-password');
+  if (emailEl) emailEl.value = '';
+  if (pwEl) pwEl.value = '';
 }
 
 async function loadProfile() {
@@ -73,12 +77,17 @@ function isAdmin() {
 }
 
 function showMainApp() {
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('main-screen').style.display = 'block';
+  const loginScreen = document.getElementById('login-screen');
+  const demoScreen = document.getElementById('demo-entry-screen');
+  const mainScreen = document.getElementById('main-screen');
+  if (loginScreen) loginScreen.style.display = 'none';
+  if (demoScreen) demoScreen.style.display = 'none';
+  if (mainScreen) mainScreen.style.display = 'block';
 }
 
-// Check session on load
+// Check session on load (skipped entirely on demo.html — no login-screen present)
 window.addEventListener('load', async () => {
+  if (!document.getElementById('login-screen')) return;
   const { data } = await db.auth.getSession();
   if (data.session) {
     currentUser = data.session.user;
