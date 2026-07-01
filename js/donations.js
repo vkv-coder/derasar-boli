@@ -14,6 +14,7 @@ async function renderEntry() {
     .from('events')
     .select('*')
     .eq('is_live', true)
+    .eq('org_id', currentOrgId)
     .order('created_at', { ascending: false });
 
   content.innerHTML = `
@@ -81,6 +82,7 @@ async function loadEventHeadsEntry() {
     .from('swapna')
     .select('*, swapna_items(*)')
     .eq('event_id', entryEventId)
+    .eq('org_id', currentOrgId)
     .order('sort_order');
 
   if (error || !data || data.length === 0) {
@@ -195,6 +197,7 @@ async function loadGeneralHeadsEntry() {
   const { data, error } = await db
     .from('general_heads')
     .select('*')
+    .eq('org_id', currentOrgId)
     .order('display_order');
 
   const el = document.getElementById('general-heads-entry');
@@ -338,11 +341,11 @@ function searchModalMember() {
     const { data } = await db
       .from('members')
       .select('*')
+      .eq('org_id', currentOrgId)
       .or(`person_name.ilike.%${q}%,family_no.ilike.%${q}%`)
       .limit(8);
 
     if (!data || data.length === 0) {
-      resultsEl.style.display = 'block';
       resultsEl.innerHTML = '<p style="padding:8px;font-size:13px;color:var(--text-muted);">No members found.</p>';
       return;
     }
@@ -413,7 +416,8 @@ async function saveDonationFromModal(headId, headName, headType) {
     phone: phone || null,
     amount,
     note: note || null,
-    entered_by: currentUser?.id || null
+    entered_by: currentUser?.id || null,
+    org_id: currentOrgId
   };
 
   const { data: saved, error } = await db.from('donations').insert(record).select().single();
@@ -493,7 +497,7 @@ function printLastReceipt() {
 
 // ========== EDIT / DELETE DONATIONS ==========
 async function showEditDonationModal(id, refreshFn) {
-  const { data: d, error } = await db.from('donations').select('*').eq('id', id).single();
+  const { data: d, error } = await db.from('donations').select('*').eq('id', id).eq('org_id', currentOrgId).single();
   if (error || !d) { showToast('Could not load', 'error'); return; }
 
   showModal(`
@@ -532,7 +536,7 @@ async function updateDonation(id, refreshFn) {
 
   const { error } = await db.from('donations')
     .update({ amount, note: note || null, donor_name, phone: phone || null })
-    .eq('id', id);
+    .eq('id', id).eq('org_id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
   closeModal();
@@ -543,7 +547,7 @@ async function updateDonation(id, refreshFn) {
 
 async function deleteDonation(id, refreshFn) {
   if (!confirm('Delete this donation entry? This cannot be undone.')) return;
-  const { error } = await db.from('donations').delete().eq('id', id);
+  const { error } = await db.from('donations').delete().eq('id', id).eq('org_id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Donation deleted');
   if (refreshFn === 'live') loadLiveData();

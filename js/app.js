@@ -4,8 +4,9 @@
 
 let activeTab = '';
 
-function initApp() {
+async function initApp() {
   showMainApp();
+  await loadOrgBranding();
   const badge = document.getElementById('user-role-badge');
   badge.textContent = isAdmin() ? 'Admin' : 'Operator';
   buildNav();
@@ -13,6 +14,14 @@ function initApp() {
     loadTab('events');
   } else {
     loadTab('entry');
+  }
+}
+
+async function loadOrgBranding() {
+  if (!currentOrgId) return;
+  const { data } = await db.from('organizations').select('name').eq('id', currentOrgId).single();
+  if (data && data.name) {
+    document.querySelectorAll('.sangh-name').forEach(el => el.textContent = data.name);
   }
 }
 

@@ -4,6 +4,7 @@
 
 let currentUser = null;
 let currentProfile = null;
+let currentOrgId = null;
 
 async function login() {
   const email = document.getElementById('login-email').value.trim();
@@ -21,14 +22,37 @@ async function login() {
 
   currentUser = data.user;
   await loadProfile();
+
+  const blocked = await checkProfileAccess(errEl);
+  if (blocked) return;
+
   showMainApp();
   initApp();
+}
+
+async function checkProfileAccess(errEl) {
+  if (!currentProfile) {
+    if (errEl) errEl.textContent = 'Account setup incomplete. Contact support: vkvcoder.support@gmail.com';
+    await db.auth.signOut();
+    currentUser = null;
+    return true;
+  }
+  if (currentProfile.status === 'pending') {
+    if (errEl) errEl.textContent = 'Your Sangh registration is pending approval. Contact support: vkvcoder.support@gmail.com / 9327243611';
+    await db.auth.signOut();
+    currentUser = null;
+    currentProfile = null;
+    return true;
+  }
+  currentOrgId = currentProfile.org_id;
+  return false;
 }
 
 async function logout() {
   await db.auth.signOut();
   currentUser = null;
   currentProfile = null;
+  currentOrgId = null;
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('main-screen').style.display = 'none';
   document.getElementById('login-email').value = '';
@@ -59,6 +83,8 @@ window.addEventListener('load', async () => {
   if (data.session) {
     currentUser = data.session.user;
     await loadProfile();
+    const blocked = await checkProfileAccess(document.getElementById('login-error'));
+    if (blocked) return;
     showMainApp();
     initApp();
   }
