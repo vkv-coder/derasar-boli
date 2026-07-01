@@ -4,11 +4,37 @@
 
 let activeTab = '';
 
+// ========== DEMO MODE LOCK ==========
+// If window.isDemoMode is true, every insert/update/delete/upsert is blocked
+// centrally here — no other file needs to know about demo mode.
+(function setupDemoLock() {
+  if (typeof db === 'undefined') return;
+  const originalFrom = db.from.bind(db);
+  db.from = function(table) {
+    const builder = originalFrom(table);
+    if (window.isDemoMode) {
+      ['insert', 'update', 'delete', 'upsert'].forEach(method => {
+        const orig = builder[method].bind(builder);
+        builder[method] = function(...args) {
+          const result = orig(...args);
+          result.then = function(resolve) {
+            showToast('🔒 Demo Mode — this action is not saved', 'error');
+            resolve({ data: null, error: { message: 'Demo mode: action disabled' } });
+            return Promise.resolve();
+          };
+          return result;
+        };
+      });
+    }
+    return builder;
+  };
+})();
+
 async function initApp() {
   showMainApp();
   await loadOrgBranding();
   const badge = document.getElementById('user-role-badge');
-  badge.textContent = isAdmin() ? 'Admin' : 'Operator';
+  badge.textContent = window.isDemoMode ? 'Demo' : (isAdmin() ? 'Admin' : 'Operator');
   buildNav();
   if (isAdmin()) {
     loadTab('events');
