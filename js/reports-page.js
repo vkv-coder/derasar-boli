@@ -65,9 +65,9 @@ async function loadReport() {
     { data: receipts }
   ] = await Promise.all([
     db.from('donations').select('*').or(`event_id.eq.${reportEventId},event_id.is.null`).order('created_at', { ascending: true }),
-    db.from('swapna').select('*').eq('event_id', reportEventId).order('sort_order'),
+    db.from('swapna').select('*').eq('event_id', reportEventId).eq('org_id', currentOrgId).order('sort_order'),
     db.from('swapna_items').select('*'),
-    db.from('general_heads').select('*').order('display_order'),
+    db.from('general_heads').select('*').eq('org_id', currentOrgId).order('display_order'),
     db.from('receipts').select('*').or(`event_id.eq.${reportEventId},event_id.is.null`)
   ]);
 
