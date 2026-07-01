@@ -74,6 +74,7 @@ async function loadSwapnaList() {
     .from('swapna')
     .select('*, swapna_items(*)')
     .eq('event_id', selectedEventForHeads)
+    .eq('org_id', currentOrgId)
     .order('sort_order');
 
   const el = document.getElementById('swapna-list');
@@ -188,7 +189,7 @@ function showAddSwapnaModal() {
 async function addSwapna() {
   const name = document.getElementById('sw-name').value.trim();
   if (!name) { showToast('Enter head name', 'error'); return; }
-  const { error } = await db.from('swapna').insert({ event_id: selectedEventForHeads, name });
+  const { error } = await db.from('swapna').insert({ event_id: selectedEventForHeads, name, org_id: currentOrgId });
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Head added!', 'success');
@@ -212,7 +213,7 @@ function showAddSwapnaItemModal(swapnaId, swapnaName) {
 async function addSwapnaItem(swapnaId) {
   const name = document.getElementById('sw-item-name').value.trim();
   if (!name) { showToast('Enter item name', 'error'); return; }
-  const { error } = await db.from('swapna_items').insert({ swapna_id: swapnaId, name });
+  const { error } = await db.from('swapna_items').insert({ swapna_id: swapnaId, name, org_id: currentOrgId });
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Item added!', 'success');
@@ -261,6 +262,7 @@ async function loadGeneralHeadsList() {
   const { data, error } = await db
     .from('general_heads')
     .select('*')
+    .eq('org_id', currentOrgId)
     .order('display_order');
 
   const el = document.getElementById('general-heads-list');
@@ -345,7 +347,7 @@ function showAddGeneralHeadModal() {
 async function addGeneralHead() {
   const name = document.getElementById('gh-name').value.trim();
   if (!name) { showToast('Enter head name', 'error'); return; }
-  const { error } = await db.from('general_heads').insert({ name });
+  const { error } = await db.from('general_heads').insert({ name, org_id: currentOrgId });
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Head added!', 'success');
@@ -369,7 +371,7 @@ function showAddGeneralSubHeadModal(parentId, parentName) {
 async function addGeneralSubHead(parentId) {
   const name = document.getElementById('gh-sub-name').value.trim();
   if (!name) { showToast('Enter sub-head name', 'error'); return; }
-  const { error } = await db.from('general_heads').insert({ name, parent_id: parentId });
+  const { error } = await db.from('general_heads').insert({ name, parent_id: parentId, org_id: currentOrgId });
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Sub-head added!', 'success');
