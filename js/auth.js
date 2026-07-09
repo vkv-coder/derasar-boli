@@ -98,3 +98,48 @@ window.addEventListener('load', async () => {
     initApp();
   }
 });
+
+// Forgot password functions
+function showForgotPassword(){
+  var m=document.getElementById('forgotModal');
+  if(m){m.style.display='flex';}
+  var e=document.getElementById('forgotEmail');
+  if(e)e.value='';
+  var msg=document.getElementById('forgotMsg');
+  if(msg)msg.style.display='none';
+}
+function hideForgotPassword(){
+  var m=document.getElementById('forgotModal');
+  if(m)m.style.display='none';
+}
+async function sendForgotPassword(){
+  var email=document.getElementById('forgotEmail').value.trim();
+  var msg=document.getElementById('forgotMsg');
+  if(!email){msg.textContent='Please enter your email.';msg.style.color='#D32F2F';msg.style.display='block';return;}
+  var{error}=await db.auth.resetPasswordForEmail(email,{redirectTo:window.location.href});
+  if(error){msg.textContent='Error: '+error.message;msg.style.color='#D32F2F';}
+  else{msg.textContent='Reset link sent! Check your email.';msg.style.color='#2E7D32';}
+  msg.style.display='block';
+}
+async function confirmNewPassword(){
+  var newPass=document.getElementById('newPassInput').value;
+  var confirm=document.getElementById('newPassConfirm').value;
+  var msg=document.getElementById('newPassMsg');
+  if(!newPass||newPass.length<6){msg.textContent='Password must be at least 6 characters.';msg.style.display='block';return;}
+  if(newPass!==confirm){msg.textContent='Passwords do not match.';msg.style.display='block';return;}
+  var{error}=await db.auth.updateUser({password:newPass});
+  if(error){msg.textContent='Error: '+error.message;msg.style.display='block';return;}
+  var m=document.getElementById('newPassModal');
+  if(m)m.style.display='none';
+  await db.auth.signOut();
+  alert('Password updated! Please login with your new password.');
+  window.location.reload();
+}
+
+// Handle PASSWORD_RECOVERY event
+db.auth.onAuthStateChange(function(event,session){
+  if(event==='PASSWORD_RECOVERY'){
+    var m=document.getElementById('newPassModal');
+    if(m)m.style.display='flex';
+  }
+});
