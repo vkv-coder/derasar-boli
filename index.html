@@ -29,10 +29,38 @@
         </div>
         <button class="btn-primary" onclick="login()">Login</button>
         <div id="login-error" class="error-msg"></div>
+        <div style="text-align:center;margin-top:10px;">
+          <a href="#" onclick="showForgotPassword()" style="color:var(--primary);font-size:12px;font-weight:600;">Forgot Password?</a>
+        </div>
 
         <div style="text-align:center;margin-top:16px;">
           <a href="signup.html" style="color:var(--primary);font-weight:600;font-size:13px;">New Sangh? Register here →</a>
         </div>
+      </div>
+    </div>
+
+    <!-- FORGOT PASSWORD MODAL -->
+    <div id="forgotModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999;display:none;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:16px;padding:24px;width:90%;max-width:380px;">
+        <div style="font-size:16px;font-weight:800;color:#7B3000;margin-bottom:14px;">🔐 Reset Password</div>
+        <div style="font-size:13px;color:#666;margin-bottom:12px;">Enter your registered email. We'll send a reset link.</div>
+        <input type="email" id="forgotEmail" placeholder="Your email" style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px;"/>
+        <div id="forgotMsg" style="font-size:12px;color:#2E7D32;margin-bottom:10px;display:none;"></div>
+        <div style="display:flex;gap:8px;">
+          <button onclick="sendForgotPassword()" style="flex:1;background:#7B3000;color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:700;cursor:pointer;">Send Reset Link</button>
+          <button onclick="hideForgotPassword()" style="background:#f5f5f5;border:1px solid #ddd;border-radius:10px;padding:11px 16px;font-size:13px;cursor:pointer;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- NEW PASSWORD MODAL -->
+    <div id="newPassModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:16px;padding:24px;width:90%;max-width:380px;">
+        <div style="font-size:16px;font-weight:800;color:#7B3000;margin-bottom:14px;">🔐 Set New Password</div>
+        <input type="password" id="newPassInput" placeholder="New password (min 6 chars)" style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:10px;"/>
+        <input type="password" id="newPassConfirm" placeholder="Confirm new password" style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px;"/>
+        <div id="newPassMsg" style="font-size:12px;color:#D32F2F;margin-bottom:10px;display:none;"></div>
+        <button onclick="confirmNewPassword()" style="width:100%;background:#7B3000;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;">Update Password</button>
       </div>
     </div>
 
