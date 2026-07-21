@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
     const userData = await userRes.json()
 
     // Check caller is admin
-    const profileRes = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${userData.id}&select=role`, {
+    const profileRes = await fetch(`${supabaseUrl}/rest/v1/dr_profiles?id=eq.${userData.id}&select=role,org_id`, {
       headers: {
         'Authorization': `Bearer ${serviceRoleKey}`,
         'apikey': serviceRoleKey,
@@ -44,9 +44,14 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Admin access required' }), { status: 403, headers: corsHeaders })
     }
 
-    const { email, password, full_name, role } = await req.json()
-    if (!email || !password || !full_name) {
+    const { email, password, full_name, role, org_id } = await req.json()
+    if (!email || !password || !full_name || !org_id) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: corsHeaders })
+    }
+
+    // New user must be created inside the calling admin's own org
+    if (org_id !== profiles[0].org_id) {
+      return new Response(JSON.stringify({ error: 'org_id does not match caller\'s organization' }), { status: 403, headers: corsHeaders })
     }
 
     // Create user via REST admin API
@@ -66,7 +71,7 @@ Deno.serve(async (req) => {
     }
 
     // Insert profile
-    await fetch(`${supabaseUrl}/rest/v1/profiles`, {
+    await fetch(`${supabaseUrl}/rest/v1/dr_profiles`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -74,7 +79,7 @@ Deno.serve(async (req) => {
         'apikey': serviceRoleKey,
         'Prefer': 'resolution=merge-duplicates'
       },
-      body: JSON.stringify({ id: createData.id, full_name, role })
+      body: JSON.stringify({ id: createData.id, full_name, role, org_id })
     })
 
     return new Response(JSON.stringify({ user: createData }), { status: 200, headers: corsHeaders })

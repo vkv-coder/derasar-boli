@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
     const userData = await userRes.json()
 
     // Verify caller is admin
-    const profileRes = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${userData.id}&select=role`, {
+    const profileRes = await fetch(`${supabaseUrl}/rest/v1/dr_profiles?id=eq.${userData.id}&select=role,org_id`, {
       headers: { 'Authorization': `Bearer ${serviceRoleKey}`, 'apikey': serviceRoleKey, 'Accept': 'application/json' }
     })
     const profiles = await profileRes.json()
@@ -46,8 +46,17 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Cannot delete your own account' }), { status: 400, headers: corsHeaders })
     }
 
+    // Target user must be in the caller's own org
+    const targetRes = await fetch(`${supabaseUrl}/rest/v1/dr_profiles?id=eq.${userId}&select=org_id`, {
+      headers: { 'Authorization': `Bearer ${serviceRoleKey}`, 'apikey': serviceRoleKey, 'Accept': 'application/json' }
+    })
+    const targets = await targetRes.json()
+    if (!targets.length || targets[0].org_id !== profiles[0].org_id) {
+      return new Response(JSON.stringify({ error: 'User not found in your organization' }), { status: 403, headers: corsHeaders })
+    }
+
     // Delete profile first
-    await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${userId}`, {
+    await fetch(`${supabaseUrl}/rest/v1/dr_profiles?id=eq.${userId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${serviceRoleKey}`, 'apikey': serviceRoleKey }
     })
