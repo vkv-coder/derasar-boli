@@ -116,7 +116,7 @@ async function sendForgotPassword(){
   var email=document.getElementById('forgotEmail').value.trim();
   var msg=document.getElementById('forgotMsg');
   if(!email){msg.textContent='Please enter your email.';msg.style.color='#D32F2F';msg.style.display='block';return;}
-  var{error}=await db.auth.resetPasswordForEmail(email,{redirectTo:window.location.href});
+  var{error}=await db.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin+window.location.pathname.replace(/[^\/]*$/,'')+'reset-password.html'});
   if(error){msg.textContent='Error: '+error.message;msg.style.color='#D32F2F';}
   else{msg.textContent='Reset link sent! Check your email.';msg.style.color='#2E7D32';}
   msg.style.display='block';
