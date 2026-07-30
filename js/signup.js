@@ -89,6 +89,8 @@ async function submitSignup() {
     return;
   }
 
+  db.functions.invoke('notify-signup', { body: { sanghName, email, phone } }).catch(() => {});
+
   await db.auth.signOut();
 
   document.querySelectorAll('.login-box .form-group, .login-box button.btn-primary').forEach(el => el.style.display = 'none');
