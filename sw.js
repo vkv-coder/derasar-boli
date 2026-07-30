@@ -2,23 +2,27 @@
 // DERASAR BOLI - Service Worker
 // ==========================================
 
-const CACHE_NAME = 'derasar-boli-v15';
+const CACHE_NAME = 'derasar-boli-v16';
 const ASSETS = [
-  '/derasar-boli/',
-  '/derasar-boli/index.html',
-  '/derasar-boli/css/style.css',
-  '/derasar-boli/js/config.js',
-  '/derasar-boli/js/auth.js',
-  '/derasar-boli/js/app.js',
-  '/derasar-boli/js/events.js',
-  '/derasar-boli/js/heads.js',
-  '/derasar-boli/js/members.js',
-  '/derasar-boli/js/donations.js',
-  '/derasar-boli/js/reports.js',
-  '/derasar-boli/js/reports-page.js',
-  '/derasar-boli/js/receipt.js',
-  '/derasar-boli/js/donors.js',
-  '/derasar-boli/manifest.json'
+  '/',
+  '/index.html',
+  '/signup.html',
+  '/css/style.css',
+  '/js/config.js',
+  '/js/auth.js',
+  '/js/app.js',
+  '/js/events.js',
+  '/js/heads.js',
+  '/js/members.js',
+  '/js/donations.js',
+  '/js/reports.js',
+  '/js/reports-page.js',
+  '/js/receipt.js',
+  '/js/donors.js',
+  '/js/users.js',
+  '/js/signup.js',
+  '/manifest.json',
+  '/temple.png'
 ];
 
 self.addEventListener('install', e => {
