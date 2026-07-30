@@ -88,6 +88,7 @@ function showMainApp() {
 // Check session on load (skipped entirely on demo.html — no login-screen present)
 window.addEventListener('load', async () => {
   if (!document.getElementById('login-screen')) return;
+  if (window.location.hash.includes('type=recovery')) return;
   const { data } = await db.auth.getSession();
   if (data.session) {
     currentUser = data.session.user;
@@ -122,18 +123,18 @@ async function sendForgotPassword(){
   msg.style.display='block';
 }
 async function confirmNewPassword(){
-  var newPass=document.getElementById('newPassInput').value;
-  var confirm=document.getElementById('newPassConfirm').value;
+  var newPass=document.getElementById('newPassInput').value.trim();
+  var confirm=document.getElementById('newPassConfirm').value.trim();
   var msg=document.getElementById('newPassMsg');
   if(!newPass||newPass.length<6){msg.textContent='Password must be at least 6 characters.';msg.style.display='block';return;}
   if(newPass!==confirm){msg.textContent='Passwords do not match.';msg.style.display='block';return;}
   var{error}=await db.auth.updateUser({password:newPass});
   if(error){msg.textContent='Error: '+error.message;msg.style.display='block';return;}
-  var m=document.getElementById('newPassModal');
-  if(m)m.style.display='none';
+  msg.style.color='#2E7D32';
+  msg.textContent='✅ Password updated! Redirecting to login...';
+  msg.style.display='block';
   await db.auth.signOut();
-  alert('Password updated! Please login with your new password.');
-  window.location.reload();
+  setTimeout(function(){ window.location.href = window.location.pathname; }, 1800);
 }
 
 // Handle PASSWORD_RECOVERY event
