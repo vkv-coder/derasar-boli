@@ -7,6 +7,7 @@ const ASSETS = [
   '/',
   '/index.html',
   '/signup.html',
+  '/demo.html',
   '/css/style.css',
   '/js/config.js',
   '/js/auth.js',
@@ -21,6 +22,7 @@ const ASSETS = [
   '/js/donors.js',
   '/js/users.js',
   '/js/signup.js',
+  '/js/demo.js',
   '/manifest.json',
   '/temple.png'
 ];
