@@ -21,6 +21,7 @@ begin
         body := jsonb_build_object(
           'action', 'sendEmail',
           'to', v_email,
+          'fromName', 'derasarboli',
           'subject', 'Your Derasar Boli Sangh registration is approved',
           'html', '<p>Namaste ' || coalesce(NEW.full_name, '') || ',</p>'
             || '<p>Your Sangh registration on <b>Derasar Boli</b> has been approved. You can now log in and start using the app:</p>'
