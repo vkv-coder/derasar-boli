@@ -237,7 +237,8 @@ function showEditSwapnaItemModal(id, name) {
 async function updateSwapnaItem(id) {
   const name = document.getElementById('sw-item-edit').value.trim();
   if (!name) return;
-  await db.from('dr_swapna_items').update({ name }).eq('id', id);
+  const { error } = await db.from('dr_swapna_items').update({ name }).eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Updated!', 'success');
   await loadSwapnaList();
@@ -245,14 +246,16 @@ async function updateSwapnaItem(id) {
 
 async function deleteSwapna(id) {
   if (!confirm('Delete this head and all its items?')) return;
-  await db.from('dr_swapna').delete().eq('id', id);
+  const { error } = await db.from('dr_swapna').delete().eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Deleted');
   await loadSwapnaList();
 }
 
 async function deleteSwapnaItem(id) {
   if (!confirm('Delete this item?')) return;
-  await db.from('dr_swapna_items').delete().eq('id', id);
+  const { error } = await db.from('dr_swapna_items').delete().eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Item deleted');
   await loadSwapnaList();
 }
@@ -396,7 +399,8 @@ function showEditGeneralHeadModal(id, name) {
 async function updateGeneralHead(id) {
   const name = document.getElementById('gh-edit').value.trim();
   if (!name) return;
-  await db.from('dr_general_heads').update({ name }).eq('id', id);
+  const { error } = await db.from('dr_general_heads').update({ name }).eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Updated!', 'success');
   await loadGeneralHeadsList();
@@ -404,7 +408,8 @@ async function updateGeneralHead(id) {
 
 async function deleteGeneralHead(id) {
   if (!confirm('Delete this head? If it has sub-heads, they will also need to be deleted separately.')) return;
-  await db.from('dr_general_heads').delete().eq('id', id);
+  const { error } = await db.from('dr_general_heads').delete().eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Head deleted');
   await loadGeneralHeadsList();
 }
