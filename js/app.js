@@ -45,12 +45,8 @@ async function loadOrgBranding() {
   if (!currentOrgId) return;
   const { data } = await db.from('dr_organizations').select('name, namah_text').eq('id', currentOrgId).single();
   if (data) {
-    if (data.name) {
-      document.querySelectorAll('.sangh-name').forEach(el => el.textContent = data.name);
-    }
-    if (data.namah_text) {
-      document.querySelectorAll('.gujarati-text').forEach(el => el.textContent = data.namah_text);
-    }
+    document.querySelectorAll('.sangh-name').forEach(el => el.textContent = data.name || '');
+    document.querySelectorAll('.gujarati-text').forEach(el => el.textContent = data.namah_text || '');
   }
 }
 
