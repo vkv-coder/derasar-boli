@@ -280,9 +280,9 @@ function showDonationModal(headId, headName, headType, prefillMemberId, unitMode
         <div id="modal-member-results" style="max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;margin-top:4px;display:none;"></div>
       </div>
       <div id="modal-selected-member" style="display:none;padding:8px;background:#FFF8F0;border-radius:6px;border:1.5px solid var(--accent);margin-bottom:8px;">
-        <strong id="modal-selected-name"></strong>
-        <span id="modal-selected-family" style="font-size:12px;color:var(--text-muted);margin-left:8px;"></span>
         <button class="btn-sm" style="float:right;background:#eee;color:#333;font-size:11px;" onclick="clearModalMember()">Change</button>
+        <div><strong id="modal-selected-name"></strong> <span id="modal-selected-family" style="font-size:12px;color:var(--text-muted);"></span></div>
+        <div id="modal-selected-phone" style="font-size:12px;margin-top:2px;"></div>
       </div>
     </div>
 
@@ -409,6 +409,14 @@ function selectModalMember(id, name, familyNo, phone) {
   document.getElementById('modal-selected-member').style.display = 'block';
   document.getElementById('modal-selected-name').textContent = name;
   document.getElementById('modal-selected-family').textContent = 'Family: ' + familyNo;
+  const phoneEl = document.getElementById('modal-selected-phone');
+  if (phone) {
+    phoneEl.style.color = 'var(--text-muted)';
+    phoneEl.textContent = '📞 ' + phone;
+  } else {
+    phoneEl.style.color = '#D32F2F';
+    phoneEl.textContent = '⚠ No phone on file for this member';
+  }
 }
 
 function clearModalMember() {
