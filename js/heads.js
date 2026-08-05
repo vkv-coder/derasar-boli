@@ -41,7 +41,7 @@ async function renderHeads() {
         <input type="number" id="boli-rate-input" value="${orgRatePerMun ?? ''}" placeholder="e.g. 5000" min="0" />
       </div>
       <button class="btn-primary btn-sm" onclick="saveBoliUnitMode()">Save</button>
-      ${orgBoliUnitMode === 'mixed' ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Mark each head below as Rupees or Mun using the ⚖️ button — it appears only on heads/items where donations are actually entered.</p>` : ''}
+      ${orgBoliUnitMode === 'mixed' ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Mark any head or sub-head below as Rupees or Mun using the ⚖️ button — everything beneath it follows, unless you override a lower level too. Only applies to Swapna (auction) heads — select an event below to see them.</p>` : ''}
     </div>
     <div class="card">
       <div class="card-title">Heads Setup</div>
