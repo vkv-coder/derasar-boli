@@ -383,15 +383,22 @@ function whatsappReportRow(donationId) {
   if (!d) return;
 
   const headName = getDonationHeadName(d);
-  const receiptNo = d._receipt ? d._receipt.receipt_no : '';
-  const msg =
-    `🛕 *Derasar Boli - Receipt*\n\n` +
-    `👤 Donor: ${d.donor_name || '—'}\n` +
-    `🏠 Family No: ${d.family_no || '—'}\n` +
-    `📋 Head: ${headName}\n` +
-    `💰 Amount: ₹${parseFloat(d.amount || 0).toLocaleString('en-IN')}${d.mun_qty ? ' (' + d.mun_qty + ' mun)' : ''}\n` +
-    (receiptNo ? `🧾 Receipt No: ${receiptNo}\n` : '') +
-    `\n🙏 Jai Jinendra`;
+  const isPending = getDonationStatus(d).label === 'PENDING';
+  const msg = isPending
+    ? `🛕 *Derasar Boli - Pending Donation*\n\n` +
+      `👤 Donor: ${d.donor_name || '—'}\n` +
+      `🏠 Family No: ${d.family_no || '—'}\n` +
+      `📋 Head: ${headName}\n` +
+      `💰 Amount Pledged: ₹${parseFloat(d.amount || 0).toLocaleString('en-IN')}${d.mun_qty ? ' (' + d.mun_qty + ' mun)' : ''}\n` +
+      `⏳ Payment Pending — kindly complete at your earliest convenience.\n\n` +
+      `🙏 Jai Jinendra`
+    : `🛕 *Derasar Boli - Donation Confirmation*\n\n` +
+      `👤 Donor: ${d.donor_name || '—'}\n` +
+      `🏠 Family No: ${d.family_no || '—'}\n` +
+      `📋 Head: ${headName}\n` +
+      `💰 Amount: ₹${parseFloat(d.amount || 0).toLocaleString('en-IN')}${d.mun_qty ? ' (' + d.mun_qty + ' mun)' : ''}\n` +
+      `✅ Payment Received\n\n` +
+      `🙏 Jai Jinendra`;
 
   const phone = d.phone ? '91' + d.phone : '';
   const url = phone

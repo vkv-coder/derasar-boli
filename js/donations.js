@@ -394,7 +394,7 @@ function searchModalMember() {
     resultsEl.innerHTML = data.map(m => `
       <div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;"
            onmouseover="this.style.background='#FFF8F0'" onmouseout="this.style.background=''"
-           onclick="selectModalMember('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${m.family_no}')">
+           onclick="selectModalMember('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${m.family_no}','${(m.phone_no || '').replace(/'/g,"\\'")}')">
         <strong>${m.person_name}</strong>
         <span style="color:var(--text-muted);margin-left:6px;">Family: ${m.family_no}</span>
       </div>
@@ -402,8 +402,8 @@ function searchModalMember() {
   }, 300);
 }
 
-function selectModalMember(id, name, familyNo) {
-  modalSelectedMember = { id, name, familyNo };
+function selectModalMember(id, name, familyNo, phone) {
+  modalSelectedMember = { id, name, familyNo, phone: phone || null };
   document.getElementById('modal-member-results').style.display = 'none';
   document.getElementById('modal-member-search').value = '';
   document.getElementById('modal-selected-member').style.display = 'block';
@@ -451,6 +451,7 @@ async function saveDonationFromModal(headId, headName, headType) {
     memberId = modalSelectedMember.id;
     donorName = modalSelectedMember.name;
     familyNo = modalSelectedMember.familyNo;
+    phone = modalSelectedMember.phone || null;
   }
 
   const receiptName = document.getElementById('modal-receipt-name').value.trim();
@@ -536,12 +537,13 @@ function updateRecentEntries() {
 function whatsappDonation(id) {
   const e = recentEntries.find(r => r.id === id);
   if (!e) return;
-  const msg = `🛕 *Derasar Boli - Donation Receipt*\n\n` +
+  const msg = `🛕 *Derasar Boli - Pending Donation*\n\n` +
     `👤 Donor: ${e.donor}\n` +
     `📱 Phone: ${e.phone || '—'}\n` +
     `🏠 Family: ${e.family || '—'}\n` +
     `📋 Head: ${e.head}\n` +
-    `💰 Amount: ${formatAmount(e.amount)}${e.munQty ? ' (' + e.munQty + ' mun)' : ''}\n\n` +
+    `💰 Amount Pledged: ${formatAmount(e.amount)}${e.munQty ? ' (' + e.munQty + ' mun)' : ''}\n` +
+    `⏳ Payment Pending — kindly complete at your earliest convenience.\n\n` +
     `🙏 Jai Jinendra`;
   window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
 }
