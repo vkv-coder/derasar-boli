@@ -22,8 +22,9 @@ async function renderReports() {
   const content = document.getElementById('page-content');
 
   const { data: events } = await db
-    .from('events')
+    .from('dr_events')
     .select('*')
+    .eq('org_id', currentOrgId)
     .order('created_at', { ascending: false });
 
   content.innerHTML = `
@@ -64,11 +65,11 @@ async function loadReport() {
     { data: generalHeads },
     { data: receipts }
   ] = await Promise.all([
-    db.from('donations').select('*').or(`event_id.eq.${reportEventId},event_id.is.null`).order('created_at', { ascending: true }),
-    db.from('swapna').select('*').eq('event_id', reportEventId).order('sort_order'),
-    db.from('swapna_items').select('*'),
-    db.from('general_heads').select('*').order('display_order'),
-    db.from('receipts').select('*').or(`event_id.eq.${reportEventId},event_id.is.null`)
+    db.from('dr_donations').select('*').eq('org_id', currentOrgId).or(`event_id.eq.${reportEventId},event_id.is.null`).order('created_at', { ascending: true }),
+    db.from('dr_swapna').select('*').eq('org_id', currentOrgId).eq('event_id', reportEventId).order('sort_order'),
+    db.from('dr_swapna_items').select('*').eq('org_id', currentOrgId),
+    db.from('dr_general_heads').select('*').eq('org_id', currentOrgId).order('display_order'),
+    db.from('dr_receipts').select('*').eq('org_id', currentOrgId).or(`event_id.eq.${reportEventId},event_id.is.null`)
   ]);
 
   reportAllDonations = donations || [];
@@ -330,9 +331,10 @@ function renderReportTable(donations) {
 // ========== SAVE RECEIVED AMOUNT ==========
 async function saveReceivedAmount(donationId, value) {
   const amount = value === '' ? null : parseFloat(value);
-  const { error } = await db.from('donations')
+  const { error } = await db.from('dr_donations')
     .update({ received_amount: amount })
-    .eq('id', donationId);
+    .eq('id', donationId)
+    .eq('org_id', currentOrgId);
 
   if (error) {
     showToast('Error saving: ' + error.message, 'error');

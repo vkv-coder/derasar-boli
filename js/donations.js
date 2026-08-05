@@ -517,8 +517,6 @@ async function showEditDonationModal(id, refreshFn) {
       <label>Amount</label>
       <input type="number" id="edit-don-amount" value="${d.amount}" min="1" />
     </div>
-    <div class="form-group">
-    </div>
     <div class="modal-actions">
       <button class="btn-primary" onclick="updateDonation('${id}','${refreshFn}')">Update</button>
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>
@@ -528,14 +526,13 @@ async function showEditDonationModal(id, refreshFn) {
 
 async function updateDonation(id, refreshFn) {
   const amount = parseFloat(document.getElementById('edit-don-amount').value);
-  const note = document.getElementById('edit-don-note').value.trim();
   const donor_name = document.getElementById('edit-don-name').value.trim();
   const phone = document.getElementById('edit-don-phone').value.trim();
 
   if (!amount || amount <= 0) { showToast('Enter valid amount', 'error'); return; }
 
   const { error } = await db.from('dr_donations')
-    .update({ amount, note: note || null, donor_name, phone: phone || null })
+    .update({ amount, donor_name, phone: phone || null })
     .eq('id', id).eq('org_id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
