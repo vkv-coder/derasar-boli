@@ -284,7 +284,7 @@ function renderReportTable(donations) {
           return `
             <tr style="background:${status.bg};">
               <td style="color:var(--text-muted);font-size:11px;">${i + 1}</td>
-              <td><strong>${d.donor_name || '—'}</strong></td>
+              <td><strong>${d.donor_name || '—'}</strong>${d.receipt_name && d.receipt_name !== d.donor_name ? `<div style="font-size:10px;color:var(--text-muted);">Receipt: ${d.receipt_name}</div>` : ''}</td>
               <td style="font-size:12px;">${d.phone || '—'}</td>
               <td style="font-size:12px;">${d.family_no || '—'}</td>
               <td style="font-size:11px;max-width:200px;word-break:break-word;">${headName}</td>

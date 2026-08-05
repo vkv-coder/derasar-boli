@@ -299,7 +299,7 @@ async function showDonationReceipt(donationId) {
   <div class="receipt-body">
     <div class="receipt-title">પહોંચ &nbsp;·&nbsp; RECEIPT</div>
     <div class="meta"><span>ન. : ${receiptNo}</span><span>તા. : ${receiptDate}</span></div>
-    <div class="row"><span class="row-label">નામ :</span><span class="row-value">${d.donor_name}</span></div>
+    <div class="row"><span class="row-label">નામ :</span><span class="row-value">${d.receipt_name || d.donor_name}</span></div>
     <div class="row"><span class="row-label">કુટુંબ ક્રમ :</span><span class="row-value">${d.family_no || '—'}</span></div>
     <table class="heads-table">
       <thead><tr><th style="width:28px;text-align:center;">ક્ર.</th><th>દાન ની વિગત</th><th>રકમ</th></tr></thead>

@@ -257,7 +257,7 @@ function showDonationModal(headId, headName, headType, prefillMemberId, unitMode
         <input type="text" id="modal-other-name" placeholder="Donor name" />
       </div>
       <div class="form-group">
-        <label>Phone No. (10 digits — optional)</label>
+        <label>Phone No. (10 digits — required, for collection follow-up)</label>
         <div style="display:flex;gap:4px;justify-content:center;margin-top:6px;" id="phone-boxes">
           ${[...Array(10)].map((_,i) => `
             <input type="tel" inputmode="numeric" maxlength="1"
@@ -284,6 +284,11 @@ function showDonationModal(headId, headName, headType, prefillMemberId, unitMode
         <span id="modal-selected-family" style="font-size:12px;color:var(--text-muted);margin-left:8px;"></span>
         <button class="btn-sm" style="float:right;background:#eee;color:#333;font-size:11px;" onclick="clearModalMember()">Change</button>
       </div>
+    </div>
+
+    <div class="form-group">
+      <label>Receipt In Name Of (optional — leave blank to use donor's name)</label>
+      <input type="text" id="modal-receipt-name" placeholder="e.g. a deceased family member's name" />
     </div>
 
     ${resolved.mode === 'rupees' ? `
@@ -440,14 +445,15 @@ async function saveDonationFromModal(headId, headName, headType) {
     donorName = document.getElementById('modal-other-name').value.trim();
     phone = document.getElementById('modal-other-phone').value.trim();
     if (!donorName) { showToast('Enter donor name', 'error'); return; }
-    if (phone && phone.length !== 10) { showToast('Phone must be exactly 10 digits or leave empty', 'error'); return; }
-    if (!phone) phone = null;
+    if (phone.length !== 10) { showToast('Enter a 10-digit phone number', 'error'); return; }
   } else if (donorType === 'member') {
     if (!modalSelectedMember) { showToast('Select a member', 'error'); return; }
     memberId = modalSelectedMember.id;
     donorName = modalSelectedMember.name;
     familyNo = modalSelectedMember.familyNo;
   }
+
+  const receiptName = document.getElementById('modal-receipt-name').value.trim();
 
   const record = {
     event_id: headType !== 'general' ? entryEventId : null,
@@ -457,6 +463,7 @@ async function saveDonationFromModal(headId, headName, headType) {
     general_head_id: headType === 'general' ? headId : null,
     member_id: memberId || null,
     donor_name: donorName,
+    receipt_name: receiptName || null,
     family_no: familyNo || null,
     phone: phone || null,
     amount,
@@ -561,6 +568,10 @@ async function showEditDonationModal(id, refreshFn) {
       <label>Phone</label>
       <input type="tel" id="edit-don-phone" value="${d.phone || ''}" placeholder="Mobile number" />
     </div>
+    <div class="form-group">
+      <label>Receipt In Name Of (optional)</label>
+      <input type="text" id="edit-don-receipt-name" value="${d.receipt_name || ''}" placeholder="Leave blank to use donor's name" />
+    </div>
     ${d.mun_qty ? `
       <div class="form-group">
         <label>Quantity (Mun)</label>
@@ -584,9 +595,10 @@ async function showEditDonationModal(id, refreshFn) {
 async function updateDonation(id, refreshFn) {
   const donor_name = document.getElementById('edit-don-name').value.trim();
   const phone = document.getElementById('edit-don-phone').value.trim();
+  const receipt_name = document.getElementById('edit-don-receipt-name').value.trim();
 
   const munQtyInput = document.getElementById('edit-don-mun-qty');
-  const update = { donor_name, phone: phone || null };
+  const update = { donor_name, phone: phone || null, receipt_name: receipt_name || null };
 
   if (munQtyInput) {
     const munQty = parseFloat(munQtyInput.value);

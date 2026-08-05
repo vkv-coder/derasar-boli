@@ -223,30 +223,41 @@ async function deleteMember(id) {
 }
 
 async function showDonorHistory(memberId, memberName, familyNo) {
-  showModal(`<div class="modal-title">📜 ${memberName}</div><p style="color:var(--text-muted);font-size:13px;">Loading receipts...</p>`);
+  showModal(`<div class="modal-title">📜 ${memberName}</div><p style="color:var(--text-muted);font-size:13px;">Loading...</p>`);
 
-  const [{ data: receipts, error }, { data: memberFull }] = await Promise.all([
-    db.from('dr_receipts').select('*, dr_donations(amount)').eq('member_id', memberId).order('created_at', { ascending: false }),
-    db.from('dr_members').select('phone_no').eq('id', memberId).single()
+  // dr_receipts is never actually written by this app — sourced from
+  // dr_donations directly instead (same fix as the Donors tab).
+  const [{ data: donations, error }, { data: memberFull }, { data: swapnaTree }, { data: swapnaItems }, { data: generalHeads }] = await Promise.all([
+    db.from('dr_donations').select('*').eq('member_id', memberId).eq('org_id', currentOrgId).order('created_at', { ascending: false }),
+    db.from('dr_members').select('phone_no').eq('id', memberId).single(),
+    db.from('dr_swapna').select('*').eq('org_id', currentOrgId),
+    db.from('dr_swapna_items').select('*').eq('org_id', currentOrgId),
+    db.from('dr_general_heads').select('*').eq('org_id', currentOrgId).order('display_order')
   ]);
   const memberPhone = (memberFull?.phone_no || '').replace(/\D/g, '');
 
-  if (error || !receipts || receipts.length === 0) {
+  reportSwapnaTree = swapnaTree || [];
+  reportSwapnaItems = swapnaItems || [];
+  reportGeneralHeads = generalHeads || [];
+  (donations || []).forEach(d => { if (!d.phone) d.phone = memberPhone || null; });
+  reportAllDonations = donations || [];
+
+  if (error || !donations || donations.length === 0) {
     document.getElementById('modal-box').innerHTML = `
       <div class="modal-title">📜 ${memberName}</div>
-      <p style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px 0;">No receipts found.</p>
+      <p style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px 0;">No donations found.</p>
       <div class="modal-actions"><button class="btn-secondary" onclick="closeModal()">Close</button></div>
     `;
     return;
   }
 
-  const grandTotal = receipts.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
-  const paidTotal  = receipts.filter(r => r.is_paid).reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
+  const grandTotal    = donations.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
+  const receivedTotal = donations.reduce((s, d) => s + parseFloat(d.received_amount || 0), 0);
 
   document.getElementById('modal-box').innerHTML = `
     <div class="modal-title">📜 ${memberName}</div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
-      Family No: ${familyNo} &nbsp;·&nbsp; ${receipts.length} receipts
+      Family No: ${familyNo} &nbsp;·&nbsp; ${donations.length} donation(s)
       ${memberPhone ? `&nbsp;·&nbsp; 📞 ${memberPhone}` : `&nbsp;·&nbsp; <span style="color:#f44;font-weight:600;">⚠ No phone</span>`}
     </div>
     <div style="display:flex;gap:8px;margin-bottom:14px;">
@@ -255,39 +266,38 @@ async function showDonorHistory(memberId, memberName, familyNo) {
         <div style="font-size:20px;font-weight:800;">${formatAmount(grandTotal)}</div>
       </div>
       <div style="flex:1;background:#4CAF50;color:white;border-radius:8px;padding:10px;text-align:center;">
-        <div style="font-size:10px;opacity:.8;">Paid</div>
-        <div style="font-size:20px;font-weight:800;">${formatAmount(paidTotal)}</div>
+        <div style="font-size:10px;opacity:.8;">Received</div>
+        <div style="font-size:20px;font-weight:800;">${formatAmount(receivedTotal)}</div>
       </div>
-      ${grandTotal > paidTotal ? `
+      ${grandTotal > receivedTotal ? `
       <div style="flex:1;background:#ff9800;color:white;border-radius:8px;padding:10px;text-align:center;">
         <div style="font-size:10px;opacity:.8;">Pending</div>
-        <div style="font-size:20px;font-weight:800;">${formatAmount(grandTotal - paidTotal)}</div>
+        <div style="font-size:20px;font-weight:800;">${formatAmount(grandTotal - receivedTotal)}</div>
       </div>` : ''}
     </div>
     <div style="max-height:380px;overflow-y:auto;">
-      ${receipts.map(r => {
-        const dt = new Date(r.created_at).toLocaleDateString('en-IN', {day:'2-digit',month:'2-digit',year:'numeric'});
+      ${donations.map(d => {
+        const dt = new Date(d.created_at).toLocaleDateString('en-IN', {day:'2-digit',month:'2-digit',year:'numeric'});
+        const headName = getDonationHeadName(d);
+        const isReceived = d.received_amount != null && parseFloat(d.received_amount) >= parseFloat(d.amount);
         return `
         <div style="border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            <div>
-              <strong style="color:var(--primary);font-size:14px;">ન. ${r.receipt_no}</strong>
-              <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">${dt}</span>
-            </div>
-            <span style="font-size:11px;padding:2px 8px;border-radius:10px;font-weight:700;
-              background:${r.is_paid ? '#e8f5e9' : '#fff3e0'};
-              color:${r.is_paid ? '#2e7d32' : '#e65100'};">
-              ${r.is_paid ? '✅ Paid' : '⏳ Pending'}
+            <div style="font-size:12px;color:var(--text-muted);max-width:70%;">${headName}</div>
+            <span style="font-size:11px;padding:2px 8px;border-radius:10px;font-weight:700;white-space:nowrap;
+              background:${isReceived ? '#e8f5e9' : '#fff3e0'};
+              color:${isReceived ? '#2e7d32' : '#e65100'};">
+              ${isReceived ? '✅ Received' : '⏳ Pending'}
             </span>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <div style="font-size:13px;">
-              <strong>${formatAmount(parseFloat(r.total_amount))}</strong>
-              <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">${r.payment_mode || ''}</span>
+              <strong>${formatAmount(parseFloat(d.amount))}</strong>${d.mun_qty ? ` <span style="font-size:11px;color:var(--text-muted);">(${d.mun_qty} mun)</span>` : ''}
+              <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">${dt}</span>
             </div>
             <div style="display:flex;gap:6px;">
-              <button class="btn-sm btn-secondary" onclick="showReceiptById('${r.id}',false,'${memberPhone}')">🧾 View</button>
-              <button class="btn-sm" style="background:#25D366;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;" onclick="showReceiptById('${r.id}',true,'${memberPhone}')">📲 Send</button>
+              <button class="btn-sm btn-secondary" onclick="showDonationReceipt('${d.id}')">🧾 View</button>
+              ${memberPhone ? `<button class="btn-sm" style="background:#25D366;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;" onclick="whatsappReportRow('${d.id}')">📲 Send</button>` : ''}
             </div>
           </div>
         </div>`;
