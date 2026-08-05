@@ -36,12 +36,12 @@ async function renderHeads() {
           <option value="mixed" ${orgBoliUnitMode === 'mixed' ? 'selected' : ''}>Part Rupees, Part Mun (set per head below)</option>
         </select>
       </div>
-      <div class="form-group" id="boli-rate-group" style="display:${orgBoliUnitMode === 'mun' ? 'block' : 'none'};">
-        <label>Rate (₹ per Mun) — applies to all heads</label>
+      <div class="form-group" id="boli-rate-group" style="display:${orgBoliUnitMode === 'mun' || orgBoliUnitMode === 'mixed' ? 'block' : 'none'};">
+        <label>Rate (₹ per Mun) — one fixed rate for your whole Sangh</label>
         <input type="number" id="boli-rate-input" value="${orgRatePerMun ?? ''}" placeholder="e.g. 5000" min="0" />
       </div>
       <button class="btn-primary btn-sm" onclick="saveBoliUnitMode()">Save</button>
-      ${orgBoliUnitMode === 'mixed' ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Set Rupees or Mun for each head below using the ⚖️ button next to it.</p>` : ''}
+      ${orgBoliUnitMode === 'mixed' ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Mark each head below as Rupees or Mun using the ⚖️ button — it appears only on heads/items where donations are actually entered.</p>` : ''}
     </div>
     <div class="card">
       <div class="card-title">Heads Setup</div>
@@ -70,22 +70,23 @@ async function renderHeads() {
 
 function onBoliUnitModeChange() {
   const mode = document.getElementById('boli-unit-mode-select').value;
-  document.getElementById('boli-rate-group').style.display = mode === 'mun' ? 'block' : 'none';
+  document.getElementById('boli-rate-group').style.display = (mode === 'mun' || mode === 'mixed') ? 'block' : 'none';
 }
 
 async function saveBoliUnitMode() {
   const mode = document.getElementById('boli-unit-mode-select').value;
   const rateInput = document.getElementById('boli-rate-input');
   const rate = rateInput ? parseFloat(rateInput.value) : null;
-  if (mode === 'mun' && (!rate || rate <= 0)) { showToast('Enter a valid ₹ per Mun rate', 'error'); return; }
+  const needsRate = mode === 'mun' || mode === 'mixed';
+  if (needsRate && (!rate || rate <= 0)) { showToast('Enter a valid ₹ per Mun rate', 'error'); return; }
 
   const { error } = await db.from('dr_organizations')
-    .update({ boli_unit_mode: mode, rate_per_mun: mode === 'mun' ? rate : null })
+    .update({ boli_unit_mode: mode, rate_per_mun: needsRate ? rate : null })
     .eq('id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
   orgBoliUnitMode = mode;
-  orgRatePerMun = mode === 'mun' ? rate : null;
+  orgRatePerMun = needsRate ? rate : null;
   showToast('Boli unit setup saved!', 'success');
   await renderHeads();
   if (selectedEventForHeads) {
@@ -157,7 +158,7 @@ function renderMainHead(head, children, allData) {
           ${isExpanded ? '▼' : '▶'} ${head.name}${unitBadge(head)}
         </strong>
         <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
-          ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna','${head.id}','${head.name.replace(/'/g,"\\'")}','${head.unit_mode || 'rupees'}',${head.rate_per_mun != null ? head.rate_per_mun : 'null'})">⚖️</button>` : ''}
+          ${orgBoliUnitMode === 'mixed' && !hasChildren && !hasItems ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna','${head.id}','${head.name.replace(/'/g,"\\'")}','${head.unit_mode || 'rupees'}')">⚖️</button>` : ''}
           <button class="btn-sm btn-danger" onclick="deleteSwapna('${head.id}')">Delete</button>
         </div>
       </div>
@@ -186,19 +187,21 @@ function renderChildHead(child, allData) {
           ${isExpanded ? '▼' : '▶'} ${child.name}${unitBadge(child)}
         </span>
         <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
-          ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna','${child.id}','${child.name.replace(/'/g,"\\'")}','${child.unit_mode || 'rupees'}',${child.rate_per_mun != null ? child.rate_per_mun : 'null'})">⚖️</button>` : ''}
+          ${orgBoliUnitMode === 'mixed' && !hasGrandChildren && !hasItems ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna','${child.id}','${child.name.replace(/'/g,"\\'")}','${child.unit_mode || 'rupees'}')">⚖️</button>` : ''}
           <button class="btn-sm btn-secondary" onclick="showAddSwapnaItemModal('${child.id}','${child.name.replace(/'/g,"\\'")}')">+ Item</button>
           <button class="btn-sm btn-danger" onclick="deleteSwapna('${child.id}')">✕</button>
         </div>
       </div>
       ${isExpanded ? `
         <div style="padding:6px 12px 10px 24px;">
-          ${hasGrandChildren ? grandChildren.sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)).map(gc => `
+          ${hasGrandChildren ? grandChildren.sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)).map(gc => {
+            const gcHasItems = (gc.dr_swapna_items || []).length > 0;
+            return `
             <div style="padding:4px 0;font-size:13px;color:var(--text);">• ${gc.name}${unitBadge(gc)}
-              ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" style="margin-left:8px;" onclick="showHeadUnitModal('dr_swapna','${gc.id}','${gc.name.replace(/'/g,"\\'")}','${gc.unit_mode || 'rupees'}',${gc.rate_per_mun != null ? gc.rate_per_mun : 'null'})">⚖️</button>` : ''}
+              ${orgBoliUnitMode === 'mixed' && !gcHasItems ? `<button class="btn-sm btn-secondary" style="margin-left:8px;" onclick="showHeadUnitModal('dr_swapna','${gc.id}','${gc.name.replace(/'/g,"\\'")}','${gc.unit_mode || 'rupees'}')">⚖️</button>` : ''}
               <button class="btn-sm btn-danger" style="margin-left:8px;" onclick="deleteSwapna('${gc.id}')">✕</button>
             </div>
-          `).join('') : ''}
+          `; }).join('') : ''}
           ${hasItems ? renderSwapnaItems(child) : ''}
           ${!hasGrandChildren && !hasItems ? `<p style="color:var(--text-muted);font-size:12px;">No items yet.</p>` : ''}
         </div>
@@ -214,7 +217,7 @@ function renderSwapnaItems(swapna) {
     <div class="list-item" style="padding:5px 0;">
       <span style="font-size:13px;">• ${item.name}${unitBadge(item)}</span>
       <div class="list-item-actions">
-        ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna_items','${item.id}','${item.name.replace(/'/g,"\\'")}','${item.unit_mode || 'rupees'}',${item.rate_per_mun != null ? item.rate_per_mun : 'null'})">⚖️</button>` : ''}
+        ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna_items','${item.id}','${item.name.replace(/'/g,"\\'")}','${item.unit_mode || 'rupees'}')">⚖️</button>` : ''}
         <button class="btn-sm btn-secondary" onclick="showEditSwapnaItemModal('${item.id}','${item.name.replace(/'/g,"\\'")}')">Edit</button>
         <button class="btn-sm btn-danger" onclick="deleteSwapnaItem('${item.id}')">✕</button>
       </div>
@@ -228,19 +231,15 @@ function unitBadge(head) {
   return '';
 }
 
-function showHeadUnitModal(table, id, name, currentMode, currentRate) {
+function showHeadUnitModal(table, id, name, currentMode) {
   showModal(`
     <div class="modal-title">Unit — ${name}</div>
     <div class="form-group">
       <label>This head's boli is spoken in</label>
-      <select id="head-unit-mode-select" onchange="onHeadUnitModeChange()">
+      <select id="head-unit-mode-select">
         <option value="rupees" ${currentMode === 'rupees' ? 'selected' : ''}>₹ Rupees</option>
         <option value="mun" ${currentMode === 'mun' ? 'selected' : ''}>Mun</option>
       </select>
-    </div>
-    <div class="form-group" id="head-unit-rate-group" style="display:${currentMode === 'mun' ? 'block' : 'none'};">
-      <label>Rate (₹ per Mun) for this head</label>
-      <input type="number" id="head-unit-rate-input" value="${currentRate != null ? currentRate : ''}" placeholder="e.g. 5000" min="0" />
     </div>
     <div class="modal-actions">
       <button class="btn-primary" onclick="saveHeadUnit('${table}','${id}')">Save</button>
@@ -249,19 +248,11 @@ function showHeadUnitModal(table, id, name, currentMode, currentRate) {
   `);
 }
 
-function onHeadUnitModeChange() {
-  const mode = document.getElementById('head-unit-mode-select').value;
-  document.getElementById('head-unit-rate-group').style.display = mode === 'mun' ? 'block' : 'none';
-}
-
 async function saveHeadUnit(table, id) {
   const mode = document.getElementById('head-unit-mode-select').value;
-  const rateInput = document.getElementById('head-unit-rate-input');
-  const rate = rateInput ? parseFloat(rateInput.value) : null;
-  if (mode === 'mun' && (!rate || rate <= 0)) { showToast('Enter a valid ₹ per Mun rate', 'error'); return; }
 
   const { error } = await db.from(table)
-    .update({ unit_mode: mode, rate_per_mun: mode === 'mun' ? rate : null })
+    .update({ unit_mode: mode })
     .eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 

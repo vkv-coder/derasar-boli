@@ -11,11 +11,12 @@ let entryBoliRate = null;
 
 // Resolves the effective unit for a given swapna head/item, based on the
 // org-wide master switch (Boli Unit Setup) — only 'mixed' mode looks at the
-// head's own unit_mode/rate_per_mun; 'rupees'/'mun' apply to every head.
-function resolveHeadUnit(unitMode, rate) {
+// head's own unit_mode; the ₹-per-mun rate is always the single org-wide
+// rate ("one temple, one rate"), never a per-head value.
+function resolveHeadUnit(unitMode) {
   if (entryBoliMode === 'rupees') return { mode: 'rupees', rate: null };
   if (entryBoliMode === 'mun') return { mode: 'mun', rate: entryBoliRate };
-  return unitMode === 'mun' ? { mode: 'mun', rate } : { mode: 'rupees', rate: null };
+  return unitMode === 'mun' ? { mode: 'mun', rate: entryBoliRate } : { mode: 'rupees', rate: null };
 }
 
 async function renderEntry() {
@@ -131,7 +132,7 @@ function renderEntryMainHead(head, children, allData) {
           ${hasChildren ? myChildren.sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
             .map(child => renderEntryChildHead(child, allData)).join('') : ''}
           ${hasItems ? renderEntrySwapnaItems(head) : ''}
-          ${!hasChildren && !hasItems ? renderEntryAddButton(head.id, head.name, 'swapna', head.unit_mode, head.rate_per_mun) : ''}
+          ${!hasChildren && !hasItems ? renderEntryAddButton(head.id, head.name, 'swapna', head.unit_mode) : ''}
         </div>
       ` : ''}
     </div>
@@ -157,7 +158,7 @@ function renderEntryChildHead(child, allData) {
           ${hasGrandChildren ? grandChildren.sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
             .map(gc => renderEntryLeafHead(gc)).join('') : ''}
           ${hasItems ? renderEntrySwapnaItems(child) : ''}
-          ${!hasGrandChildren && !hasItems ? renderEntryAddButton(child.id, child.name, 'swapna', child.unit_mode, child.rate_per_mun) : ''}
+          ${!hasGrandChildren && !hasItems ? renderEntryAddButton(child.id, child.name, 'swapna', child.unit_mode) : ''}
         </div>
       ` : ''}
     </div>
@@ -178,7 +179,7 @@ function renderEntryLeafHead(item) {
       </div>
       ${isExpanded ? `
         <div style="padding:6px 12px 8px 20px;">
-          ${hasItems ? renderEntrySwapnaItems(item) : renderEntryAddButton(item.id, item.name, 'swapna', item.unit_mode, item.rate_per_mun)}
+          ${hasItems ? renderEntrySwapnaItems(item) : renderEntryAddButton(item.id, item.name, 'swapna', item.unit_mode)}
         </div>
       ` : ''}
     </div>
@@ -190,15 +191,15 @@ function renderEntrySwapnaItems(swapna) {
   return items.map(item => `
     <div style="padding:6px 0;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
       <span style="font-size:13px;">• ${item.name}</span>
-      <button class="btn-accent btn-sm" onclick="showDonationModal('${item.id}','${(swapna.name+' → '+item.name).replace(/'/g,"\\'")}','swapna_item',null,'${item.unit_mode || 'rupees'}',${item.rate_per_mun != null ? item.rate_per_mun : 'null'})">+ Add</button>
+      <button class="btn-accent btn-sm" onclick="showDonationModal('${item.id}','${(swapna.name+' → '+item.name).replace(/'/g,"\\'")}','swapna_item',null,'${item.unit_mode || 'rupees'}')">+ Add</button>
     </div>
   `).join('');
 }
 
-function renderEntryAddButton(id, name, type, unitMode, rate) {
+function renderEntryAddButton(id, name, type, unitMode) {
   return `
     <div style="padding:8px 0;">
-      <button class="btn-accent btn-sm" onclick="showDonationModal('${id}','${name.replace(/'/g,"\\'")}','${type}',null,'${unitMode || 'rupees'}',${rate != null ? rate : 'null'})">+ Add Donation</button>
+      <button class="btn-accent btn-sm" onclick="showDonationModal('${id}','${name.replace(/'/g,"\\'")}','${type}',null,'${unitMode || 'rupees'}')">+ Add Donation</button>
     </div>
   `;
 }
@@ -233,9 +234,9 @@ async function loadGeneralHeadsEntry() {
 }
 
 // ========== DONATION MODAL ==========
-function showDonationModal(headId, headName, headType, prefillMemberId, unitMode, rate) {
+function showDonationModal(headId, headName, headType, prefillMemberId, unitMode) {
   // General heads are always ₹ — mun applies only to swapna (auction) heads/items.
-  const resolved = headType === 'general' ? { mode: 'rupees', rate: null } : resolveHeadUnit(unitMode, rate);
+  const resolved = headType === 'general' ? { mode: 'rupees', rate: null } : resolveHeadUnit(unitMode);
 
   showModal(`
     <div class="modal-title">+ Add Donation</div>
