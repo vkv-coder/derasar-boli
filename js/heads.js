@@ -41,7 +41,7 @@ async function renderHeads() {
         <input type="number" id="boli-rate-input" value="${orgRatePerMun ?? ''}" placeholder="e.g. 5000" min="0" />
       </div>
       <button class="btn-primary btn-sm" onclick="saveBoliUnitMode()">Save</button>
-      ${orgBoliUnitMode === 'mixed' ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Mark any head or sub-head below as Rupees or Mun using the ⚖️ button — everything beneath it follows, unless you override a lower level too. Only applies to Swapna (auction) heads — select an event below to see them.</p>` : ''}
+      ${orgBoliUnitMode === 'mixed' ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Mark any head or sub-head below as Rupees or Mun using the ⚖️ button — everything beneath it follows, unless you override a lower level too. Applies to both Swapna heads (select an event below to see them) and General Donation Heads.</p>` : ''}
     </div>
     <div class="card">
       <div class="card-title">Heads Setup</div>
@@ -271,7 +271,8 @@ async function saveHeadUnit(table, id) {
 
   closeModal();
   showToast('Unit saved!', 'success');
-  await loadSwapnaList();
+  if (table === 'dr_general_heads') await loadGeneralHeadsList();
+  else await loadSwapnaList();
 }
 
 function toggleHead(id) {
@@ -394,16 +395,18 @@ function renderGeneralMainHead(head, num, subHeads) {
   const isExpanded = expandedGeneralHeads[head.id];
   const mySubHeads = subHeads.filter(s => s.parent_id === head.id).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
   const hasSubHeads = mySubHeads.length > 0;
+  const myUnit = effectiveUnit(head.unit_mode, orgBoliUnitMode === 'mun' ? 'mun' : 'rupees');
 
   return `
     <div style="border:2px solid var(--primary);border-radius:10px;margin-bottom:12px;overflow:hidden;">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#ffffff;cursor:pointer;"
            onclick="toggleGeneralHead('${head.id}')">
         <strong style="color:var(--primary);font-size:15px;">
-          ${hasSubHeads ? (isExpanded ? '▼' : '▶') : '◦'} ${num}. ${head.name}
+          ${hasSubHeads ? (isExpanded ? '▼' : '▶') : '◦'} ${num}. ${head.name}${unitBadge(myUnit)}
           ${hasSubHeads ? `<span style="font-size:11px;font-weight:400;color:var(--text-muted);"> (${mySubHeads.length} sub)</span>` : ''}
         </strong>
         <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
+          ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_general_heads','${head.id}','${head.name.replace(/'/g,"\\'")}','${head.unit_mode || ''}','rupees')">⚖️</button>` : ''}
           <button class="btn-sm btn-secondary" onclick="showAddGeneralSubHeadModal('${head.id}','${head.name.replace(/'/g,"\\'")}')">+ Sub</button>
           <button class="btn-sm btn-secondary" onclick="showEditGeneralHeadModal('${head.id}','${head.name.replace(/'/g,"\\'")}')">Edit</button>
           <button class="btn-sm btn-danger" onclick="deleteGeneralHead('${head.id}')">Delete</button>
@@ -411,15 +414,18 @@ function renderGeneralMainHead(head, num, subHeads) {
       </div>
       ${isExpanded && hasSubHeads ? `
         <div style="padding:8px 16px 12px 24px;">
-          ${mySubHeads.map(sub => `
+          ${mySubHeads.map(sub => {
+            const subUnit = effectiveUnit(sub.unit_mode, myUnit);
+            return `
             <div class="list-item" style="padding:6px 0;display:flex;align-items:center;justify-content:space-between;">
-              <span style="font-size:13px;color:var(--text);">└ ${sub.name}</span>
+              <span style="font-size:13px;color:var(--text);">└ ${sub.name}${unitBadge(subUnit)}</span>
               <div style="display:flex;gap:6px;">
+                ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_general_heads','${sub.id}','${sub.name.replace(/'/g,"\\'")}','${sub.unit_mode || ''}','${myUnit}')">⚖️</button>` : ''}
                 <button class="btn-sm btn-secondary" onclick="showEditGeneralHeadModal('${sub.id}','${sub.name.replace(/'/g,"\\'")}')">Edit</button>
                 <button class="btn-sm btn-danger" onclick="deleteGeneralHead('${sub.id}')">✕</button>
               </div>
             </div>
-          `).join('')}
+          `; }).join('')}
         </div>
       ` : ''}
     </div>

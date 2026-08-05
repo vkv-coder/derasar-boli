@@ -241,18 +241,28 @@ async function loadGeneralHeadsEntry() {
     return;
   }
 
-  el.innerHTML = data.map(h => `
+  const rootUnit = entryBoliMode === 'mun' ? 'mun' : 'rupees';
+  const byId = {};
+  data.forEach(h => { byId[h.id] = h; });
+  const resolveGeneralUnit = h => {
+    if (h.unit_mode === 'mun' || h.unit_mode === 'rupees') return h.unit_mode;
+    const parent = h.parent_id ? byId[h.parent_id] : null;
+    return parent ? resolveGeneralUnit(parent) : rootUnit;
+  };
+
+  el.innerHTML = data.map(h => {
+    const myUnit = resolveGeneralUnit(h);
+    return `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
-      <span style="font-size:14px;color:var(--text);">${h.name}</span>
-      <button class="btn-accent btn-sm" onclick="showDonationModal('${h.id}','${h.name.replace(/'/g,"\\'")}','general',null)">+ Add</button>
+      <span style="font-size:14px;color:var(--text);">${h.name}${entryUnitBadge(myUnit)}</span>
+      <button class="btn-accent btn-sm" onclick="showDonationModal('${h.id}','${h.name.replace(/'/g,"\\'")}','general',null,'${myUnit}')">+ Add</button>
     </div>
-  `).join('');
+  `; }).join('');
 }
 
 // ========== DONATION MODAL ==========
 function showDonationModal(headId, headName, headType, prefillMemberId, unitMode) {
-  // General heads are always ₹ — mun applies only to swapna (auction) heads/items.
-  const resolved = headType === 'general' ? { mode: 'rupees', rate: null } : resolveHeadUnit(unitMode);
+  const resolved = resolveHeadUnit(unitMode);
 
   showModal(`
     <div class="modal-title">+ Add Donation</div>
