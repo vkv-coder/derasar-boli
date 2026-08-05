@@ -11,12 +11,22 @@ let entryBoliRate = null;
 
 // Resolves the effective unit for a given swapna head/item, based on the
 // org-wide master switch (Boli Unit Setup) — only 'mixed' mode looks at the
-// head's own unit_mode; the ₹-per-mun rate is always the single org-wide
+// per-head unit_mode (which itself cascades down the tree, see
+// entryEffectiveUnit()); the ₹-per-mun rate is always the single org-wide
 // rate ("one temple, one rate"), never a per-head value.
-function resolveHeadUnit(unitMode) {
+function resolveHeadUnit(effectiveUnitMode) {
   if (entryBoliMode === 'rupees') return { mode: 'rupees', rate: null };
   if (entryBoliMode === 'mun') return { mode: 'mun', rate: entryBoliRate };
-  return unitMode === 'mun' ? { mode: 'mun', rate: entryBoliRate } : { mode: 'rupees', rate: null };
+  return effectiveUnitMode === 'mun' ? { mode: 'mun', rate: entryBoliRate } : { mode: 'rupees', rate: null };
+}
+
+// Own unit_mode wins if set, otherwise inherits from the parent's resolved value.
+function entryEffectiveUnit(ownUnitMode, inheritedUnit) {
+  return ownUnitMode === 'mun' || ownUnitMode === 'rupees' ? ownUnitMode : inheritedUnit;
+}
+
+function entryUnitBadge(resolvedUnit) {
+  return resolvedUnit === 'mun' ? ' <span style="font-size:10px;font-weight:700;background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:8px;">MUN</span>' : '';
 }
 
 async function renderEntry() {
@@ -109,97 +119,103 @@ async function loadEventHeadsEntry() {
 
   const topLevel = data.filter(s => !s.parent_id);
   const children = data.filter(s => s.parent_id);
+  const rootUnit = entryBoliMode === 'mun' ? 'mun' : 'rupees';
 
-  el.innerHTML = topLevel.map(head => renderEntryMainHead(head, children, data)).join('');
+  el.innerHTML = topLevel.map(head => renderEntryMainHead(head, children, data, rootUnit)).join('');
 }
 
-function renderEntryMainHead(head, children, allData) {
+function renderEntryMainHead(head, children, allData, rootUnit) {
   const isExpanded = expandedEntryHeads[head.id];
   const myChildren = children.filter(c => c.parent_id === head.id);
   const hasChildren = myChildren.length > 0;
   const hasItems = (head.dr_swapna_items || []).length > 0;
+  const myUnit = entryEffectiveUnit(head.unit_mode, rootUnit);
 
   return `
     <div style="border:2px solid var(--primary);border-radius:10px;margin-bottom:10px;overflow:hidden;">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#ffffff;cursor:pointer;"
            onclick="toggleEntryHead('${head.id}')">
         <strong style="color:var(--primary);font-size:14px;">
-          ${isExpanded ? '▼' : '▶'} ${head.name}
+          ${isExpanded ? '▼' : '▶'} ${head.name}${entryUnitBadge(myUnit)}
         </strong>
       </div>
       ${isExpanded ? `
         <div style="padding:8px 12px 12px 20px;">
           ${hasChildren ? myChildren.sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
-            .map(child => renderEntryChildHead(child, allData)).join('') : ''}
-          ${hasItems ? renderEntrySwapnaItems(head) : ''}
-          ${!hasChildren && !hasItems ? renderEntryAddButton(head.id, head.name, 'swapna', head.unit_mode) : ''}
+            .map(child => renderEntryChildHead(child, allData, myUnit)).join('') : ''}
+          ${hasItems ? renderEntrySwapnaItems(head, myUnit) : ''}
+          ${!hasChildren && !hasItems ? renderEntryAddButton(head.id, head.name, 'swapna', myUnit) : ''}
         </div>
       ` : ''}
     </div>
   `;
 }
 
-function renderEntryChildHead(child, allData) {
+function renderEntryChildHead(child, allData, inheritedUnit) {
   const isExpanded = expandedEntryHeads[child.id];
   const grandChildren = allData.filter(s => s.parent_id === child.id);
   const hasGrandChildren = grandChildren.length > 0;
   const hasItems = (child.dr_swapna_items || []).length > 0;
+  const myUnit = entryEffectiveUnit(child.unit_mode, inheritedUnit);
 
   return `
     <div style="border:1.5px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#fafafa;cursor:pointer;"
            onclick="toggleEntryHead('${child.id}')">
         <span style="color:var(--primary);font-size:13px;font-weight:600;">
-          ${isExpanded ? '▼' : '▶'} ${child.name}
+          ${isExpanded ? '▼' : '▶'} ${child.name}${entryUnitBadge(myUnit)}
         </span>
       </div>
       ${isExpanded ? `
         <div style="padding:6px 12px 10px 20px;">
           ${hasGrandChildren ? grandChildren.sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
-            .map(gc => renderEntryLeafHead(gc)).join('') : ''}
-          ${hasItems ? renderEntrySwapnaItems(child) : ''}
-          ${!hasGrandChildren && !hasItems ? renderEntryAddButton(child.id, child.name, 'swapna', child.unit_mode) : ''}
+            .map(gc => renderEntryLeafHead(gc, myUnit)).join('') : ''}
+          ${hasItems ? renderEntrySwapnaItems(child, myUnit) : ''}
+          ${!hasGrandChildren && !hasItems ? renderEntryAddButton(child.id, child.name, 'swapna', myUnit) : ''}
         </div>
       ` : ''}
     </div>
   `;
 }
 
-function renderEntryLeafHead(item) {
+function renderEntryLeafHead(item, inheritedUnit) {
   const isExpanded = expandedEntryHeads[item.id];
   const hasItems = (item.dr_swapna_items || []).length > 0;
+  const myUnit = entryEffectiveUnit(item.unit_mode, inheritedUnit);
 
   return `
     <div style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;overflow:hidden;">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#fff;cursor:pointer;"
            onclick="toggleEntryHead('${item.id}')">
         <span style="font-size:13px;color:var(--text);">
-          ${isExpanded ? '▼' : '▶'} ${item.name}
+          ${isExpanded ? '▼' : '▶'} ${item.name}${entryUnitBadge(myUnit)}
         </span>
       </div>
       ${isExpanded ? `
         <div style="padding:6px 12px 8px 20px;">
-          ${hasItems ? renderEntrySwapnaItems(item) : renderEntryAddButton(item.id, item.name, 'swapna', item.unit_mode)}
+          ${hasItems ? renderEntrySwapnaItems(item, myUnit) : renderEntryAddButton(item.id, item.name, 'swapna', myUnit)}
         </div>
       ` : ''}
     </div>
   `;
 }
 
-function renderEntrySwapnaItems(swapna) {
+function renderEntrySwapnaItems(swapna, inheritedUnit) {
   const items = (swapna.dr_swapna_items || []).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
-  return items.map(item => `
+  return items.map(item => {
+    const myUnit = entryEffectiveUnit(item.unit_mode, inheritedUnit);
+    return `
     <div style="padding:6px 0;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
-      <span style="font-size:13px;">• ${item.name}</span>
-      <button class="btn-accent btn-sm" onclick="showDonationModal('${item.id}','${(swapna.name+' → '+item.name).replace(/'/g,"\\'")}','swapna_item',null,'${item.unit_mode || 'rupees'}')">+ Add</button>
+      <span style="font-size:13px;">• ${item.name}${entryUnitBadge(myUnit)}</span>
+      <button class="btn-accent btn-sm" onclick="showDonationModal('${item.id}','${(swapna.name+' → '+item.name).replace(/'/g,"\\'")}','swapna_item',null,'${myUnit}')">+ Add</button>
     </div>
-  `).join('');
+  `; }).join('');
 }
 
-function renderEntryAddButton(id, name, type, unitMode) {
+function renderEntryAddButton(id, name, type, resolvedUnit) {
   return `
     <div style="padding:8px 0;">
-      <button class="btn-accent btn-sm" onclick="showDonationModal('${id}','${name.replace(/'/g,"\\'")}','${type}',null,'${unitMode || 'rupees'}')">+ Add Donation</button>
+      <button class="btn-accent btn-sm" onclick="showDonationModal('${id}','${name.replace(/'/g,"\\'")}','${type}',null,'${resolvedUnit}')">+ Add Donation</button>
     </div>
   `;
 }

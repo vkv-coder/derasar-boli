@@ -144,28 +144,36 @@ async function loadSwapnaList() {
   el.innerHTML = topLevel.map(head => renderMainHead(head, children, data)).join('');
 }
 
+// Rupees/Mun cascades down the tree: a head's own unit_mode wins if set,
+// otherwise it inherits whatever was resolved for its parent. NULL means
+// "not set here, inherit".
+function effectiveUnit(ownUnitMode, inheritedUnit) {
+  return ownUnitMode === 'mun' || ownUnitMode === 'rupees' ? ownUnitMode : inheritedUnit;
+}
+
 function renderMainHead(head, children, allData) {
   const isExpanded = expandedHeads[head.id];
   const myChildren = children.filter(c => c.parent_id === head.id);
   const hasChildren = myChildren.length > 0;
   const hasItems = (head.dr_swapna_items || []).length > 0;
+  const myUnit = effectiveUnit(head.unit_mode, orgBoliUnitMode === 'mun' ? 'mun' : 'rupees');
 
   return `
     <div style="border:2px solid var(--primary);border-radius:10px;margin-bottom:12px;overflow:hidden;">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#ffffff;cursor:pointer;"
            onclick="toggleHead('${head.id}')">
         <strong style="color:var(--primary);font-size:15px;">
-          ${isExpanded ? '▼' : '▶'} ${head.name}${unitBadge(head)}
+          ${isExpanded ? '▼' : '▶'} ${head.name}${unitBadge(myUnit)}
         </strong>
         <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
-          ${orgBoliUnitMode === 'mixed' && !hasChildren && !hasItems ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna','${head.id}','${head.name.replace(/'/g,"\\'")}','${head.unit_mode || 'rupees'}')">⚖️</button>` : ''}
+          ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna','${head.id}','${head.name.replace(/'/g,"\\'")}','${head.unit_mode || ''}','rupees')">⚖️</button>` : ''}
           <button class="btn-sm btn-danger" onclick="deleteSwapna('${head.id}')">Delete</button>
         </div>
       </div>
       ${isExpanded ? `
         <div style="padding:8px 16px 12px 24px;">
-          ${hasChildren ? myChildren.sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)).map(child => renderChildHead(child, allData)).join('') : ''}
-          ${hasItems ? renderSwapnaItems(head) : ''}
+          ${hasChildren ? myChildren.sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)).map(child => renderChildHead(child, allData, myUnit)).join('') : ''}
+          ${hasItems ? renderSwapnaItems(head, myUnit) : ''}
           ${!hasChildren && !hasItems ? `<p style="color:var(--text-muted);font-size:13px;">No sub-heads yet.</p>` : ''}
         </div>
       ` : ''}
@@ -173,21 +181,22 @@ function renderMainHead(head, children, allData) {
   `;
 }
 
-function renderChildHead(child, allData) {
+function renderChildHead(child, allData, inheritedUnit) {
   const isExpanded = expandedHeads[child.id];
   const grandChildren = allData.filter(s => s.parent_id === child.id);
   const hasGrandChildren = grandChildren.length > 0;
   const hasItems = (child.dr_swapna_items || []).length > 0;
+  const myUnit = effectiveUnit(child.unit_mode, inheritedUnit);
 
   return `
     <div style="border:1.5px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#fff;cursor:pointer;"
            onclick="toggleHead('${child.id}')">
         <span style="color:var(--primary-dark, #7a4a00);font-size:14px;">
-          ${isExpanded ? '▼' : '▶'} ${child.name}${unitBadge(child)}
+          ${isExpanded ? '▼' : '▶'} ${child.name}${unitBadge(myUnit)}
         </span>
         <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
-          ${orgBoliUnitMode === 'mixed' && !hasGrandChildren && !hasItems ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna','${child.id}','${child.name.replace(/'/g,"\\'")}','${child.unit_mode || 'rupees'}')">⚖️</button>` : ''}
+          ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna','${child.id}','${child.name.replace(/'/g,"\\'")}','${child.unit_mode || ''}','${inheritedUnit}')">⚖️</button>` : ''}
           <button class="btn-sm btn-secondary" onclick="showAddSwapnaItemModal('${child.id}','${child.name.replace(/'/g,"\\'")}')">+ Item</button>
           <button class="btn-sm btn-danger" onclick="deleteSwapna('${child.id}')">✕</button>
         </div>
@@ -196,13 +205,14 @@ function renderChildHead(child, allData) {
         <div style="padding:6px 12px 10px 24px;">
           ${hasGrandChildren ? grandChildren.sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)).map(gc => {
             const gcHasItems = (gc.dr_swapna_items || []).length > 0;
+            const gcUnit = effectiveUnit(gc.unit_mode, myUnit);
             return `
-            <div style="padding:4px 0;font-size:13px;color:var(--text);">• ${gc.name}${unitBadge(gc)}
-              ${orgBoliUnitMode === 'mixed' && !gcHasItems ? `<button class="btn-sm btn-secondary" style="margin-left:8px;" onclick="showHeadUnitModal('dr_swapna','${gc.id}','${gc.name.replace(/'/g,"\\'")}','${gc.unit_mode || 'rupees'}')">⚖️</button>` : ''}
+            <div style="padding:4px 0;font-size:13px;color:var(--text);">• ${gc.name}${unitBadge(gcUnit)}
+              ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" style="margin-left:8px;" onclick="showHeadUnitModal('dr_swapna','${gc.id}','${gc.name.replace(/'/g,"\\'")}','${gc.unit_mode || ''}','${myUnit}')">⚖️</button>` : ''}
               <button class="btn-sm btn-danger" style="margin-left:8px;" onclick="deleteSwapna('${gc.id}')">✕</button>
             </div>
           `; }).join('') : ''}
-          ${hasItems ? renderSwapnaItems(child) : ''}
+          ${hasItems ? renderSwapnaItems(child, myUnit) : ''}
           ${!hasGrandChildren && !hasItems ? `<p style="color:var(--text-muted);font-size:12px;">No items yet.</p>` : ''}
         </div>
       ` : ''}
@@ -210,36 +220,39 @@ function renderChildHead(child, allData) {
   `;
 }
 
-function renderSwapnaItems(swapna) {
+function renderSwapnaItems(swapna, inheritedUnit) {
   const items = (swapna.dr_swapna_items || []).sort((a,b) => (a.sort_order||0) - (b.sort_order||0));
   if (items.length === 0) return '';
-  return items.map(item => `
+  return items.map(item => {
+    const myUnit = effectiveUnit(item.unit_mode, inheritedUnit);
+    return `
     <div class="list-item" style="padding:5px 0;">
-      <span style="font-size:13px;">• ${item.name}${unitBadge(item)}</span>
+      <span style="font-size:13px;">• ${item.name}${unitBadge(myUnit)}</span>
       <div class="list-item-actions">
-        ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna_items','${item.id}','${item.name.replace(/'/g,"\\'")}','${item.unit_mode || 'rupees'}')">⚖️</button>` : ''}
+        ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna_items','${item.id}','${item.name.replace(/'/g,"\\'")}','${item.unit_mode || ''}','${inheritedUnit}')">⚖️</button>` : ''}
         <button class="btn-sm btn-secondary" onclick="showEditSwapnaItemModal('${item.id}','${item.name.replace(/'/g,"\\'")}')">Edit</button>
         <button class="btn-sm btn-danger" onclick="deleteSwapnaItem('${item.id}')">✕</button>
       </div>
     </div>
-  `).join('');
+  `; }).join('');
 }
 
-function unitBadge(head) {
-  if (orgBoliUnitMode === 'mun') return ' <span style="font-size:10px;font-weight:700;background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:8px;">MUN</span>';
-  if (orgBoliUnitMode === 'mixed' && head.unit_mode === 'mun') return ' <span style="font-size:10px;font-weight:700;background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:8px;">MUN</span>';
+function unitBadge(resolvedUnit) {
+  if (resolvedUnit === 'mun') return ' <span style="font-size:10px;font-weight:700;background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:8px;">MUN</span>';
   return '';
 }
 
-function showHeadUnitModal(table, id, name, currentMode) {
+function showHeadUnitModal(table, id, name, ownMode, inheritedFrom) {
   showModal(`
     <div class="modal-title">Unit — ${name}</div>
     <div class="form-group">
       <label>This head's boli is spoken in</label>
       <select id="head-unit-mode-select">
-        <option value="rupees" ${currentMode === 'rupees' ? 'selected' : ''}>₹ Rupees</option>
-        <option value="mun" ${currentMode === 'mun' ? 'selected' : ''}>Mun</option>
+        <option value="" ${!ownMode ? 'selected' : ''}>↳ Inherit (currently: ${inheritedFrom === 'mun' ? 'Mun' : '₹ Rupees'})</option>
+        <option value="rupees" ${ownMode === 'rupees' ? 'selected' : ''}>₹ Rupees</option>
+        <option value="mun" ${ownMode === 'mun' ? 'selected' : ''}>Mun</option>
       </select>
+      <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">Setting this here applies to everything below it too, unless overridden lower down.</p>
     </div>
     <div class="modal-actions">
       <button class="btn-primary" onclick="saveHeadUnit('${table}','${id}')">Save</button>
@@ -249,7 +262,7 @@ function showHeadUnitModal(table, id, name, currentMode) {
 }
 
 async function saveHeadUnit(table, id) {
-  const mode = document.getElementById('head-unit-mode-select').value;
+  const mode = document.getElementById('head-unit-mode-select').value || null;
 
   const { error } = await db.from(table)
     .update({ unit_mode: mode })
