@@ -288,7 +288,7 @@ function renderReportTable(donations) {
               <td style="font-size:12px;">${d.phone || '—'}</td>
               <td style="font-size:12px;">${d.family_no || '—'}</td>
               <td style="font-size:11px;max-width:200px;word-break:break-word;">${headName}</td>
-              <td><strong>₹${parseFloat(d.amount || 0).toLocaleString('en-IN')}</strong></td>
+              <td><strong>₹${parseFloat(d.amount || 0).toLocaleString('en-IN')}</strong>${d.mun_qty ? `<div style="font-size:11px;color:var(--text-muted);">${d.mun_qty} mun</div>` : ''}</td>
               <td>
                 ${isAdmin() ? `
                   <div style="display:flex;align-items:center;gap:4px;">
@@ -389,7 +389,7 @@ function whatsappReportRow(donationId) {
     `👤 Donor: ${d.donor_name || '—'}\n` +
     `🏠 Family No: ${d.family_no || '—'}\n` +
     `📋 Head: ${headName}\n` +
-    `💰 Amount: ₹${parseFloat(d.amount || 0).toLocaleString('en-IN')}\n` +
+    `💰 Amount: ₹${parseFloat(d.amount || 0).toLocaleString('en-IN')}${d.mun_qty ? ' (' + d.mun_qty + ' mun)' : ''}\n` +
     (receiptNo ? `🧾 Receipt No: ${receiptNo}\n` : '') +
     `\n🙏 Jai Jinendra`;
 
@@ -420,7 +420,7 @@ async function downloadExcelReport() {
   // Helper: build a head sheet and return { sheetName, entered, received, pending, verified, mismatch }
   function buildHeadSheet(wb, sheetLabel, donations) {
     const rows = [
-      ['#', 'Donor Name', 'Phone', 'Family No', 'Head / Sub-head', 'Amt Entered (₹)', 'Amt Received (₹)\n[Enter in App only]', 'Status', 'Receipt No']
+      ['#', 'Donor Name', 'Phone', 'Family No', 'Head / Sub-head', 'Amt Entered (₹)', 'Amt Received (₹)\n[Enter in App only]', 'Status', 'Receipt No', 'Mun Qty']
     ];
     donations.forEach((d, i) => {
       const status = getDonationStatus(d);
@@ -434,7 +434,8 @@ async function downloadExcelReport() {
         parseFloat(d.amount || 0),
         parseFloat(d.received_amount || 0),
         status.label,
-        receiptNo
+        receiptNo,
+        d.mun_qty || ''
       ]);
     });
 
@@ -446,12 +447,12 @@ async function downloadExcelReport() {
 
     if (donations.length > 0) {
       rows.push([]);
-      rows.push(['', 'TOTAL', '', '', '', entered, received, '', '']);
+      rows.push(['', 'TOTAL', '', '', '', entered, received, '', '', '']);
     }
 
     const safeName = sheetLabel.substring(0, 28).replace(/[\\\/\?\*\[\]]/g, '').trim() || 'Sheet';
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{wch:4},{wch:22},{wch:13},{wch:10},{wch:42},{wch:16},{wch:20},{wch:12},{wch:14}];
+    ws['!cols'] = [{wch:4},{wch:22},{wch:13},{wch:10},{wch:42},{wch:16},{wch:20},{wch:12},{wch:14},{wch:10}];
 
     // Mark Amt Received column (col G = index 6) as grey/locked visually
     const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
@@ -501,7 +502,7 @@ async function downloadExcelReport() {
 
   // ---- All Donations Sheet ----
   const allRows = [
-    ['#', 'Donor Name', 'Phone', 'Family No', 'Head Type', 'Head / Sub-head', 'Amt Entered (₹)', 'Amt Received (₹)\n[Enter in App only]', 'Status', 'Receipt No', 'Date']
+    ['#', 'Donor Name', 'Phone', 'Family No', 'Head Type', 'Head / Sub-head', 'Amt Entered (₹)', 'Amt Received (₹)\n[Enter in App only]', 'Status', 'Receipt No', 'Date', 'Mun Qty']
   ];
   reportAllDonations.forEach((d, i) => {
     const status = getDonationStatus(d);
@@ -517,7 +518,8 @@ async function downloadExcelReport() {
       parseFloat(d.received_amount || 0),
       status.label,
       receiptNo,
-      new Date(d.created_at).toLocaleDateString('en-IN')
+      new Date(d.created_at).toLocaleDateString('en-IN'),
+      d.mun_qty || ''
     ]);
   });
   // Total row
@@ -525,11 +527,11 @@ async function downloadExcelReport() {
   allRows.push(['', 'GRAND TOTAL', '', '', '', '',
     reportAllDonations.reduce((s,d) => s + parseFloat(d.amount||0), 0),
     reportAllDonations.reduce((s,d) => s + parseFloat(d.received_amount||0), 0),
-    '', '', ''
+    '', '', '', ''
   ]);
 
   const allWs = XLSX.utils.aoa_to_sheet(allRows);
-  allWs['!cols'] = [{wch:4},{wch:22},{wch:13},{wch:10},{wch:10},{wch:42},{wch:16},{wch:20},{wch:12},{wch:14},{wch:12}];
+  allWs['!cols'] = [{wch:4},{wch:22},{wch:13},{wch:10},{wch:10},{wch:42},{wch:16},{wch:20},{wch:12},{wch:14},{wch:12},{wch:10}];
   // Grey out Amt Received col (col H = index 7)
   const allRange = XLSX.utils.decode_range(allWs['!ref'] || 'A1');
   for (let R = 1; R <= allRange.e.r; R++) {

@@ -6,16 +6,32 @@ let entryEventId = null;
 let expandedEntryHeads = {};
 let recentEntries = [];
 let lastSavedDonationId = null;
+let entryBoliMode = 'rupees';
+let entryBoliRate = null;
+
+// Resolves the effective unit for a given swapna head/item, based on the
+// org-wide master switch (Boli Unit Setup) — only 'mixed' mode looks at the
+// head's own unit_mode/rate_per_mun; 'rupees'/'mun' apply to every head.
+function resolveHeadUnit(unitMode, rate) {
+  if (entryBoliMode === 'rupees') return { mode: 'rupees', rate: null };
+  if (entryBoliMode === 'mun') return { mode: 'mun', rate: entryBoliRate };
+  return unitMode === 'mun' ? { mode: 'mun', rate } : { mode: 'rupees', rate: null };
+}
 
 async function renderEntry() {
   const content = document.getElementById('page-content');
 
-  const { data: events } = await db
-    .from('dr_events')
-    .select('*')
-    .eq('is_live', true)
-    .eq('org_id', currentOrgId)
-    .order('created_at', { ascending: false });
+  const [{ data: events }, { data: orgData }] = await Promise.all([
+    db.from('dr_events')
+      .select('*')
+      .eq('is_live', true)
+      .eq('org_id', currentOrgId)
+      .order('created_at', { ascending: false }),
+    db.from('dr_organizations').select('boli_unit_mode, rate_per_mun').eq('id', currentOrgId).single()
+  ]);
+
+  entryBoliMode = orgData?.boli_unit_mode || 'rupees';
+  entryBoliRate = orgData?.rate_per_mun ?? null;
 
   content.innerHTML = `
     <div class="card">
@@ -115,7 +131,7 @@ function renderEntryMainHead(head, children, allData) {
           ${hasChildren ? myChildren.sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
             .map(child => renderEntryChildHead(child, allData)).join('') : ''}
           ${hasItems ? renderEntrySwapnaItems(head) : ''}
-          ${!hasChildren && !hasItems ? renderEntryAddButton(head.id, head.name, 'swapna') : ''}
+          ${!hasChildren && !hasItems ? renderEntryAddButton(head.id, head.name, 'swapna', head.unit_mode, head.rate_per_mun) : ''}
         </div>
       ` : ''}
     </div>
@@ -141,7 +157,7 @@ function renderEntryChildHead(child, allData) {
           ${hasGrandChildren ? grandChildren.sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
             .map(gc => renderEntryLeafHead(gc)).join('') : ''}
           ${hasItems ? renderEntrySwapnaItems(child) : ''}
-          ${!hasGrandChildren && !hasItems ? renderEntryAddButton(child.id, child.name, 'swapna') : ''}
+          ${!hasGrandChildren && !hasItems ? renderEntryAddButton(child.id, child.name, 'swapna', child.unit_mode, child.rate_per_mun) : ''}
         </div>
       ` : ''}
     </div>
@@ -162,7 +178,7 @@ function renderEntryLeafHead(item) {
       </div>
       ${isExpanded ? `
         <div style="padding:6px 12px 8px 20px;">
-          ${hasItems ? renderEntrySwapnaItems(item) : renderEntryAddButton(item.id, item.name, 'swapna')}
+          ${hasItems ? renderEntrySwapnaItems(item) : renderEntryAddButton(item.id, item.name, 'swapna', item.unit_mode, item.rate_per_mun)}
         </div>
       ` : ''}
     </div>
@@ -174,15 +190,15 @@ function renderEntrySwapnaItems(swapna) {
   return items.map(item => `
     <div style="padding:6px 0;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
       <span style="font-size:13px;">• ${item.name}</span>
-      <button class="btn-accent btn-sm" onclick="showDonationModal('${item.id}','${(swapna.name+' → '+item.name).replace(/'/g,"\\'")}','swapna_item',null)">+ Add</button>
+      <button class="btn-accent btn-sm" onclick="showDonationModal('${item.id}','${(swapna.name+' → '+item.name).replace(/'/g,"\\'")}','swapna_item',null,'${item.unit_mode || 'rupees'}',${item.rate_per_mun != null ? item.rate_per_mun : 'null'})">+ Add</button>
     </div>
   `).join('');
 }
 
-function renderEntryAddButton(id, name, type) {
+function renderEntryAddButton(id, name, type, unitMode, rate) {
   return `
     <div style="padding:8px 0;">
-      <button class="btn-accent btn-sm" onclick="showDonationModal('${id}','${name.replace(/'/g,"\\'")}','${type}',null)">+ Add Donation</button>
+      <button class="btn-accent btn-sm" onclick="showDonationModal('${id}','${name.replace(/'/g,"\\'")}','${type}',null,'${unitMode || 'rupees'}',${rate != null ? rate : 'null'})">+ Add Donation</button>
     </div>
   `;
 }
@@ -217,7 +233,10 @@ async function loadGeneralHeadsEntry() {
 }
 
 // ========== DONATION MODAL ==========
-function showDonationModal(headId, headName, headType, prefillMemberId) {
+function showDonationModal(headId, headName, headType, prefillMemberId, unitMode, rate) {
+  // General heads are always ₹ — mun applies only to swapna (auction) heads/items.
+  const resolved = headType === 'general' ? { mode: 'rupees', rate: null } : resolveHeadUnit(unitMode, rate);
+
   showModal(`
     <div class="modal-title">+ Add Donation</div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">${headName}</div>
@@ -266,16 +285,31 @@ function showDonationModal(headId, headName, headType, prefillMemberId) {
       </div>
     </div>
 
-    <div class="form-group">
-      <label>Amount (₹)</label>
-      <input type="number" id="modal-amount" placeholder="0" min="1" inputmode="numeric" />
-    </div>
+    ${resolved.mode === 'rupees' ? `
+      <div class="form-group">
+        <label>Amount (₹)</label>
+        <input type="number" id="modal-amount" placeholder="0" min="1" inputmode="numeric" />
+      </div>
+    ` : `
+      <div class="form-group">
+        <label>Quantity (Mun)</label>
+        <input type="number" id="modal-mun-qty" placeholder="0" min="0.01" step="0.01" inputmode="decimal" oninput="updateMunPreview()" />
+        <div id="modal-mun-preview" style="font-size:12px;color:var(--text-muted);margin-top:4px;">@ ₹${resolved.rate}/mun</div>
+        <input type="hidden" id="modal-mun-rate" value="${resolved.rate}" />
+      </div>
+    `}
 
     <div class="modal-actions">
       <button class="btn-primary" onclick="saveDonationFromModal('${headId}','${headName.replace(/'/g,"\\'")}','${headType}')">✅ Save</button>
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>
     </div>
   `);
+}
+
+function updateMunPreview() {
+  const rate = parseFloat(document.getElementById('modal-mun-rate').value) || 0;
+  const qty = parseFloat(document.getElementById('modal-mun-qty').value) || 0;
+  document.getElementById('modal-mun-preview').textContent = `@ ₹${rate}/mun = ₹${(qty * rate).toLocaleString('en-IN')}`;
 }
 
 function onModalDonorTypeChange() {
@@ -380,11 +414,21 @@ function clearModalMember() {
 
 async function saveDonationFromModal(headId, headName, headType) {
   const donorType = document.getElementById('modal-donor-type').value;
-  const amount = parseFloat(document.getElementById('modal-amount').value);
   const note = '';
 
+  let amount, munQty = null, rateUsed = null;
+  const munQtyInput = document.getElementById('modal-mun-qty');
+  if (munQtyInput) {
+    munQty = parseFloat(munQtyInput.value);
+    rateUsed = parseFloat(document.getElementById('modal-mun-rate').value);
+    if (!munQty || munQty <= 0) { showToast('Enter valid mun quantity', 'error'); return; }
+    amount = munQty * rateUsed;
+  } else {
+    amount = parseFloat(document.getElementById('modal-amount').value);
+    if (!amount || amount <= 0) { showToast('Enter valid amount', 'error'); return; }
+  }
+
   if (!donorType) { showToast('Select donor type', 'error'); return; }
-  if (!amount || amount <= 0) { showToast('Enter valid amount', 'error'); return; }
 
   let donorName = null;
   let phone = null;
@@ -415,6 +459,8 @@ async function saveDonationFromModal(headId, headName, headType) {
     family_no: familyNo || null,
     phone: phone || null,
     amount,
+    mun_qty: munQty,
+    rate_per_mun_used: rateUsed,
     note: note || null,
     entered_by: currentUser?.id || null,
     org_id: currentOrgId
@@ -426,7 +472,7 @@ async function saveDonationFromModal(headId, headName, headType) {
   lastSavedDonationId = saved.id;
   modalSelectedMember = null;
   closeModal();
-  showToast(`✅ Saved! ${donorName} → ₹${amount}`, 'success');
+  showToast(`✅ Saved! ${donorName} → ${munQty ? munQty + ' mun (₹' + amount.toLocaleString('en-IN') + ')' : '₹' + amount}`, 'success');
 
   recentEntries.unshift({
     id: saved.id,
@@ -434,7 +480,8 @@ async function saveDonationFromModal(headId, headName, headType) {
     family: familyNo || '—',
     phone: phone || '—',
     head: headName,
-    amount
+    amount,
+    munQty
   });
 
   updateRecentEntries();
@@ -462,7 +509,7 @@ function updateRecentEntries() {
               <td>${e.donor}</td>
               <td>${e.phone || '—'}</td>
               <td style="font-size:12px;">${e.head}</td>
-              <td><strong>${formatAmount(e.amount)}</strong></td>
+              <td><strong>${formatAmount(e.amount)}</strong>${e.munQty ? `<div style="font-size:11px;color:var(--text-muted);">${e.munQty} mun</div>` : ''}</td>
               <td>
                 <div style="display:flex;gap:4px;">
                   <button class="btn-sm btn-secondary" onclick="showDonationReceipt('${e.id}')">🧾</button>
@@ -486,7 +533,7 @@ function whatsappDonation(id) {
     `📱 Phone: ${e.phone || '—'}\n` +
     `🏠 Family: ${e.family || '—'}\n` +
     `📋 Head: ${e.head}\n` +
-    `💰 Amount: ${formatAmount(e.amount)}\n\n` +
+    `💰 Amount: ${formatAmount(e.amount)}${e.munQty ? ' (' + e.munQty + ' mun)' : ''}\n\n` +
     `🙏 Jai Jinendra`;
   window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
 }
@@ -513,10 +560,19 @@ async function showEditDonationModal(id, refreshFn) {
       <label>Phone</label>
       <input type="tel" id="edit-don-phone" value="${d.phone || ''}" placeholder="Mobile number" />
     </div>
-    <div class="form-group">
-      <label>Amount</label>
-      <input type="number" id="edit-don-amount" value="${d.amount}" min="1" />
-    </div>
+    ${d.mun_qty ? `
+      <div class="form-group">
+        <label>Quantity (Mun)</label>
+        <input type="number" id="edit-don-mun-qty" value="${d.mun_qty}" min="0.01" step="0.01" />
+        <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">@ ₹${d.rate_per_mun_used}/mun</div>
+        <input type="hidden" id="edit-don-mun-rate" value="${d.rate_per_mun_used}" />
+      </div>
+    ` : `
+      <div class="form-group">
+        <label>Amount</label>
+        <input type="number" id="edit-don-amount" value="${d.amount}" min="1" />
+      </div>
+    `}
     <div class="modal-actions">
       <button class="btn-primary" onclick="updateDonation('${id}','${refreshFn}')">Update</button>
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>
@@ -525,14 +581,26 @@ async function showEditDonationModal(id, refreshFn) {
 }
 
 async function updateDonation(id, refreshFn) {
-  const amount = parseFloat(document.getElementById('edit-don-amount').value);
   const donor_name = document.getElementById('edit-don-name').value.trim();
   const phone = document.getElementById('edit-don-phone').value.trim();
 
-  if (!amount || amount <= 0) { showToast('Enter valid amount', 'error'); return; }
+  const munQtyInput = document.getElementById('edit-don-mun-qty');
+  const update = { donor_name, phone: phone || null };
+
+  if (munQtyInput) {
+    const munQty = parseFloat(munQtyInput.value);
+    const rate = parseFloat(document.getElementById('edit-don-mun-rate').value);
+    if (!munQty || munQty <= 0) { showToast('Enter valid mun quantity', 'error'); return; }
+    update.mun_qty = munQty;
+    update.amount = munQty * rate;
+  } else {
+    const amount = parseFloat(document.getElementById('edit-don-amount').value);
+    if (!amount || amount <= 0) { showToast('Enter valid amount', 'error'); return; }
+    update.amount = amount;
+  }
 
   const { error } = await db.from('dr_donations')
-    .update({ amount, donor_name, phone: phone || null })
+    .update(update)
     .eq('id', id).eq('org_id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 

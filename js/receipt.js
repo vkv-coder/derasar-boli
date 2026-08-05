@@ -84,7 +84,7 @@ async function showReceiptById(receiptId, sendWhatsApp, phoneHint) {
       const { data: item } = await db.from('dr_swapna_items').select('name, dr_swapna(name)').eq('id', d.swapna_item_id).single();
       headName = (item?.dr_swapna?.name || 'Swapna') + (item?.name ? ' → ' + item.name : '');
     }
-    rows.push({ sno: sno++, headName, amount: parseFloat(d.amount) });
+    rows.push({ sno: sno++, headName, amount: parseFloat(d.amount), munQty: d.mun_qty });
   }
 
   const dt = new Date(receipt.created_at);
@@ -97,7 +97,7 @@ async function showReceiptById(receiptId, sendWhatsApp, phoneHint) {
   const tableRows = rows.map(r => `
     <tr>
       <td style="text-align:center;color:#888;">${r.sno}</td>
-      <td>${r.headName}</td>
+      <td>${r.headName}${r.munQty ? `<br><span style="font-size:10px;color:#888;">${r.munQty} mun</span>` : ''}</td>
       <td>₹ ${r.amount.toLocaleString('en-IN')}</td>
     </tr>`).join('');
 
@@ -303,7 +303,7 @@ async function showDonationReceipt(donationId) {
     <div class="row"><span class="row-label">કુટુંબ ક્રમ :</span><span class="row-value">${d.family_no || '—'}</span></div>
     <table class="heads-table">
       <thead><tr><th style="width:28px;text-align:center;">ક્ર.</th><th>દાન ની વિગત</th><th>રકમ</th></tr></thead>
-      <tbody><tr><td style="text-align:center;color:#888;">1</td><td>${headName}${itemName ? ' → ' + itemName : ''}</td><td>₹ ${total.toLocaleString('en-IN')}</td></tr></tbody>
+      <tbody><tr><td style="text-align:center;color:#888;">1</td><td>${headName}${itemName ? ' → ' + itemName : ''}${d.mun_qty ? `<br><span style="font-size:10px;color:#888;">${d.mun_qty} mun</span>` : ''}</td><td>₹ ${total.toLocaleString('en-IN')}</td></tr></tbody>
     </table>
     <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
     <div class="words-row">${numToGujaratiWords(total)} રૂપિયા</div>
