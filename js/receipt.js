@@ -264,6 +264,10 @@ function numToGujaratiWords(n) {
 async function showDonationReceipt(donationId) {
   const { data: d, error } = await db.from('dr_donations').select('*').eq('id', donationId).single();
   if (error || !d) { showToast('Could not load donation', 'error'); return; }
+  if (!d.received_amount || parseFloat(d.received_amount) <= 0) {
+    showToast('Enter the received amount first — receipt is only generated once payment is confirmed', 'error');
+    return;
+  }
   if (d.receipt_id) { await showReceiptById(d.receipt_id, false); return; }
 
   const org = currentOrg;
