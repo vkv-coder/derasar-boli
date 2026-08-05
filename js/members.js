@@ -216,7 +216,8 @@ async function updateMember(id) {
 
 async function deleteMember(id) {
   if (!confirm('Delete this member?')) return;
-  await db.from('dr_members').delete().eq('id', id);
+  const { error } = await db.from('dr_members').delete().eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Member deleted');
   await Promise.all([loadMembersStats(), loadMembersList()]);
 }
