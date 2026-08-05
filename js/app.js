@@ -67,7 +67,6 @@ function buildNav() {
 
   const operatorTabs = [
     { id: 'entry', label: '💰 Donation Entry' },
-    { id: 'live', label: '🔴 Live View' },
   ];
 
   const tabs = isAdmin() ? adminTabs : operatorTabs;

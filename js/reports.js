@@ -8,6 +8,15 @@ let liveEventId = null;
 async function renderLive() {
   const content = document.getElementById('page-content');
 
+  if (!isAdmin()) {
+    content.innerHTML = `
+      <div class="card" style="text-align:center;padding:40px;">
+        <div style="font-size:48px;margin-bottom:12px;">🔒</div>
+        <p style="color:var(--danger);font-weight:600;">Admin access only.</p>
+      </div>`;
+    return;
+  }
+
   const { data: events } = await db
     .from('dr_events')
     .select('*')
