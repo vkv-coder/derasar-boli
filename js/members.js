@@ -8,7 +8,10 @@ async function renderMembers() {
     <div class="card">
       <div class="section-header">
         <h3>Members List</h3>
-        <button class="btn-accent btn-sm" onclick="showAddMemberModal()">+ Add Member</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-secondary btn-sm" onclick="downloadMembersExcel()">⬇️ Excel</button>
+          <button class="btn-accent btn-sm" onclick="showAddMemberModal()">+ Add Member</button>
+        </div>
       </div>
       <div id="members-stats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
         <div style="color:var(--text-muted);font-size:13px;">Loading stats...</div>
@@ -97,6 +100,34 @@ async function loadMembersList(query = '') {
       &nbsp;·&nbsp; Missing phone: ${data.filter(m => !m.phone_no).length}
     </p>
   `;
+}
+
+// ========== EXCEL EXPORT ==========
+async function downloadMembersExcel() {
+  if (typeof XLSX === 'undefined') {
+    showToast('Excel library not loaded. Check internet connection.', 'error');
+    return;
+  }
+
+  const { data: raw, error } = await db.from('dr_members').select('*').eq('org_id', currentOrgId);
+  if (error || !raw) { showToast('Could not load members', 'error'); return; }
+  const data = sortFamilyNo(raw);
+
+  const rows = [
+    ['Family No.', 'Name', 'Phone', 'Address', 'Family Member Count']
+  ];
+  data.forEach(m => {
+    rows.push([m.family_no || '', m.person_name || '', m.phone_no || '', m.address || '', m.family_member_count || '']);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:10},{wch:32},{wch:14},{wch:32},{wch:12}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Members');
+
+  const fileName = `DerasarBoli_Members_${new Date().toISOString().slice(0,10)}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+  showToast('✅ Excel downloaded!', 'success');
 }
 
 let memberSearchTimer = null;
