@@ -7,6 +7,12 @@
 // this app's family-outstanding view (js/donors.js: showFamilyOutstanding)
 // when scanned by a logged-in admin — no public/unauthenticated access.
 
+function formatFamilyCode(no) {
+  if (!no) return '';
+  const m = String(no).match(/^([A-Za-z]+)[\s-]?(\d+)$/);
+  return m ? (m[1].toUpperCase() + '-' + m[2]) : String(no);
+}
+
 async function showMembershipCard(familyNo) {
   const { data: org } = await db.from('dr_organizations').select('*').eq('id', currentOrgId).single();
   const { data: members, error } = await db.from('dr_members')
@@ -17,6 +23,7 @@ async function showMembershipCard(familyNo) {
   const head = members.find(m => m.is_head) || members[0];
   const others = members.filter(m => m.id !== head.id);
   const orgName = (org && org.name) || 'Derasar Boli';
+  const familyCode = formatFamilyCode(familyNo);
   const cardUrl = window.location.origin + window.location.pathname + '?family=' + encodeURIComponent(familyNo);
 
   const html = `<!DOCTYPE html>
@@ -73,7 +80,7 @@ async function showMembershipCard(familyNo) {
         <div class="vc-temple">🙏 ${orgName}</div>
         <div class="vc-kind">MEMBERSHIP CARD</div>
         <div class="vc-head">${head.person_name}</div>
-        <div class="vc-fam">Family No: ${familyNo}</div>
+        <div class="vc-fam">Membership ID: ${familyCode}</div>
       </div>
       <div class="vc-front-right">
         <canvas id="qr-canvas"></canvas>
