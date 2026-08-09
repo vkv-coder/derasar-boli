@@ -39,6 +39,16 @@ async function initApp() {
   } else {
     loadTab('entry');
   }
+  checkFamilyDeepLink();
+}
+
+// Membership Card QR opens the app with ?family=<no> — if we're logged in
+// as admin, jump straight to that family's outstanding-donations view.
+function checkFamilyDeepLink() {
+  const familyNo = new URLSearchParams(window.location.search).get('family');
+  if (familyNo && isAdmin() && typeof showFamilyOutstanding === 'function') {
+    showFamilyOutstanding(familyNo);
+  }
 }
 
 async function loadOrgBranding() {

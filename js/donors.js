@@ -252,3 +252,107 @@ async function showDonorHistory_tab(donorKey, donorName, familyNo) {
     </div>
   `;
 }
+
+// ========== FAMILY OUTSTANDING (QR deep-link target) ==========
+// Reached via a Membership Card's QR (?family=<no> in the URL) — admin
+// scans while logged in, this shows that family's outstanding donations
+// so payment can be looked up and registered right there. No public
+// access — this only fires for an already-authenticated admin session
+// (see checkFamilyDeepLink() in js/app.js).
+async function showFamilyOutstanding(familyNo) {
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  const content = document.getElementById('page-content');
+  content.innerHTML = `<div class="card" style="text-align:center;padding:30px;color:var(--text-muted);">Loading...</div>`;
+
+  const [{ data: donations }, { data: members }, { data: swapnaTree }, { data: swapnaItems }, { data: generalHeads }] = await Promise.all([
+    db.from('dr_donations').select('*').eq('org_id', currentOrgId).eq('family_no', familyNo).order('created_at', { ascending: false }),
+    db.from('dr_members').select('*').eq('org_id', currentOrgId).eq('family_no', familyNo),
+    db.from('dr_swapna').select('*').eq('org_id', currentOrgId),
+    db.from('dr_swapna_items').select('*').eq('org_id', currentOrgId),
+    db.from('dr_general_heads').select('*').eq('org_id', currentOrgId)
+  ]);
+
+  reportSwapnaTree = swapnaTree || [];
+  reportSwapnaItems = swapnaItems || [];
+  reportGeneralHeads = generalHeads || [];
+  reportAllDonations = donations || [];
+
+  const head = (members || []).find(m => m.is_head) || (members || [])[0];
+  const headName = head ? head.person_name : ('Family ' + familyNo);
+
+  const entered = (donations || []).reduce((s, d) => s + parseFloat(d.amount || 0), 0);
+  const received = (donations || []).reduce((s, d) => s + parseFloat(d.received_amount || 0), 0);
+  const pending = Math.max(entered - received, 0);
+
+  content.innerHTML = `
+    <div class="card">
+      <div class="section-header">
+        <h3>🪪 ${headName} — Family ${familyNo}</h3>
+        <button class="btn-secondary btn-sm" onclick="clearFamilyDeepLink()">✕ Close</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <div style="flex:1;background:var(--primary);color:white;border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:10px;opacity:.8;">Pledged</div>
+          <div style="font-size:20px;font-weight:800;">${formatAmount(entered)}</div>
+        </div>
+        <div style="flex:1;background:#4CAF50;color:white;border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:10px;opacity:.8;">✅ Received</div>
+          <div style="font-size:20px;font-weight:800;">${formatAmount(received)}</div>
+        </div>
+        ${pending > 0 ? `
+        <div style="flex:1;background:#ff9800;color:white;border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:10px;opacity:.8;">⏳ To Collect</div>
+          <div style="font-size:20px;font-weight:800;">${formatAmount(pending)}</div>
+        </div>` : ''}
+      </div>
+      <div id="family-donations-list"></div>
+    </div>
+  `;
+
+  const listEl = document.getElementById('family-donations-list');
+  if (!donations || donations.length === 0) {
+    listEl.innerHTML = `<div class="empty-state"><div class="empty-icon">💰</div><p>No donations recorded for this family yet.</p></div>`;
+    return;
+  }
+
+  listEl.innerHTML = donations.map(d => {
+    const dHeadName = getDonationHeadName(d);
+    const isReceived = d.received_amount != null && parseFloat(d.received_amount) >= parseFloat(d.amount);
+    return `
+    <div style="border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-size:12px;color:var(--text-muted);max-width:70%;">${dHeadName}</div>
+        <span style="font-size:11px;padding:2px 8px;border-radius:10px;font-weight:700;white-space:nowrap;
+          background:${isReceived ? '#e8f5e9' : '#fff3e0'};
+          color:${isReceived ? '#2e7d32' : '#e65100'};">
+          ${isReceived ? '✅ Received' : '⏳ Pending'}
+        </span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:13px;">
+          <strong>${formatAmount(parseFloat(d.amount))}</strong>${d.mun_qty ? ` <span style="font-size:11px;color:var(--text-muted);">(${d.mun_qty} mun)</span>` : ''}
+        </div>
+        ${isAdmin() ? `
+          <input type="number" value="${d.received_amount || ''}" placeholder="Amt received" min="0"
+            style="width:110px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:600;"
+            onchange="saveFamilyReceivedAmount('${d.id}', this.value, '${familyNo}')" />
+        ` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function saveFamilyReceivedAmount(donationId, value, familyNo) {
+  const amount = value === '' ? null : parseFloat(value);
+  const { error } = await db.from('dr_donations').update({ received_amount: amount }).eq('id', donationId).eq('org_id', currentOrgId);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  showToast('✅ Amount saved!', 'success');
+  await showFamilyOutstanding(familyNo);
+}
+
+function clearFamilyDeepLink() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('family');
+  window.history.replaceState({}, '', url);
+  loadTab(isAdmin() ? 'events' : 'entry');
+}

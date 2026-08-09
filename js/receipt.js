@@ -6,7 +6,7 @@ function buildTempleHeader(org) {
   if (!org) org = {};
   return `
   <div class="org-header">
-    ${org.namah ? `<div class="org-namah">${org.namah}</div>` : ''}
+    ${org.namah_text ? `<div class="org-namah">${org.namah_text}</div>` : ''}
     <div class="org-name">${org.name || 'Derasar Boli'}</div>
     ${org.address ? `<div class="org-addr">${org.address}</div>` : ''}
     ${org.pan_no ? `<div class="org-reg">PAN : ${org.pan_no}</div>` : ''}
@@ -270,7 +270,7 @@ async function showDonationReceipt(donationId) {
   }
   if (d.receipt_id) { await showReceiptById(d.receipt_id, false); return; }
 
-  const org = currentOrg;
+  const { data: org } = await db.from('dr_organizations').select('*').eq('id', d.org_id || currentOrgId).single();
   const templeHeader = buildTempleHeader(org);
 
   let headName = '', itemName = '';
