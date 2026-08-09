@@ -52,6 +52,9 @@ async function showMembershipCard(familyNo) {
     <div class="footer" style="margin-top:10px;">🙏 જય જિનેન્દ્ર 🙏</div>
   </div>
 </div>
+<div id="wa-info" style="display:none;background:#e8f5e9;border:1.5px solid #4CAF50;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:12px;color:#1b5e20;text-align:center;line-height:1.6;">
+  ✅ Card PNG downloaded. WhatsApp opened.<br>In WhatsApp: tap 📎 Attach → select PNG → Send.
+</div>
 <div class="btns">
   <button class="btn btn-print" onclick="window.print()">🖨 Print</button>
   <button class="btn btn-dl" id="card-wa-btn" onclick="sendCardWA()">📲 WhatsApp</button>
@@ -60,9 +63,15 @@ async function showMembershipCard(familyNo) {
 <script>
   var CARD_URL = ${JSON.stringify(cardUrl)};
   var HEAD_NAME = ${JSON.stringify(head.person_name)};
+  var HEAD_PHONE = ${JSON.stringify((head.phone_no || '').replace(/\D/g, ''))};
   QRCode.toCanvas(document.getElementById('qr-canvas'), CARD_URL, { width: 140, margin: 1 }, function(err) {});
 
   function sendCardWA() {
+    var waNum = HEAD_PHONE.length === 10 ? '91' + HEAD_PHONE : HEAD_PHONE;
+    var waUrl = waNum
+      ? 'https://wa.me/' + waNum + '?text=' + encodeURIComponent('🙏 Membership Card - ' + HEAD_NAME)
+      : 'https://wa.me/?text=' + encodeURIComponent('🙏 Membership Card - ' + HEAD_NAME);
+
     var btn = document.getElementById('card-wa-btn');
     btn.textContent = '⏳ Preparing...'; btn.disabled = true;
     var s = document.createElement('script');
@@ -77,7 +86,8 @@ async function showMembershipCard(familyNo) {
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
             URL.revokeObjectURL(url);
             btn.textContent = '📲 WhatsApp'; btn.disabled = false;
-            window.open('https://wa.me/?text=' + encodeURIComponent('🙏 Membership Card - ' + HEAD_NAME));
+            document.getElementById('wa-info').style.display = 'block';
+            window.open(waUrl);
           }, 'image/png');
         });
     };
