@@ -119,6 +119,7 @@ async function showMembershipCard(familyNo) {
     var waUrl = waNum
       ? 'https://wa.me/' + waNum + '?text=' + encodeURIComponent('🙏 Membership Card - ' + HEAD_NAME)
       : 'https://wa.me/?text=' + encodeURIComponent('🙏 Membership Card - ' + HEAD_NAME);
+    var fileName = 'MembershipCard-' + HEAD_NAME.replace(/\s+/g, '_') + '.png';
 
     var btn = document.getElementById('card-wa-btn');
     btn.textContent = '⏳ Preparing...'; btn.disabled = true;
@@ -128,9 +129,23 @@ async function showMembershipCard(familyNo) {
       html2canvas(document.getElementById('card-capture'), { scale: 3, useCORS: true, logging: false, backgroundColor: '#ffffff' })
         .then(function(canvas) {
           canvas.toBlob(function(blob) {
+            var file = new File([blob], fileName, { type: 'image/png' });
+
+            // Mobile: native share sheet attaches the image directly —
+            // pick WhatsApp there, no separate download+attach step, and
+            // no risk of the download getting cut off by the app-switch.
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+              navigator.share({ files: [file], text: '🙏 Membership Card - ' + HEAD_NAME })
+                .then(function() { btn.textContent = '📲 WhatsApp'; btn.disabled = false; })
+                .catch(function() { btn.textContent = '📲 WhatsApp'; btn.disabled = false; });
+              return;
+            }
+
+            // Desktop fallback: download PNG, open WhatsApp targeted at
+            // the number, user attaches manually (wa.me can't pre-attach).
             var url = URL.createObjectURL(blob);
             var a = document.createElement('a');
-            a.href = url; a.download = 'MembershipCard-' + HEAD_NAME.replace(/\\s+/g,'_') + '.png';
+            a.href = url; a.download = fileName;
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
             URL.revokeObjectURL(url);
             btn.textContent = '📲 WhatsApp'; btn.disabled = false;
