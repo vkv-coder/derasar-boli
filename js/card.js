@@ -1,12 +1,11 @@
 // ==========================================
-// DERASAR BOLI - Membership Card
+// DERASAR BOLI - Membership Card (visiting-card size)
 // ==========================================
-// Reuses receipt.js's RECEIPT_CSS/buildTempleHeader for consistent
-// branding. Card's QR encodes a deep link (?family=<no>) back into this
-// app — scanning it while logged in as admin jumps straight to that
-// family's outstanding-donations view (js/donors.js: showFamilyOutstanding)
-// so payment can be looked up and registered on the spot. No public/
-// unauthenticated access — same RLS as everything else in the app.
+// Prints as an actual 3.5in x 2in visiting card (2 sides): front carries
+// temple name + head-of-family name + QR deep-link (?family=<no>), back
+// lists every family member (fits up to 9+ via 2-column layout). QR opens
+// this app's family-outstanding view (js/donors.js: showFamilyOutstanding)
+// when scanned by a logged-in admin — no public/unauthenticated access.
 
 async function showMembershipCard(familyNo) {
   const { data: org } = await db.from('dr_organizations').select('*').eq('id', currentOrgId).single();
@@ -17,7 +16,7 @@ async function showMembershipCard(familyNo) {
 
   const head = members.find(m => m.is_head) || members[0];
   const others = members.filter(m => m.id !== head.id);
-  const templeHeader = buildTempleHeader(org);
+  const orgName = (org && org.name) || 'Derasar Boli';
   const cardUrl = window.location.origin + window.location.pathname + '?family=' + encodeURIComponent(familyNo);
 
   const html = `<!DOCTYPE html>
@@ -26,36 +25,78 @@ async function showMembershipCard(familyNo) {
 <meta charset="UTF-8"/>
 <title>Membership Card – ${head.person_name}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
-<style>${RECEIPT_CSS}
-  .card-id{font-size:12px;color:#888;text-align:center;margin-bottom:10px;font-weight:600;}
-  .members-box{margin:10px 0;padding:8px 0;border-top:1px dashed #e0c0c0;border-bottom:1px dashed #e0c0c0;}
-  .head-name{font-weight:800;color:#c00;font-size:16px;margin-bottom:6px;}
-  .other-name{font-size:13px;padding:3px 0 3px 8px;color:#333;}
-  #qr-canvas{display:block;margin:12px auto 4px;}
-  .qr-note{text-align:center;font-size:10px;color:#999;}
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Hind Vadodara','Noto Sans Gujarati',Arial,sans-serif;background:#f0ece4;display:flex;flex-direction:column;align-items:center;padding:20px;gap:16px;min-height:100vh}
+  #card-capture{display:flex;flex-direction:column;gap:14px;align-items:center}
+  .vcard{width:3.5in;height:2in;background:#fff;border:1px solid #ddd;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.15);padding:10px 12px;position:relative;overflow:hidden}
+  .vc-front{display:flex;height:100%;align-items:center;gap:8px}
+  .vc-front-left{flex:1;min-width:0}
+  .vc-temple{font-size:11px;font-weight:800;color:#c00;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .vc-kind{font-size:8px;letter-spacing:1.5px;color:#999;margin-top:2px}
+  .vc-head{font-size:16px;font-weight:800;color:#1a1a1a;margin-top:10px;line-height:1.25;word-break:break-word}
+  .vc-fam{font-size:9.5px;color:#666;margin-top:5px}
+  .vc-front-right{width:76px;flex-shrink:0;text-align:center}
+  #qr-canvas{width:70px !important;height:70px !important;display:block;margin:0 auto}
+  .vc-qr-note{font-size:6px;color:#aaa;margin-top:3px;line-height:1.3}
+  .vc-back{display:flex;flex-direction:column;height:100%}
+  .vc-back-title{font-size:9.5px;font-weight:800;color:#c00;border-bottom:1.5px solid #c00;padding-bottom:4px;margin-bottom:5px;display:flex;justify-content:space-between}
+  .vc-list{columns:2;column-gap:12px;flex:1;font-size:9px;line-height:1.65}
+  .vc-item{break-inside:avoid;color:#333}
+  .vc-item.is-head{font-weight:800;color:#c00}
+  .vc-back-foot{font-size:7px;color:#aaa;text-align:center;margin-top:4px}
+  .card-label{font-size:10px;color:#888;font-weight:600;text-align:center}
+  .btns{display:flex;gap:8px;margin-top:4px}
+  .btn{border:none;border-radius:6px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer}
+  .btn-print{background:#333;color:#fff}
+  .btn-dl{background:#25D366;color:#fff}
+  .btn-close{background:#eee;color:#333}
+  #wa-info{display:none;background:#e8f5e9;border:1.5px solid #4CAF50;border-radius:8px;padding:10px 14px;margin:4px 0;font-size:12px;color:#1b5e20;text-align:center;line-height:1.6;max-width:340px}
+  @media print{
+    @page{size:3.5in 2in;margin:0}
+    body{padding:0;background:#fff;gap:0}
+    .no-print{display:none !important}
+    #card-capture{gap:0}
+    .vcard{box-shadow:none;border:none;border-radius:0;page-break-after:always}
+    .card-label{display:none}
+  }
 </style>
 </head>
 <body>
-<div class="receipt">
-  ${templeHeader}
-  <div class="receipt-body">
-    <div class="receipt-title"><span class="rt-label">MEMBERSHIP CARD</span></div>
-    <div class="card-id">Family No: ${familyNo}</div>
-    <div class="members-box">
-      <div class="head-name">🙏 ${head.person_name}</div>
-      ${others.map(m => `<div class="other-name">${m.person_name}</div>`).join('')}
+<div id="card-capture">
+  <div class="card-label no-print">FRONT</div>
+  <div class="vcard" id="vc-front">
+    <div class="vc-front">
+      <div class="vc-front-left">
+        <div class="vc-temple">🙏 ${orgName}</div>
+        <div class="vc-kind">MEMBERSHIP CARD</div>
+        <div class="vc-head">${head.person_name}</div>
+        <div class="vc-fam">Family No: ${familyNo}</div>
+      </div>
+      <div class="vc-front-right">
+        <canvas id="qr-canvas"></canvas>
+        <div class="vc-qr-note">Office use —<br>scan to view a/c</div>
+      </div>
     </div>
-    <canvas id="qr-canvas"></canvas>
-    <div class="qr-note">For office use — scan to look up account</div>
-    <div class="footer" style="margin-top:10px;">🙏 જય જિનેન્દ્ર 🙏</div>
+  </div>
+  <div class="card-label no-print">BACK</div>
+  <div class="vcard" id="vc-back">
+    <div class="vc-back">
+      <div class="vc-back-title"><span>FAMILY MEMBERS</span><span>${members.length}</span></div>
+      <div class="vc-list">
+        <div class="vc-item is-head">🙏 ${head.person_name}</div>
+        ${others.map(m => `<div class="vc-item">${m.person_name}</div>`).join('')}
+      </div>
+      <div class="vc-back-foot">${orgName}</div>
+    </div>
   </div>
 </div>
-<div id="wa-info" style="display:none;background:#e8f5e9;border:1.5px solid #4CAF50;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:12px;color:#1b5e20;text-align:center;line-height:1.6;">
-  ✅ Card PNG downloaded. WhatsApp opened.<br>In WhatsApp: tap 📎 Attach → select PNG → Send.
+<div id="wa-info" class="no-print">
+  ✅ Card PNG downloaded (front + back).<br>In WhatsApp: tap 📎 Attach → select PNG → Send.
 </div>
-<div class="btns">
+<div class="btns no-print">
   <button class="btn btn-print" onclick="window.print()">🖨 Print</button>
   <button class="btn btn-dl" id="card-wa-btn" onclick="sendCardWA()">📲 WhatsApp</button>
   <button class="btn btn-close" onclick="window.close()">Close</button>
@@ -77,7 +118,7 @@ async function showMembershipCard(familyNo) {
     var s = document.createElement('script');
     s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
     s.onload = function() {
-      html2canvas(document.querySelector('.receipt'), { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' })
+      html2canvas(document.getElementById('card-capture'), { scale: 3, useCORS: true, logging: false, backgroundColor: '#ffffff' })
         .then(function(canvas) {
           canvas.toBlob(function(blob) {
             var url = URL.createObjectURL(blob);
