@@ -42,7 +42,7 @@ async function showMembershipCard(familyNo) {
   .vcard{width:3.5in;height:2in;background:#fff;border:1px solid #ddd;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.15);position:relative;overflow:hidden}
   .vc-front{display:flex;flex-direction:column;height:100%}
   .vc-temple-band{padding:6px 10px 3px;flex-shrink:0}
-  .vc-temple{font-size:13.5px;font-weight:800;color:#c00;line-height:1.28}
+  .vc-temple{font-size:13.5px;font-weight:800;color:#c00;line-height:1.28;text-align:center}
   .vc-front-row{display:flex;flex:1;min-height:0}
   .vc-logo-wrap{width:30%;flex-shrink:0;background-color:#fff8ec;background-image:url('${logoUrl}');background-repeat:no-repeat;background-position:center center;background-size:contain}
   .vc-front-mid{flex:1;min-width:0;padding:2px 8px;display:flex;flex-direction:column;justify-content:center}
