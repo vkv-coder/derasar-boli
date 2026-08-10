@@ -29,13 +29,25 @@ async function loadFunctionsList() {
     el.innerHTML = `<p style="font-size:12px;color:var(--text-muted);">No upcoming functions. Add one below.</p>`;
     return;
   }
-  el.innerHTML = functions.map(f => `
+
+  const totals = await Promise.all(functions.map(f =>
+    db.from('dr_function_passes').select('allowed_count').eq('org_id', currentOrgId).eq('function_id', f.id)
+      .then(({ data }) => (data || []).reduce((s, r) => s + (r.allowed_count || 0), 0))
+  ));
+
+  el.innerHTML = functions.map((f, i) => `
     <div style="display:flex;justify-content:space-between;align-items:center;border:1.5px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:6px;">
       <div>
         <strong>${f.name}</strong>
         <div style="font-size:11px;color:var(--text-muted);">${new Date(f.event_date + 'T00:00:00').toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</div>
       </div>
-      <button class="btn-sm btn-danger" onclick="deleteFunction('${f.id}')">Del</button>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="text-align:center;">
+          <div style="font-size:18px;font-weight:800;color:var(--primary);">${totals[i]}</div>
+          <div style="font-size:9px;color:var(--text-muted);">TOTAL ALLOTTED</div>
+        </div>
+        <button class="btn-sm btn-danger" onclick="deleteFunction('${f.id}')">Del</button>
+      </div>
     </div>
   `).join('');
 }
