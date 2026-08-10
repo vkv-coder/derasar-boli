@@ -24,7 +24,7 @@ async function showMembershipCard(familyNo) {
   const others = members.filter(m => m.id !== head.id);
   const orgName = (org && org.name) || 'Derasar Boli';
   const familyCode = formatFamilyCode(familyNo);
-  const logoUrl = window.location.origin + '/jin-pratik.jpg';
+  const logoUrl = window.location.origin + '/jin-pratik.png';
   const cardUrl = window.location.origin + window.location.pathname + '?family=' + encodeURIComponent(familyNo);
 
   const html = `<!DOCTYPE html>

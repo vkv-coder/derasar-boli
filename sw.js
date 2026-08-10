@@ -2,7 +2,7 @@
 // DERASAR BOLI - Service Worker
 // ==========================================
 
-const CACHE_NAME = 'derasar-boli-v48';
+const CACHE_NAME = 'derasar-boli-v49';
 const ASSETS = [
   '/',
   '/index.html',
@@ -27,7 +27,7 @@ const ASSETS = [
   '/js/demo.js',
   '/manifest.json',
   '/temple.png',
-  '/jin-pratik.jpg'
+  '/jin-pratik.png'
 ];
 
 self.addEventListener('install', e => {
