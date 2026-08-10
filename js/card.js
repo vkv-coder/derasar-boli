@@ -41,10 +41,10 @@ async function showMembershipCard(familyNo) {
   #card-capture{display:flex;flex-direction:column;gap:14px;align-items:center}
   .vcard{width:3.5in;height:2in;background:#fff;border:1px solid #ddd;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.15);position:relative;overflow:hidden}
   .vc-front{display:flex;flex-direction:column;height:100%}
-  .vc-temple-band{padding:6px 10px 3px;flex-shrink:0}
-  .vc-temple{font-size:13.5px;font-weight:800;color:#c00;line-height:1.28;text-align:center}
-  .vc-front-row{display:flex;flex:1;min-height:0;align-items:center}
-  .vc-logo-wrap{align-self:stretch;width:30%;flex-shrink:0;background-color:#fff8ec;background-image:url('${logoUrl}');background-repeat:no-repeat;background-position:center center;background-size:contain}
+  .vc-temple-band{padding:6px 10px 3px;flex-shrink:0;margin-left:30%}
+  .vc-temple{font-size:14.5px;font-weight:800;color:#c00;line-height:1.3;text-align:center}
+  .vc-front-row{position:absolute;left:0;right:0;top:25px;height:142px;display:flex}
+  .vc-logo-wrap{width:30%;flex-shrink:0;background-color:#fff8ec;background-image:url('${logoUrl}');background-repeat:no-repeat;background-position:center center;background-size:contain}
   .vc-front-mid{flex:1;min-width:0;padding:2px 8px;display:flex;flex-direction:column;justify-content:center}
   .vc-id-big{font-size:23px;font-weight:900;color:#7B1C1C;line-height:1;margin-bottom:5px;letter-spacing:0.5px}
   .vc-head{font-size:13px;font-weight:800;color:#1450c9;line-height:1.25;word-break:break-word;margin-bottom:2px}
