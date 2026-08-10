@@ -24,6 +24,7 @@ async function showMembershipCard(familyNo) {
   const others = members.filter(m => m.id !== head.id);
   const orgName = (org && org.name) || 'Derasar Boli';
   const familyCode = formatFamilyCode(familyNo);
+  const logoUrl = window.location.origin + '/jin-pratik.jpg';
   const cardUrl = window.location.origin + window.location.pathname + '?family=' + encodeURIComponent(familyNo);
 
   const html = `<!DOCTYPE html>
@@ -38,12 +39,16 @@ async function showMembershipCard(familyNo) {
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Hind Vadodara','Noto Sans Gujarati',Arial,sans-serif;background:#f0ece4;display:flex;flex-direction:column;align-items:center;padding:20px;gap:16px;min-height:100vh}
   #card-capture{display:flex;flex-direction:column;gap:14px;align-items:center}
-  .vcard{width:3.5in;height:2in;background:#fff;border:1px solid #ddd;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.15);padding:10px 12px;position:relative;overflow:hidden}
-  .vc-front{display:flex;height:100%;align-items:center;gap:8px}
-  .vc-front-left{flex:1;min-width:0}
+  .vcard{width:3.5in;height:2in;background:#fff;border:1px solid #ddd;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.15);padding:8px 12px;position:relative;overflow:hidden}
+  .vc-front{display:flex;flex-direction:column;height:100%}
+  .vc-masthead{display:flex;align-items:center;gap:6px;border-bottom:1px solid #eee;padding-bottom:4px;margin-bottom:6px;flex-shrink:0}
+  .vc-logo{width:20px;height:20px;object-fit:contain;flex-shrink:0}
   .vc-temple{font-size:11px;font-weight:800;color:#c00;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .vc-kind{font-size:8px;letter-spacing:1.5px;color:#999;margin-top:2px}
-  .vc-head{font-size:16px;font-weight:800;color:#1a1a1a;margin-top:10px;line-height:1.25;word-break:break-word}
+  .vc-body-row{display:flex;flex:1;align-items:center;gap:8px}
+  .vc-front-left{flex:1;min-width:0}
+  .vc-kind{font-size:8px;letter-spacing:1.5px;color:#999}
+  .vc-head{font-size:15px;font-weight:800;color:#1450c9;margin-top:8px;line-height:1.3;word-break:break-word}
+  .vc-head .vc-count{font-size:11px;font-weight:600;color:#666}
   .vc-fam{font-size:9.5px;color:#666;margin-top:5px}
   .vc-front-right{width:76px;flex-shrink:0;text-align:center}
   #qr-canvas{width:70px !important;height:70px !important;display:block;margin:0 auto}
@@ -76,15 +81,20 @@ async function showMembershipCard(familyNo) {
   <div class="card-label no-print">FRONT</div>
   <div class="vcard" id="vc-front">
     <div class="vc-front">
-      <div class="vc-front-left">
-        <div class="vc-temple">🙏 ${orgName}</div>
-        <div class="vc-kind">MEMBERSHIP CARD</div>
-        <div class="vc-head">${head.person_name}</div>
-        <div class="vc-fam">Membership ID: ${familyCode}</div>
+      <div class="vc-masthead">
+        <img class="vc-logo" src="${logoUrl}" alt="">
+        <div class="vc-temple">${orgName}</div>
       </div>
-      <div class="vc-front-right">
-        <canvas id="qr-canvas"></canvas>
-        <div class="vc-qr-note">Office use —<br>scan to view a/c</div>
+      <div class="vc-body-row">
+        <div class="vc-front-left">
+          <div class="vc-kind">MEMBERSHIP CARD</div>
+          <div class="vc-head">${head.person_name} <span class="vc-count">(${members.length})</span></div>
+          <div class="vc-fam">Membership ID: ${familyCode}</div>
+        </div>
+        <div class="vc-front-right">
+          <canvas id="qr-canvas"></canvas>
+          <div class="vc-qr-note">Office use —<br>scan to view a/c</div>
+        </div>
       </div>
     </div>
   </div>
