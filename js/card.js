@@ -39,20 +39,18 @@ async function showMembershipCard(familyNo) {
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Hind Vadodara','Noto Sans Gujarati',Arial,sans-serif;background:#f0ece4;display:flex;flex-direction:column;align-items:center;padding:20px;gap:16px;min-height:100vh}
   #card-capture{display:flex;flex-direction:column;gap:14px;align-items:center}
-  .vcard{width:3.5in;height:2in;background:#fff;border:1px solid #ddd;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.15);padding:8px 12px;position:relative;overflow:hidden}
-  .vc-front{display:flex;flex-direction:column;height:100%}
-  .vc-masthead{display:flex;align-items:center;gap:6px;border-bottom:1px solid #eee;padding-bottom:4px;margin-bottom:6px;flex-shrink:0}
-  .vc-logo{width:20px;height:20px;object-fit:contain;flex-shrink:0}
-  .vc-temple{font-size:11px;font-weight:800;color:#c00;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .vc-body-row{display:flex;flex:1;align-items:center;gap:8px}
-  .vc-front-left{flex:1;min-width:0}
-  .vc-kind{font-size:8px;letter-spacing:1.5px;color:#999}
-  .vc-head{font-size:15px;font-weight:800;color:#1450c9;margin-top:8px;line-height:1.3;word-break:break-word}
-  .vc-head .vc-count{font-size:11px;font-weight:600;color:#666}
-  .vc-fam{font-size:9.5px;color:#666;margin-top:5px}
-  .vc-front-right{width:76px;flex-shrink:0;text-align:center}
-  #qr-canvas{width:70px !important;height:70px !important;display:block;margin:0 auto}
-  .vc-qr-note{font-size:6px;color:#aaa;margin-top:3px;line-height:1.3}
+  .vcard{width:3.5in;height:2in;background:#fff;border:1px solid #ddd;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.15);position:relative;overflow:hidden}
+  .vc-front{display:flex;height:100%}
+  .vc-logo-wrap{width:34%;flex-shrink:0;background:#fff8ec;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:4px 2px}
+  .vc-logo-wrap img{width:100%;height:100%;object-fit:contain;object-position:center}
+  .vc-front-mid{flex:1;min-width:0;padding:8px 8px;display:flex;flex-direction:column;justify-content:center}
+  .vc-temple{font-size:11.5px;font-weight:800;color:#c00;line-height:1.25;margin-bottom:5px}
+  .vc-id-big{font-size:25px;font-weight:900;color:#7B1C1C;line-height:1;margin-bottom:6px;letter-spacing:0.5px}
+  .vc-head{font-size:14px;font-weight:800;color:#1450c9;line-height:1.25;word-break:break-word;margin-bottom:2px}
+  .vc-member-count{font-size:10.5px;color:#666;font-weight:700}
+  .vc-front-right{width:64px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 4px}
+  #qr-canvas{width:56px !important;height:56px !important;display:block;margin:0 auto}
+  .vc-qr-note{font-size:6px;color:#aaa;margin-top:3px;line-height:1.3;text-align:center}
   .vc-back{display:flex;flex-direction:column;height:100%}
   .vc-back-title{font-size:9.5px;font-weight:800;color:#c00;border-bottom:1.5px solid #c00;padding-bottom:4px;margin-bottom:5px;display:flex;justify-content:space-between}
   .vc-list{columns:2;column-gap:12px;flex:1;font-size:9px;line-height:1.65}
@@ -81,20 +79,18 @@ async function showMembershipCard(familyNo) {
   <div class="card-label no-print">FRONT</div>
   <div class="vcard" id="vc-front">
     <div class="vc-front">
-      <div class="vc-masthead">
-        <img class="vc-logo" src="${logoUrl}" alt="">
-        <div class="vc-temple">${orgName}</div>
+      <div class="vc-logo-wrap">
+        <img src="${logoUrl}" alt="">
       </div>
-      <div class="vc-body-row">
-        <div class="vc-front-left">
-          <div class="vc-kind">MEMBERSHIP CARD</div>
-          <div class="vc-head">${head.person_name} <span class="vc-count">(${members.length})</span></div>
-          <div class="vc-fam">Membership ID: ${familyCode}</div>
-        </div>
-        <div class="vc-front-right">
-          <canvas id="qr-canvas"></canvas>
-          <div class="vc-qr-note">Office use —<br>scan to view a/c</div>
-        </div>
+      <div class="vc-front-mid">
+        <div class="vc-temple">${orgName}</div>
+        <div class="vc-id-big">${familyCode}</div>
+        <div class="vc-head">${head.person_name}</div>
+        <div class="vc-member-count">Member (${members.length})</div>
+      </div>
+      <div class="vc-front-right">
+        <canvas id="qr-canvas"></canvas>
+        <div class="vc-qr-note">Office use —<br>scan to view a/c</div>
       </div>
     </div>
   </div>
