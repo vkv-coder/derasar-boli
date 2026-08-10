@@ -56,6 +56,14 @@ async function renderHeads() {
     <div id="swapna-section"></div>
     <div class="card">
       <div class="section-header">
+        <h3>🎟 Functions / Event Entry</h3>
+        <button class="btn-accent btn-sm" onclick="showAddFunctionModal()">+ Add Function</button>
+      </div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Upcoming functions only — past ones drop off this list automatically. Set pass counts per family from the Members tab (🎟) or when scanning their Membership Card.</p>
+      <div id="functions-list">Loading...</div>
+    </div>
+    <div class="card">
+      <div class="section-header">
         <h3>🔷 General Donation Heads</h3>
         <div style="display:flex;gap:8px;">
           <button class="btn-sm btn-secondary" onclick="loadDefaultHeads()">Load Defaults</button>
@@ -65,7 +73,7 @@ async function renderHeads() {
       <div id="general-heads-list">Loading...</div>
     </div>
   `;
-  await loadGeneralHeadsList();
+  await Promise.all([loadGeneralHeadsList(), loadFunctionsList()]);
 }
 
 function onBoliUnitModeChange() {

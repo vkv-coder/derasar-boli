@@ -307,7 +307,16 @@ async function showFamilyOutstanding(familyNo) {
       </div>
       <div id="family-donations-list"></div>
     </div>
+    <div class="card">
+      <h3 style="margin-bottom:10px;">🎟 Function Passes</h3>
+      <div id="family-pass-section">Loading...</div>
+    </div>
   `;
+
+  buildFamilyPassesHTML(familyNo, (members || []).length).then(html => {
+    const passEl = document.getElementById('family-pass-section');
+    if (passEl) passEl.innerHTML = html;
+  });
 
   const listEl = document.getElementById('family-donations-list');
   if (!donations || donations.length === 0) {
