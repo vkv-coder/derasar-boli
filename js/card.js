@@ -44,7 +44,7 @@ async function showMembershipCard(familyNo) {
   .vc-temple-band{padding:6px 10px 3px;flex-shrink:0}
   .vc-temple{font-size:13.5px;font-weight:800;color:#c00;line-height:1.28;text-align:center}
   .vc-front-row{display:flex;flex:1;min-height:0}
-  .vc-logo-wrap{width:30%;flex-shrink:0;background-color:#fff8ec;background-image:url('${logoUrl}');background-repeat:no-repeat;background-position:center center;background-size:contain}
+  .vc-logo-wrap{width:30%;flex-shrink:0;background-color:#fff8ec;background-image:url('${logoUrl}');background-repeat:no-repeat;background-position:center 8%;background-size:contain}
   .vc-front-mid{flex:1;min-width:0;padding:2px 8px;display:flex;flex-direction:column;justify-content:center}
   .vc-id-big{font-size:23px;font-weight:900;color:#7B1C1C;line-height:1;margin-bottom:5px;letter-spacing:0.5px}
   .vc-head{font-size:13px;font-weight:800;color:#1450c9;line-height:1.25;word-break:break-word;margin-bottom:2px}
@@ -92,7 +92,7 @@ async function showMembershipCard(familyNo) {
         </div>
         <div class="vc-front-right">
           <canvas id="qr-canvas"></canvas>
-          <div class="vc-qr-note">Office use —<br>scan to view a/c</div>
+          <div class="vc-qr-note">For Office Use</div>
         </div>
       </div>
     </div>
