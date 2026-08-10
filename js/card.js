@@ -41,11 +41,10 @@ async function showMembershipCard(familyNo) {
   #card-capture{display:flex;flex-direction:column;gap:14px;align-items:center}
   .vcard{width:3.5in;height:2in;background:#fff;border:1px solid #ddd;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.15);position:relative;overflow:hidden}
   .vc-front{display:flex;flex-direction:column;height:100%}
-  .vc-temple-band{padding:6px 10px 3px;flex-shrink:0;margin-left:30%}
+  .vc-temple-band{padding:6px 10px 3px;flex-shrink:0}
   .vc-temple{font-size:13.5px;font-weight:800;color:#c00;line-height:1.28;text-align:center}
-  .vc-front-row{display:flex;flex:1;min-height:0}
-  .vc-logo-spacer{width:30%;flex-shrink:0}
-  .vc-logo-wrap{position:absolute;left:0;top:25px;bottom:0;width:30%;background-color:#fff8ec;background-image:url('${logoUrl}');background-repeat:no-repeat;background-position:center top;background-size:contain}
+  .vc-front-row{display:flex;flex:1;min-height:0;align-items:center}
+  .vc-logo-wrap{align-self:stretch;width:30%;flex-shrink:0;background-color:#fff8ec;background-image:url('${logoUrl}');background-repeat:no-repeat;background-position:center center;background-size:contain}
   .vc-front-mid{flex:1;min-width:0;padding:2px 8px;display:flex;flex-direction:column;justify-content:center}
   .vc-id-big{font-size:23px;font-weight:900;color:#7B1C1C;line-height:1;margin-bottom:5px;letter-spacing:0.5px}
   .vc-head{font-size:13px;font-weight:800;color:#1450c9;line-height:1.25;word-break:break-word;margin-bottom:2px}
@@ -80,13 +79,12 @@ async function showMembershipCard(familyNo) {
 <div id="card-capture">
   <div class="card-label no-print">FRONT</div>
   <div class="vcard" id="vc-front">
-    <div class="vc-logo-wrap"></div>
     <div class="vc-front">
       <div class="vc-temple-band">
         <div class="vc-temple">${orgName}</div>
       </div>
       <div class="vc-front-row">
-        <div class="vc-logo-spacer"></div>
+        <div class="vc-logo-wrap"></div>
         <div class="vc-front-mid">
           <div class="vc-id-big">${familyCode}</div>
           <div class="vc-head">${head.person_name}</div>
