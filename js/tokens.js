@@ -123,6 +123,10 @@ async function saveTokenAllocation(tokenId) {
   if (updErr) { showToast('Error: ' + updErr.message, 'error'); return; }
 
   closeModal();
-  showToast(`✅ Allocated into ${records.length} receipts`, 'success');
-  await loadPendingTokens();
+  showToast(`✅ Allocated into ${records.length} receipts — enter received amount per name to print`, 'success');
+
+  // This can be triggered from either the Pending Tokens tab or the Donors
+  // tab (which also surfaces pending tokens) — refresh whichever is showing.
+  if (activeTab === 'donors' && typeof loadDonorsList === 'function') await loadDonorsList();
+  else if (document.getElementById('tokens-list')) await loadPendingTokens();
 }

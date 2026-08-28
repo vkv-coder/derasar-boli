@@ -12,6 +12,11 @@ function renderSplitRows(containerId, totalAmount, familyNo) {
   splitRowsState[containerId] = { totalAmount, familyNo: familyNo || null, rows: [] };
   return `
     <div id="${containerId}">
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;padding:8px;background:#f5f5f5;border-radius:8px;">
+        <span style="font-size:12px;color:var(--text-muted);">No. of split receipts:</span>
+        <input type="number" id="${containerId}-splitcount" min="2" placeholder="e.g. 5" style="width:60px;" />
+        <button class="btn-sm btn-secondary" onclick="generateEqualSplitRows('${containerId}')">Generate Rows</button>
+      </div>
       <div id="${containerId}-rows"></div>
       <div style="display:flex;gap:8px;margin:8px 0;">
         ${familyNo ? `<button class="btn-sm btn-secondary" onclick="addFamilyMemberRows('${containerId}','${familyNo}')">+ Add Family Member</button>` : ''}
@@ -21,6 +26,27 @@ function renderSplitRows(containerId, totalAmount, familyNo) {
       <div id="${containerId}-sum" style="font-size:13px;font-weight:600;margin-top:4px;"></div>
     </div>
   `;
+}
+
+// Pre-fills N rows with an equal share of the total (last row absorbs the
+// rounding remainder so the sum stays exact) — admin then edits names and
+// can freely adjust amounts afterward as long as the total still matches.
+function generateEqualSplitRows(containerId) {
+  const state = splitRowsState[containerId];
+  if (!state) return;
+
+  const n = parseInt(document.getElementById(containerId + '-splitcount')?.value, 10);
+  if (!n || n < 2) { showToast('Enter how many receipts to split into (2 or more)', 'error'); return; }
+
+  const total = parseFloat(state.totalAmount);
+  const share = Math.floor(total / n);
+  const remainder = total - share * n;
+
+  state.rows = [];
+  for (let i = 0; i < n; i++) {
+    state.rows.push({ name: '', amount: share + (i === n - 1 ? remainder : 0), memberId: null, familyNo: null });
+  }
+  splitRowsRedraw(containerId);
 }
 
 function splitRowsRedraw(containerId) {

@@ -13,6 +13,12 @@
 // resolution here.
 
 let allDonorDonations = [];
+let allPendingTokens = [];
+
+function tokenDisplayCode(t) {
+  const dt = new Date(t.created_at);
+  return 'TKN-' + dt.getFullYear() + '-' + String(t.id || '').slice(-6).padStart(6, '0');
+}
 
 async function renderDonors() {
   const content = document.getElementById('page-content');
@@ -34,12 +40,15 @@ async function renderDonors() {
 }
 
 async function loadDonorsList() {
-  const [{ data: donations, error }, { data: swapnaTree }, { data: swapnaItems }, { data: generalHeads }] = await Promise.all([
+  const [{ data: donations, error }, { data: swapnaTree }, { data: swapnaItems }, { data: generalHeads }, { data: tokens }] = await Promise.all([
     db.from('dr_donations').select('*').eq('org_id', currentOrgId).order('created_at', { ascending: false }),
     db.from('dr_swapna').select('*').eq('org_id', currentOrgId),
     db.from('dr_swapna_items').select('*').eq('org_id', currentOrgId),
-    db.from('dr_general_heads').select('*').eq('org_id', currentOrgId).order('display_order')
+    db.from('dr_general_heads').select('*').eq('org_id', currentOrgId).order('display_order'),
+    db.from('dr_receipt_tokens').select('*').eq('org_id', currentOrgId).eq('status', 'pending')
   ]);
+
+  allPendingTokens = tokens || [];
 
   if (error || !donations) {
     document.getElementById('donors-list').innerHTML =
@@ -88,7 +97,11 @@ function groupByDonor(donations) {
     if (d.created_at > map[key].lastDate) map[key].lastDate = d.created_at;
   });
 
-  return Object.values(map).sort((a, b) => {
+  return sortByFamily(Object.values(map));
+}
+
+function sortByFamily(list) {
+  return list.sort((a, b) => {
     const fa = a.family === '—' ? 'ZZZ' : a.family;
     const fb = b.family === '—' ? 'ZZZ' : b.family;
     const parseF = s => { const m = s.match(/^([A-Za-z]+)-?(\d+)$/); return m ? [m[1].toUpperCase(), parseInt(m[2])] : [s, 0]; };
@@ -98,15 +111,35 @@ function groupByDonor(donations) {
   });
 }
 
-function renderDonorList(donations) {
-  const donors = groupByDonor(donations);
+function pendingTokenRows() {
+  return allPendingTokens.map(t => ({
+    key: 'token:' + t.id,
+    name: t.payer_name,
+    family: t.family_no || '—',
+    phone: t.phone || '—',
+    memberId: null,
+    entered: 0,
+    received: 0,
+    count: 0,
+    lastDate: t.created_at,
+    isToken: true,
+    tokenId: t.id,
+    tokenAmount: parseFloat(t.total_amount),
+    tokenCode: tokenDisplayCode(t)
+  }));
+}
+
+function renderDonorList(donations, tokenRows) {
+  const donors = sortByFamily([...groupByDonor(donations), ...(tokenRows || pendingTokenRows())]);
   const statsEl = document.getElementById('donors-stats');
   const listEl  = document.getElementById('donors-list');
 
-  const totalDonors   = donors.length;
+  const tokenEntries  = donors.filter(d => d.isToken);
+  const totalDonors   = donors.length - tokenEntries.length;
   const totalReceived = donors.reduce((s, d) => s + d.received, 0);
   const totalPending  = donors.reduce((s, d) => s + Math.max(d.entered - d.received, 0), 0);
-  const withPending   = donors.filter(d => (d.entered - d.received) > 0).length;
+  const withPending   = donors.filter(d => !d.isToken && (d.entered - d.received) > 0).length;
+  const totalTokens   = tokenEntries.reduce((s, d) => s + d.tokenAmount, 0);
 
   const chip = (icon, val, label, color) =>
     `<div style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;
@@ -117,7 +150,8 @@ function renderDonorList(donations) {
   statsEl.innerHTML =
     chip('🤝', totalDonors, ' Donors') +
     chip('✅', formatAmount(totalReceived), ' Collected', '#4CAF50') +
-    (totalPending > 0 ? chip('⏳', formatAmount(totalPending), ` To Collect (${withPending})`, '#ff9800') : '');
+    (totalPending > 0 ? chip('⏳', formatAmount(totalPending), ` To Collect (${withPending})`, '#ff9800') : '') +
+    (tokenEntries.length > 0 ? chip('🎫', formatAmount(totalTokens), ` Pending Allocation (${tokenEntries.length})`, '#7B1E3B') : '');
 
   if (donors.length === 0) {
     listEl.innerHTML = `<div class="empty-state"><div class="empty-icon">🤝</div><p>No donors yet.</p></div>`;
@@ -138,6 +172,24 @@ function renderDonorList(donations) {
       </thead>
       <tbody>
         ${donors.map((d, i) => {
+          if (d.isToken) {
+            return `
+            <tr style="background:#fff3e8;">
+              <td>${i + 1}</td>
+              <td><strong>${d.name}</strong> <span style="display:inline-block;font-size:10px;font-weight:700;background:#7B1E3B;color:#fff;padding:2px 6px;border-radius:8px;margin-left:4px;">🎫 ${d.tokenCode}</span></td>
+              <td>${d.family}</td>
+              <td style="font-size:12px;">${d.phone}</td>
+              <td style="text-align:right;color:var(--text-muted);">—</td>
+              <td style="text-align:right;color:var(--text-muted);">—</td>
+              <td style="text-align:right;font-weight:700;color:#7B1E3B;">${formatAmount(d.tokenAmount)}</td>
+              <td>
+                <div style="display:flex;gap:4px;">
+                  <button class="btn-sm btn-primary" onclick="showAllocateTokenModal('${d.tokenId}')">Allocate</button>
+                  <button class="btn-sm btn-secondary" onclick="showTokenSlip('${d.tokenId}')">🖨</button>
+                </div>
+              </td>
+            </tr>
+          `; }
           const pending = Math.max(d.entered - d.received, 0);
           return `
           <tr style="${pending > 0 ? 'background:#fffbf0;' : ''}">
@@ -179,7 +231,13 @@ function filterDonors() {
           (d.family_no  || '').toLowerCase().includes(q) ||
           (d.phone      || '').toLowerCase().includes(q))
       : allDonorDonations;
-    renderDonorList(filtered);
+    const filteredTokens = q
+      ? pendingTokenRows().filter(t =>
+          t.name.toLowerCase().includes(q) ||
+          t.family.toLowerCase().includes(q) ||
+          t.phone.toLowerCase().includes(q))
+      : pendingTokenRows();
+    renderDonorList(filtered, filteredTokens);
   }, 250);
 }
 
