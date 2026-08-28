@@ -80,7 +80,7 @@ async function addFamilyMemberRows(containerId, familyNo) {
   const state = splitRowsState[containerId];
   if (!state) return;
 
-  const { data: members, error } = await db.from('dr_members')
+  const { data: members, error } = await db.from('dr_family_individuals')
     .select('*').eq('org_id', currentOrgId).eq('family_no', familyNo)
     .order('is_head', { ascending: false });
 
@@ -118,7 +118,10 @@ function confirmFamilyMemberPick(containerId) {
   state.familyMembers.forEach((m, i) => {
     const cb = document.getElementById(`fam-pick-${containerId}-${i}`);
     if (cb && cb.checked) {
-      state.rows.push({ name: m.person_name, amount: '', memberId: m.id, familyNo: m.family_no });
+      // m.id is a dr_family_individuals id, not a dr_members id (which is
+      // head-only) — never store it as dr_donations.member_id, that FK
+      // points at dr_members. family_no alone is enough to attribute the split.
+      state.rows.push({ name: m.person_name, amount: '', memberId: null, familyNo: m.family_no });
     }
   });
 

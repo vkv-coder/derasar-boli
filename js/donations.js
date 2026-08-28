@@ -589,7 +589,7 @@ async function loadReceiptNameOptions(familyNo) {
   const freeText = document.getElementById('modal-receipt-name');
   if (!sel) return;
 
-  const { data: members } = await db.from('dr_members')
+  const { data: members } = await db.from('dr_family_individuals')
     .select('person_name').eq('org_id', currentOrgId).eq('family_no', familyNo)
     .order('is_head', { ascending: false });
 
