@@ -147,7 +147,8 @@ function showAddMemberModal() {
     <div style="display:flex;gap:8px;">
       <div class="form-group" style="flex:1;">
         <label>Family No. <span style="color:#c00;">*</span></label>
-        <input type="text" id="mem-family" placeholder="e.g. 101" />
+        <input type="text" id="mem-family" placeholder="Auto-suggested, e.g. A11" />
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Auto-filled for a new family based on the name below. To add this person to an existing family instead, type that family's number here first.</div>
       </div>
       <div class="form-group" style="flex:1;">
         <label>No. of Family Members</label>
@@ -156,7 +157,7 @@ function showAddMemberModal() {
     </div>
     <div class="form-group">
       <label>Person Name <span style="color:#c00;">*</span></label>
-      <input type="text" id="mem-name" placeholder="Full name" />
+      <input type="text" id="mem-name" placeholder="Full name" onblur="suggestFamilyNo()" />
     </div>
     <div class="form-group">
       <label>Phone No.</label>
@@ -171,6 +172,37 @@ function showAddMemberModal() {
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>
     </div>
   `);
+}
+
+// Next family_no in the A1/A2.../B1... scheme: first letter of the head's
+// name + one past the highest existing number already used for that letter.
+async function computeNextFamilyNo(headName) {
+  const match = (headName || '').match(/[A-Za-z]/);
+  const letter = match ? match[0].toUpperCase() : 'Z';
+
+  const { data } = await db.from('dr_members')
+    .select('family_no')
+    .eq('org_id', currentOrgId)
+    .ilike('family_no', letter + '%');
+
+  let maxNum = 0;
+  const re = new RegExp('^' + letter + '(\\d+)$', 'i');
+  (data || []).forEach(r => {
+    const m = re.exec(r.family_no || '');
+    if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
+  });
+
+  return letter + (maxNum + 1);
+}
+
+async function suggestFamilyNo() {
+  const famEl = document.getElementById('mem-family');
+  const nameEl = document.getElementById('mem-name');
+  if (!famEl || !nameEl) return;
+  if (famEl.value.trim()) return; // don't override a family no. already typed (adding to an existing family)
+  const name = nameEl.value.trim();
+  if (!name) return;
+  famEl.value = await computeNextFamilyNo(name);
 }
 
 async function addMember(familyNo = null, personName = null) {
