@@ -8,6 +8,7 @@ let recentEntries = [];
 let lastSavedDonationId = null;
 let entryBoliMode = 'rupees';
 let entryBoliRate = null;
+let entrySplitThreshold = 20000;
 
 // Resolves the effective unit for a given swapna head/item, based on the
 // org-wide master switch (Boli Unit Setup) — only 'mixed' mode looks at the
@@ -38,11 +39,12 @@ async function renderEntry() {
       .eq('is_live', true)
       .eq('org_id', currentOrgId)
       .order('created_at', { ascending: false }),
-    db.from('dr_organizations').select('boli_unit_mode, rate_per_mun').eq('id', currentOrgId).single()
+    db.from('dr_organizations').select('boli_unit_mode, rate_per_mun, split_receipt_threshold').eq('id', currentOrgId).single()
   ]);
 
   entryBoliMode = orgData?.boli_unit_mode || 'rupees';
   entryBoliRate = orgData?.rate_per_mun ?? null;
+  entrySplitThreshold = orgData?.split_receipt_threshold ?? 20000;
 
   content.innerHTML = `
     <div class="card">
@@ -320,22 +322,155 @@ function showDonationModal(headId, headName, headType, prefillMemberId, unitMode
     ${resolved.mode === 'rupees' ? `
       <div class="form-group">
         <label>Amount (₹)</label>
-        <input type="number" id="modal-amount" placeholder="0" min="1" inputmode="numeric" />
+        <input type="number" id="modal-amount" placeholder="0" min="1" inputmode="numeric" oninput="onModalAmountOrMunChange()" />
       </div>
     ` : `
       <div class="form-group">
         <label>Quantity (Mun)</label>
-        <input type="number" id="modal-mun-qty" placeholder="0" min="0.01" step="0.01" inputmode="decimal" oninput="updateMunPreview()" />
+        <input type="number" id="modal-mun-qty" placeholder="0" min="0.01" step="0.01" inputmode="decimal" oninput="updateMunPreview(); onModalAmountOrMunChange();" />
         <div id="modal-mun-preview" style="font-size:12px;color:var(--text-muted);margin-top:4px;">@ ₹${resolved.rate}/mun</div>
         <input type="hidden" id="modal-mun-rate" value="${resolved.rate}" />
       </div>
     `}
 
+    <div id="modal-split-options" style="display:none;border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">This amount is ₹${entrySplitThreshold.toLocaleString('en-IN')} or above. A single receipt still works fine — use these only if the donor wants the amount split across multiple names.</p>
+      <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+        <button class="btn-sm btn-secondary" onclick="startSplitNow('${headId}','${headName.replace(/'/g,"\\'")}','${headType}')">🔀 Split Into Multiple Names</button>
+        <button class="btn-sm btn-secondary" onclick="issueTokenFromModal('${headId}','${headName.replace(/'/g,"\\'")}','${headType}')">🎫 Issue Token (Decide Later)</button>
+      </div>
+      <div id="modal-split-builder"></div>
+    </div>
+
     <div class="modal-actions">
-      <button class="btn-primary" onclick="saveDonationFromModal('${headId}','${headName.replace(/'/g,"\\'")}','${headType}')">✅ Save</button>
+      <button class="btn-primary" onclick="saveDonationFromModal('${headId}','${headName.replace(/'/g,"\\'")}','${headType}')">✅ Save (Single Receipt)</button>
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>
     </div>
   `);
+}
+
+function getCurrentModalAmount() {
+  const munInput = document.getElementById('modal-mun-qty');
+  if (munInput) {
+    const qty = parseFloat(munInput.value) || 0;
+    const rate = parseFloat(document.getElementById('modal-mun-rate')?.value) || 0;
+    return qty * rate;
+  }
+  const amtInput = document.getElementById('modal-amount');
+  return parseFloat(amtInput?.value) || 0;
+}
+
+function onModalAmountOrMunChange() {
+  const el = document.getElementById('modal-split-options');
+  if (!el) return;
+  el.style.display = (getCurrentModalAmount() >= entrySplitThreshold) ? 'block' : 'none';
+}
+
+function getModalPayerInfo() {
+  const donorType = document.getElementById('modal-donor-type').value;
+  if (donorType === 'other') {
+    const name = document.getElementById('modal-other-name').value.trim();
+    const phone = document.getElementById('modal-other-phone').value.trim();
+    if (!name) { showToast('Enter donor name first', 'error'); return null; }
+    if (phone.length !== 10) { showToast('Enter a 10-digit phone number first', 'error'); return null; }
+    return { memberId: null, name, phone, familyNo: null };
+  } else if (donorType === 'member') {
+    if (!modalSelectedMember) { showToast('Select a member first', 'error'); return null; }
+    return { memberId: modalSelectedMember.id, name: modalSelectedMember.name, phone: modalSelectedMember.phone || null, familyNo: modalSelectedMember.familyNo };
+  }
+  showToast('Select donor type first', 'error');
+  return null;
+}
+
+function startSplitNow(headId, headName, headType) {
+  const amount = getCurrentModalAmount();
+  if (!amount || amount <= 0) { showToast('Enter a valid amount first', 'error'); return; }
+  const payer = getModalPayerInfo();
+  if (!payer) return;
+
+  const builder = document.getElementById('modal-split-builder');
+  builder.innerHTML = renderSplitRows('modal-split-rows', amount, payer.familyNo) +
+    `<button class="btn-primary btn-sm" style="margin-top:8px;" onclick="saveSplitFromModal('${headId}','${headName.replace(/'/g,"\\'")}','${headType}')">💾 Save Split Receipts</button>`;
+}
+
+async function saveSplitFromModal(headId, headName, headType) {
+  const rows = readSplitRows('modal-split-rows');
+  if (!rows) return;
+
+  const munQtyInput = document.getElementById('modal-mun-qty');
+  const rateUsed = munQtyInput ? parseFloat(document.getElementById('modal-mun-rate').value) : null;
+  const totalAmount = getCurrentModalAmount();
+
+  const baseRecord = {
+    event_id: headType !== 'general' ? entryEventId : null,
+    head_type: headType === 'swapna_item' ? 'swapna_item' : headType === 'swapna' ? 'swapna' : 'general_head',
+    swapna_item_id: headType === 'swapna_item' ? headId : null,
+    swapna_id: headType === 'swapna' ? headId : null,
+    general_head_id: headType === 'general' ? headId : null,
+    entered_by: currentUser?.id || null,
+    org_id: currentOrgId
+  };
+
+  const records = rows.map(r => ({
+    ...baseRecord,
+    member_id: r.memberId,
+    donor_name: r.name,
+    receipt_name: r.name,
+    family_no: r.familyNo || null,
+    phone: null,
+    amount: r.amount,
+    mun_qty: rateUsed ? +(r.amount / rateUsed).toFixed(2) : null,
+    rate_per_mun_used: rateUsed || null,
+    is_split_row: true
+  }));
+
+  const { data: saved, error } = await db.from('dr_donations').insert(records).select();
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+
+  closeModal();
+  showToast(`✅ Saved ${saved.length} split entries totalling ₹${totalAmount.toLocaleString('en-IN')}`, 'success');
+
+  saved.forEach(s => recentEntries.unshift({ id: s.id, donor: s.donor_name, family: '—', phone: '—', head: headName, amount: s.amount, munQty: s.mun_qty }));
+  updateRecentEntries();
+
+  if (headType === 'general') await loadGeneralHeadsEntry(); else await loadEventHeadsEntry();
+}
+
+async function issueTokenFromModal(headId, headName, headType) {
+  const amount = getCurrentModalAmount();
+  if (!amount || amount <= 0) { showToast('Enter a valid amount first', 'error'); return; }
+  const payer = getModalPayerInfo();
+  if (!payer) return;
+
+  const munQtyInput = document.getElementById('modal-mun-qty');
+  const rateUsed = munQtyInput ? parseFloat(document.getElementById('modal-mun-rate').value) : null;
+
+  const record = {
+    org_id: currentOrgId,
+    event_id: headType !== 'general' ? entryEventId : null,
+    head_type: headType === 'swapna_item' ? 'swapna_item' : headType === 'swapna' ? 'swapna' : 'general_head',
+    swapna_item_id: headType === 'swapna_item' ? headId : null,
+    swapna_id: headType === 'swapna' ? headId : null,
+    general_head_id: headType === 'general' ? headId : null,
+    member_id: payer.memberId,
+    payer_name: payer.name,
+    phone: payer.phone,
+    family_no: payer.familyNo,
+    total_amount: amount,
+    mun_qty: rateUsed ? +(amount / rateUsed).toFixed(2) : null,
+    rate_per_mun_used: rateUsed || null,
+    created_by: currentUser?.id || null,
+    status: 'pending'
+  };
+
+  const { data: saved, error } = await db.from('dr_receipt_tokens').insert(record).select().single();
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+
+  closeModal();
+  showToast(`🎫 Token issued for ₹${amount.toLocaleString('en-IN')} — give the slip to the donor`, 'success');
+  showTokenSlip(saved.id);
+
+  if (headType === 'general') await loadGeneralHeadsEntry(); else await loadEventHeadsEntry();
 }
 
 function updateMunPreview() {

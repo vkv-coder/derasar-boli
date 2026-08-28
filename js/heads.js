@@ -7,6 +7,7 @@ let expandedHeads = {};  // track which heads are expanded
 let expandedGeneralHeads = {};  // track which general heads are expanded
 let orgBoliUnitMode = 'rupees';
 let orgRatePerMun = null;
+let orgSplitThreshold = 20000;
 
 const DEFAULT_GENERAL_HEADS = [
   'sadharan', 'gyan khate', 'jivdaya khate', 'Angi khate',
@@ -19,11 +20,12 @@ async function renderHeads() {
   const content = document.getElementById('page-content');
   const [{ data: events }, { data: orgData }] = await Promise.all([
     db.from('dr_events').select('*').eq('org_id', currentOrgId).order('created_at', { ascending: false }),
-    db.from('dr_organizations').select('boli_unit_mode, rate_per_mun').eq('id', currentOrgId).single()
+    db.from('dr_organizations').select('boli_unit_mode, rate_per_mun, split_receipt_threshold').eq('id', currentOrgId).single()
   ]);
 
   orgBoliUnitMode = orgData?.boli_unit_mode || 'rupees';
   orgRatePerMun = orgData?.rate_per_mun ?? null;
+  orgSplitThreshold = orgData?.split_receipt_threshold ?? 20000;
 
   content.innerHTML = `
     <div class="card">
@@ -39,6 +41,10 @@ async function renderHeads() {
       <div class="form-group" id="boli-rate-group" style="display:${orgBoliUnitMode === 'mun' || orgBoliUnitMode === 'mixed' ? 'block' : 'none'};">
         <label>Rate (₹ per Mun) — one fixed rate for your whole Sangh</label>
         <input type="number" id="boli-rate-input" value="${orgRatePerMun ?? ''}" placeholder="e.g. 5000" min="0" />
+      </div>
+      <div class="form-group">
+        <label>Split-Receipt Threshold (₹) — donations at/above this amount get the option to split the receipt across multiple names</label>
+        <input type="number" id="split-threshold-input" value="${orgSplitThreshold ?? 20000}" placeholder="e.g. 20000" min="0" />
       </div>
       <button class="btn-primary btn-sm" onclick="saveBoliUnitMode()">Save</button>
       ${orgBoliUnitMode === 'mixed' ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Mark any head or sub-head below as Rupees or Mun using the ⚖️ button — everything beneath it follows, unless you override a lower level too. Applies to both Swapna heads (select an event below to see them) and General Donation Heads.</p>` : ''}
@@ -88,13 +94,17 @@ async function saveBoliUnitMode() {
   const needsRate = mode === 'mun' || mode === 'mixed';
   if (needsRate && (!rate || rate <= 0)) { showToast('Enter a valid ₹ per Mun rate', 'error'); return; }
 
+  const threshold = parseFloat(document.getElementById('split-threshold-input').value);
+  if (!threshold || threshold <= 0) { showToast('Enter a valid split-receipt threshold', 'error'); return; }
+
   const { error } = await db.from('dr_organizations')
-    .update({ boli_unit_mode: mode, rate_per_mun: needsRate ? rate : null })
+    .update({ boli_unit_mode: mode, rate_per_mun: needsRate ? rate : null, split_receipt_threshold: threshold })
     .eq('id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
   orgBoliUnitMode = mode;
   orgRatePerMun = needsRate ? rate : null;
+  orgSplitThreshold = threshold;
   showToast('Boli unit setup saved!', 'success');
   await renderHeads();
   if (selectedEventForHeads) {

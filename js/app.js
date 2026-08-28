@@ -70,6 +70,7 @@ function buildNav() {
     { id: 'members', label: '👥 Members' },
     { id: 'donors', label: '🤝 Donors' },
     { id: 'entry', label: '💰 Donation Entry' },
+    { id: 'tokens', label: '🎫 Pending Tokens' },
     { id: 'live', label: '🔴 Live View' },
     { id: 'reports', label: '📊 Reports' },
     { id: 'users', label: '👤 Users' },
@@ -106,6 +107,7 @@ function loadTab(tabId) {
     case 'members':  renderMembers(); break;
     case 'donors':   renderDonors(); break;
     case 'entry':    renderEntry(); break;
+    case 'tokens':   renderTokens(); break;
     case 'live':     renderLive(); break;
     case 'reports':  renderReports(); break;
     case 'users':    renderUsers(); break;

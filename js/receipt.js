@@ -304,7 +304,7 @@ async function showDonationReceipt(donationId) {
     <div class="receipt-title">પહોંચ &nbsp;·&nbsp; RECEIPT</div>
     <div class="meta"><span>ન. : ${receiptNo}</span><span>તા. : ${receiptDate}</span></div>
     <div class="row"><span class="row-label">નામ :</span><span class="row-value">${d.receipt_name || d.donor_name}</span></div>
-    <div class="row"><span class="row-label">કુટુંબ ક્રમ :</span><span class="row-value">${d.family_no || '—'}</span></div>
+    ${d.is_split_row ? '' : `<div class="row"><span class="row-label">કુટુંબ ક્રમ :</span><span class="row-value">${d.family_no || '—'}</span></div>`}
     <table class="heads-table">
       <thead><tr><th style="width:28px;text-align:center;">ક્ર.</th><th>દાન ની વિગત</th><th>રકમ</th></tr></thead>
       <tbody><tr><td style="text-align:center;color:#888;">1</td><td>${headName}${itemName ? ' → ' + itemName : ''}${d.mun_qty ? `<br><span style="font-size:10px;color:#888;">${d.mun_qty} mun</span>` : ''}</td><td>₹ ${total.toLocaleString('en-IN')}</td></tr></tbody>
@@ -324,6 +324,78 @@ async function showDonationReceipt(donationId) {
 
   const win = window.open('', '_blank', 'width=430,height=720,scrollbars=yes');
   if (!win) { showToast('Allow pop-ups to view receipt', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+}
+
+// Deliberately minimal, no org name/phone/head-detail — just Offer Accepted,
+// Name, Amount, Code No. Printed as two identical copies on one A5 sheet so
+// staff can tear it in half: one part to the donor, one part retained &
+// manually stamped as the office copy.
+async function showTokenSlip(tokenId) {
+  const { data: t, error } = await db.from('dr_receipt_tokens').select('id, payer_name, total_amount, created_at').eq('id', tokenId).single();
+  if (error || !t) { showToast('Could not load token', 'error'); return; }
+
+  const dt = new Date(t.created_at);
+  const dateStr = dt.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const code = 'TKN-' + dt.getFullYear() + '-' + String(t.id || '').slice(-6).padStart(6, '0');
+  const amountStr = parseFloat(t.total_amount).toLocaleString('en-IN');
+
+  const slipBlock = (label) => `
+    <div class="slip">
+      <div class="slip-label">${label}</div>
+      <div class="slip-title">OFFER ACCEPTED</div>
+      <div class="slip-row"><span>Name</span><span>${t.payer_name}</span></div>
+      <div class="slip-row"><span>Amount</span><span>₹ ${amountStr}</span></div>
+      <div class="slip-row"><span>Code No.</span><span>${code}</span></div>
+      <div class="slip-row"><span>Date</span><span>${dateStr}</span></div>
+      <div class="slip-stamp">Stamp / Sign</div>
+    </div>
+  `;
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>${code}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,sans-serif;}
+  body{background:#eee;display:flex;flex-direction:column;align-items:center;padding:16px;gap:12px;}
+  .page{background:#fff;width:396px;border:1px solid #ccc;}
+  .slip{padding:16px;border-bottom:2px dashed #999;position:relative;}
+  .slip:last-child{border-bottom:none;}
+  .slip-label{font-size:10px;color:#888;text-align:right;margin-bottom:4px;}
+  .slip-title{font-size:15px;font-weight:700;text-align:center;letter-spacing:1px;margin-bottom:10px;}
+  .slip-row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #eee;}
+  .slip-row span:first-child{color:#555;}
+  .slip-row span:last-child{font-weight:700;}
+  .slip-stamp{margin-top:14px;height:40px;border:1px dashed #bbb;display:flex;align-items:center;justify-content:center;font-size:10px;color:#aaa;}
+  .btns{display:flex;gap:8px;}
+  .btn{padding:10px 18px;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600;font-family:inherit;}
+  .btn-print{background:#333;color:#fff;}
+  .btn-close{background:#e8e8e8;color:#333;}
+  @media print{
+    @page{size:A5;margin:6mm;}
+    body{background:#fff;padding:0;}
+    .page{border:none;width:100%;}
+    .btns{display:none;}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  ${slipBlock('Donor Copy')}
+  ${slipBlock('Office Copy')}
+</div>
+<div class="btns">
+  <button class="btn btn-print" onclick="window.print()">🖨 Print (A5, 2 copies)</button>
+  <button class="btn btn-close" onclick="window.close()">Close</button>
+</div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=430,height=720,scrollbars=yes');
+  if (!win) { showToast('Allow pop-ups to view slip', 'error'); return; }
   win.document.write(html);
   win.document.close();
 }
