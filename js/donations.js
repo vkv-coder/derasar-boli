@@ -315,7 +315,8 @@ function showDonationModal(headId, headName, headType, prefillMemberId, unitMode
     </div>
 
     <div class="form-group">
-      <label>Receipt In Name Of (optional — leave blank to use donor's name)</label>
+      <label>Receipt In Name Of</label>
+      <select id="modal-receipt-name-select" style="display:none;margin-bottom:6px;" onchange="onReceiptNameSelectChange()"></select>
       <input type="text" id="modal-receipt-name" placeholder="e.g. a deceased family member's name" />
     </div>
 
@@ -483,6 +484,7 @@ function onModalDonorTypeChange() {
   const type = document.getElementById('modal-donor-type').value;
   document.getElementById('modal-other-fields').style.display = type === 'other' ? 'block' : 'none';
   document.getElementById('modal-member-fields').style.display = type === 'member' ? 'block' : 'none';
+  if (type !== 'member') clearModalMember();
 }
 
 // ========== 10-BOX PHONE INPUT ==========
@@ -563,7 +565,7 @@ function searchModalMember() {
   }, 300);
 }
 
-function selectModalMember(id, name, familyNo, phone) {
+async function selectModalMember(id, name, familyNo, phone) {
   modalSelectedMember = { id, name, familyNo, phone: phone || null };
   document.getElementById('modal-member-results').style.display = 'none';
   document.getElementById('modal-member-search').value = '';
@@ -578,6 +580,40 @@ function selectModalMember(id, name, familyNo, phone) {
     phoneEl.style.color = '#D32F2F';
     phoneEl.textContent = '⚠ No phone on file for this member';
   }
+
+  await loadReceiptNameOptions(familyNo);
+}
+
+async function loadReceiptNameOptions(familyNo) {
+  const sel = document.getElementById('modal-receipt-name-select');
+  const freeText = document.getElementById('modal-receipt-name');
+  if (!sel) return;
+
+  const { data: members } = await db.from('dr_members')
+    .select('person_name').eq('org_id', currentOrgId).eq('family_no', familyNo)
+    .order('is_head', { ascending: false });
+
+  sel.innerHTML = `
+    <option value="">-- Same as Donor --</option>
+    ${(members || []).map(m => `<option value="${m.person_name.replace(/"/g, '&quot;')}">${m.person_name}</option>`).join('')}
+    <option value="__other__">Other (type name below)</option>
+  `;
+  sel.style.display = 'block';
+  freeText.style.display = 'none';
+  freeText.value = '';
+}
+
+function onReceiptNameSelectChange() {
+  const sel = document.getElementById('modal-receipt-name-select');
+  const freeText = document.getElementById('modal-receipt-name');
+  if (sel.value === '__other__') {
+    freeText.style.display = 'block';
+    freeText.value = '';
+    freeText.focus();
+  } else {
+    freeText.style.display = 'none';
+    freeText.value = '';
+  }
 }
 
 function clearModalMember() {
@@ -585,6 +621,12 @@ function clearModalMember() {
   document.getElementById('modal-selected-member').style.display = 'none';
   document.getElementById('modal-member-search').value = '';
   document.getElementById('modal-member-results').style.display = 'none';
+  const sel = document.getElementById('modal-receipt-name-select');
+  const freeText = document.getElementById('modal-receipt-name');
+  sel.style.display = 'none';
+  sel.innerHTML = '';
+  freeText.style.display = 'block';
+  freeText.value = '';
 }
 
 async function saveDonationFromModal(headId, headName, headType) {
@@ -623,7 +665,13 @@ async function saveDonationFromModal(headId, headName, headType) {
     phone = modalSelectedMember.phone || null;
   }
 
-  const receiptName = document.getElementById('modal-receipt-name').value.trim();
+  const receiptSel = document.getElementById('modal-receipt-name-select');
+  let receiptName;
+  if (receiptSel && receiptSel.style.display !== 'none' && receiptSel.value && receiptSel.value !== '__other__') {
+    receiptName = receiptSel.value;
+  } else {
+    receiptName = document.getElementById('modal-receipt-name').value.trim();
+  }
 
   const record = {
     event_id: headType !== 'general' ? entryEventId : null,
