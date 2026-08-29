@@ -11,9 +11,9 @@ let orgRatePerAani = 1800;
 let orgSplitThreshold = 20000;
 
 const DR_CATEGORIES = [
-  'Sadharan Khate', 'Gyan Khate', 'Jivdaya Khate', 'Devdravya Khate',
-  'Veyavcch Khate', 'Devdravya Kaayami Fund Khate', 'Derasar Nibhavani Khate',
-  'Sadharan Kaayami Fund Khate'
+  'સાધારણ ખાતે', 'જ્ઞાન ખાતે', 'જીવદયા ખાતે', 'દેવદ્રવ્ય ખાતે',
+  'વૈયાવચ્ચ ખાતે', 'દેવદ્રવ્ય કાયમી ફંડ ખાતે', 'દેરાસર નિભાવણી ખાતે',
+  'સાધારણ કાયમી ફંડ ખાતે'
 ];
 
 const DEFAULT_GENERAL_HEADS = [
@@ -63,6 +63,11 @@ async function renderHeads() {
       ${orgBoliUnitMode === 'mixed' ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Use the ⚙ button on any head or sub-head below to set its Unit (Rupees/Mun/Aani), Category, and Fixed/Auction — everything beneath a head follows its unit, unless you override a lower level too. Applies to both Swapna heads (select an event below to see them) and General Donation Heads.</p>` : ''}
     </div>
     <div class="card">
+      <div class="card-title">📋 Master List — Category, Unit &amp; Pricing</div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Every donation head/item (General &amp; Swapna, across all events) in one place. Admin-only. Changing a dropdown saves immediately.</p>
+      <div id="master-heads-list">Loading...</div>
+    </div>
+    <div class="card">
       <div class="card-title">Heads Setup</div>
       <div class="form-group">
         <label>Select Event (for Swapna / Auction Groups)</label>
@@ -92,7 +97,111 @@ async function renderHeads() {
       <div id="general-heads-list">Loading...</div>
     </div>
   `;
-  await Promise.all([loadGeneralHeadsList(), loadFunctionsList()]);
+  await Promise.all([loadGeneralHeadsList(), loadFunctionsList(), loadMasterHeadsList()]);
+}
+
+// ========== MASTER LIST — every head/item, one flat table, 3 dropdowns each ==========
+async function loadMasterHeadsList() {
+  const el = document.getElementById('master-heads-list');
+  if (!el) return;
+
+  const [{ data: generalHeads }, { data: swapnaHeads }, { data: swapnaItems }, { data: events }] = await Promise.all([
+    db.from('dr_general_heads').select('*').eq('org_id', currentOrgId).order('display_order'),
+    db.from('dr_swapna').select('*').eq('org_id', currentOrgId).order('sort_order'),
+    db.from('dr_swapna_items').select('*').eq('org_id', currentOrgId).order('sort_order'),
+    db.from('dr_events').select('id, name').eq('org_id', currentOrgId)
+  ]);
+
+  const eventById = {};
+  (events || []).forEach(e => { eventById[e.id] = e.name; });
+  const ghById = {};
+  (generalHeads || []).forEach(h => { ghById[h.id] = h; });
+  const swById = {};
+  (swapnaHeads || []).forEach(h => { swById[h.id] = h; });
+
+  const rows = [];
+
+  (generalHeads || []).forEach(h => {
+    const parent = h.parent_id ? ghById[h.parent_id] : null;
+    rows.push({
+      table: 'dr_general_heads', id: h.id,
+      name: (parent ? parent.name + ' → ' : '') + h.name,
+      type: 'General',
+      category: h.category, unit_mode: h.unit_mode, pricing_type: h.pricing_type
+    });
+  });
+
+  (swapnaHeads || []).forEach(h => {
+    const parent = h.parent_id ? swById[h.parent_id] : null;
+    const grandParent = parent && parent.parent_id ? swById[parent.parent_id] : null;
+    const path = [grandParent?.name, parent?.name, h.name].filter(Boolean).join(' → ');
+    rows.push({
+      table: 'dr_swapna', id: h.id,
+      name: path + (eventById[h.event_id] ? ` (${eventById[h.event_id]})` : ''),
+      type: 'Swapna',
+      category: h.category, unit_mode: h.unit_mode, pricing_type: h.pricing_type
+    });
+  });
+
+  (swapnaItems || []).forEach(item => {
+    const sw = item.swapna_id ? swById[item.swapna_id] : null;
+    const parent = sw?.parent_id ? swById[sw.parent_id] : null;
+    const path = [parent?.name, sw?.name, item.name].filter(Boolean).join(' → ');
+    rows.push({
+      table: 'dr_swapna_items', id: item.id,
+      name: path + (sw && eventById[sw.event_id] ? ` (${eventById[sw.event_id]})` : ''),
+      type: 'Swapna',
+      category: item.category, unit_mode: item.unit_mode, pricing_type: item.pricing_type
+    });
+  });
+
+  if (rows.length === 0) {
+    el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No items yet — add heads below first.</p>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table class="data-table" style="min-width:640px;">
+        <thead><tr><th>Name</th><th>Type</th><th>Category</th><th>Unit</th><th>Pricing</th></tr></thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td style="font-size:12px;max-width:260px;word-break:break-word;">${r.name}</td>
+              <td style="font-size:11px;color:var(--text-muted);">${r.type}</td>
+              <td>
+                <select onchange="saveMasterField('${r.table}','${r.id}','category',this.value)">
+                  <option value="">-- Uncategorized --</option>
+                  ${DR_CATEGORIES.map(c => `<option value="${c}" ${r.category === c ? 'selected' : ''}>${c}</option>`).join('')}
+                </select>
+              </td>
+              <td>
+                <select onchange="saveMasterField('${r.table}','${r.id}','unit_mode',this.value)">
+                  <option value="" ${!r.unit_mode ? 'selected' : ''}>Inherit</option>
+                  <option value="rupees" ${r.unit_mode === 'rupees' ? 'selected' : ''}>₹ Rupees</option>
+                  <option value="mun" ${r.unit_mode === 'mun' ? 'selected' : ''}>Mun</option>
+                  <option value="aani" ${r.unit_mode === 'aani' ? 'selected' : ''}>Aani</option>
+                </select>
+              </td>
+              <td>
+                <select onchange="saveMasterField('${r.table}','${r.id}','pricing_type',this.value)">
+                  <option value="fixed" ${r.pricing_type === 'fixed' ? 'selected' : ''}>Fixed</option>
+                  <option value="auction" ${r.pricing_type === 'auction' ? 'selected' : ''}>Auction (Bid)</option>
+                </select>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function saveMasterField(table, id, field, value) {
+  const update = { [field]: value || null };
+  const { error } = await db.from(table).update(update).eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  showToast('Saved!', 'success');
 }
 
 function onBoliUnitModeChange() {
