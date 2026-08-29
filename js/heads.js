@@ -7,7 +7,14 @@ let expandedHeads = {};  // track which heads are expanded
 let expandedGeneralHeads = {};  // track which general heads are expanded
 let orgBoliUnitMode = 'rupees';
 let orgRatePerMun = null;
+let orgRatePerAani = 1800;
 let orgSplitThreshold = 20000;
+
+const DR_CATEGORIES = [
+  'Sadharan Khate', 'Gyan Khate', 'Jivdaya Khate', 'Devdravya Khate',
+  'Veyavcch Khate', 'Devdravya Kaayami Fund Khate', 'Derasar Nibhavani Khate',
+  'Sadharan Kaayami Fund Khate'
+];
 
 const DEFAULT_GENERAL_HEADS = [
   'sadharan', 'gyan khate', 'jivdaya khate', 'Angi khate',
@@ -20,11 +27,12 @@ async function renderHeads() {
   const content = document.getElementById('page-content');
   const [{ data: events }, { data: orgData }] = await Promise.all([
     db.from('dr_events').select('*').eq('org_id', currentOrgId).order('created_at', { ascending: false }),
-    db.from('dr_organizations').select('boli_unit_mode, rate_per_mun, split_receipt_threshold').eq('id', currentOrgId).single()
+    db.from('dr_organizations').select('boli_unit_mode, rate_per_mun, rate_per_aani, split_receipt_threshold').eq('id', currentOrgId).single()
   ]);
 
   orgBoliUnitMode = orgData?.boli_unit_mode || 'rupees';
   orgRatePerMun = orgData?.rate_per_mun ?? null;
+  orgRatePerAani = orgData?.rate_per_aani ?? 1800;
   orgSplitThreshold = orgData?.split_receipt_threshold ?? 20000;
 
   content.innerHTML = `
@@ -35,19 +43,24 @@ async function renderHeads() {
         <select id="boli-unit-mode-select" onchange="onBoliUnitModeChange()">
           <option value="rupees" ${orgBoliUnitMode === 'rupees' ? 'selected' : ''}>₹ All Rupees</option>
           <option value="mun" ${orgBoliUnitMode === 'mun' ? 'selected' : ''}>All in Mun</option>
-          <option value="mixed" ${orgBoliUnitMode === 'mixed' ? 'selected' : ''}>Part Rupees, Part Mun (set per head below)</option>
+          <option value="aani" ${orgBoliUnitMode === 'aani' ? 'selected' : ''}>All in Aani</option>
+          <option value="mixed" ${orgBoliUnitMode === 'mixed' ? 'selected' : ''}>Mixed (set per head below, using ⚙)</option>
         </select>
       </div>
-      <div class="form-group" id="boli-rate-group" style="display:${orgBoliUnitMode === 'mun' || orgBoliUnitMode === 'mixed' ? 'block' : 'none'};">
+      <div class="form-group" id="boli-rate-mun-group" style="display:${orgBoliUnitMode === 'mun' || orgBoliUnitMode === 'mixed' ? 'block' : 'none'};">
         <label>Rate (₹ per Mun) — one fixed rate for your whole Sangh</label>
         <input type="number" id="boli-rate-input" value="${orgRatePerMun ?? ''}" placeholder="e.g. 5000" min="0" />
+      </div>
+      <div class="form-group" id="boli-rate-aani-group" style="display:${orgBoliUnitMode === 'aani' || orgBoliUnitMode === 'mixed' ? 'block' : 'none'};">
+        <label>Rate (₹ per Aani) — one fixed rate for your whole Sangh</label>
+        <input type="number" id="aani-rate-input" value="${orgRatePerAani ?? ''}" placeholder="e.g. 1800" min="0" />
       </div>
       <div class="form-group">
         <label>Split-Receipt Threshold (₹) — donations at/above this amount get the option to split the receipt across multiple names</label>
         <input type="number" id="split-threshold-input" value="${orgSplitThreshold ?? 20000}" placeholder="e.g. 20000" min="0" />
       </div>
       <button class="btn-primary btn-sm" onclick="saveBoliUnitMode()">Save</button>
-      ${orgBoliUnitMode === 'mixed' ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Mark any head or sub-head below as Rupees or Mun using the ⚖️ button — everything beneath it follows, unless you override a lower level too. Applies to both Swapna heads (select an event below to see them) and General Donation Heads.</p>` : ''}
+      ${orgBoliUnitMode === 'mixed' ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Use the ⚙ button on any head or sub-head below to set its Unit (Rupees/Mun/Aani), Category, and Fixed/Auction — everything beneath a head follows its unit, unless you override a lower level too. Applies to both Swapna heads (select an event below to see them) and General Donation Heads.</p>` : ''}
     </div>
     <div class="card">
       <div class="card-title">Heads Setup</div>
@@ -84,26 +97,38 @@ async function renderHeads() {
 
 function onBoliUnitModeChange() {
   const mode = document.getElementById('boli-unit-mode-select').value;
-  document.getElementById('boli-rate-group').style.display = (mode === 'mun' || mode === 'mixed') ? 'block' : 'none';
+  document.getElementById('boli-rate-mun-group').style.display = (mode === 'mun' || mode === 'mixed') ? 'block' : 'none';
+  document.getElementById('boli-rate-aani-group').style.display = (mode === 'aani' || mode === 'mixed') ? 'block' : 'none';
 }
 
 async function saveBoliUnitMode() {
   const mode = document.getElementById('boli-unit-mode-select').value;
   const rateInput = document.getElementById('boli-rate-input');
   const rate = rateInput ? parseFloat(rateInput.value) : null;
-  const needsRate = mode === 'mun' || mode === 'mixed';
-  if (needsRate && (!rate || rate <= 0)) { showToast('Enter a valid ₹ per Mun rate', 'error'); return; }
+  const needsMunRate = mode === 'mun' || mode === 'mixed';
+  if (needsMunRate && (!rate || rate <= 0)) { showToast('Enter a valid ₹ per Mun rate', 'error'); return; }
+
+  const aaniRateInput = document.getElementById('aani-rate-input');
+  const aaniRate = aaniRateInput ? parseFloat(aaniRateInput.value) : null;
+  const needsAaniRate = mode === 'aani' || mode === 'mixed';
+  if (needsAaniRate && (!aaniRate || aaniRate <= 0)) { showToast('Enter a valid ₹ per Aani rate', 'error'); return; }
 
   const threshold = parseFloat(document.getElementById('split-threshold-input').value);
   if (!threshold || threshold <= 0) { showToast('Enter a valid split-receipt threshold', 'error'); return; }
 
   const { error } = await db.from('dr_organizations')
-    .update({ boli_unit_mode: mode, rate_per_mun: needsRate ? rate : null, split_receipt_threshold: threshold })
+    .update({
+      boli_unit_mode: mode,
+      rate_per_mun: needsMunRate ? rate : null,
+      rate_per_aani: needsAaniRate ? aaniRate : null,
+      split_receipt_threshold: threshold
+    })
     .eq('id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
   orgBoliUnitMode = mode;
-  orgRatePerMun = needsRate ? rate : null;
+  orgRatePerMun = needsMunRate ? rate : null;
+  orgRatePerAani = needsAaniRate ? aaniRate : null;
   orgSplitThreshold = threshold;
   showToast('Boli unit setup saved!', 'success');
   await renderHeads();
@@ -166,7 +191,7 @@ async function loadSwapnaList() {
 // otherwise it inherits whatever was resolved for its parent. NULL means
 // "not set here, inherit".
 function effectiveUnit(ownUnitMode, inheritedUnit) {
-  return ownUnitMode === 'mun' || ownUnitMode === 'rupees' ? ownUnitMode : inheritedUnit;
+  return (ownUnitMode === 'mun' || ownUnitMode === 'rupees' || ownUnitMode === 'aani') ? ownUnitMode : inheritedUnit;
 }
 
 function renderMainHead(head, children, allData) {
@@ -181,10 +206,10 @@ function renderMainHead(head, children, allData) {
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#ffffff;cursor:pointer;"
            onclick="toggleHead('${head.id}')">
         <strong style="color:var(--primary);font-size:15px;">
-          ${isExpanded ? '▼' : '▶'} ${head.name}${unitBadge(myUnit)}
+          ${isExpanded ? '▼' : '▶'} ${head.name}${unitBadge(myUnit)}${categoryBadge(head.category)}${pricingBadge(head.pricing_type)}
         </strong>
         <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
-          ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna','${head.id}','${head.name.replace(/'/g,"\\'")}','${head.unit_mode || ''}','rupees')">⚖️</button>` : ''}
+          <button class="btn-sm btn-secondary" onclick="showHeadPropertiesModal('dr_swapna','${head.id}','${head.name.replace(/'/g,"\\'")}','${head.unit_mode || ''}','rupees','${head.category || ''}','${head.pricing_type || 'auction'}')">⚙</button>
           <button class="btn-sm btn-danger" onclick="deleteSwapna('${head.id}')">Delete</button>
         </div>
       </div>
@@ -211,10 +236,10 @@ function renderChildHead(child, allData, inheritedUnit) {
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#fff;cursor:pointer;"
            onclick="toggleHead('${child.id}')">
         <span style="color:var(--primary-dark, #7a4a00);font-size:14px;">
-          ${isExpanded ? '▼' : '▶'} ${child.name}${unitBadge(myUnit)}
+          ${isExpanded ? '▼' : '▶'} ${child.name}${unitBadge(myUnit)}${categoryBadge(child.category)}${pricingBadge(child.pricing_type)}
         </span>
         <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
-          ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna','${child.id}','${child.name.replace(/'/g,"\\'")}','${child.unit_mode || ''}','${inheritedUnit}')">⚖️</button>` : ''}
+          <button class="btn-sm btn-secondary" onclick="showHeadPropertiesModal('dr_swapna','${child.id}','${child.name.replace(/'/g,"\\'")}','${child.unit_mode || ''}','${inheritedUnit}','${child.category || ''}','${child.pricing_type || 'auction'}')">⚙</button>
           <button class="btn-sm btn-secondary" onclick="showAddSwapnaItemModal('${child.id}','${child.name.replace(/'/g,"\\'")}')">+ Item</button>
           <button class="btn-sm btn-danger" onclick="deleteSwapna('${child.id}')">✕</button>
         </div>
@@ -225,8 +250,8 @@ function renderChildHead(child, allData, inheritedUnit) {
             const gcHasItems = (gc.dr_swapna_items || []).length > 0;
             const gcUnit = effectiveUnit(gc.unit_mode, myUnit);
             return `
-            <div style="padding:4px 0;font-size:13px;color:var(--text);">• ${gc.name}${unitBadge(gcUnit)}
-              ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" style="margin-left:8px;" onclick="showHeadUnitModal('dr_swapna','${gc.id}','${gc.name.replace(/'/g,"\\'")}','${gc.unit_mode || ''}','${myUnit}')">⚖️</button>` : ''}
+            <div style="padding:4px 0;font-size:13px;color:var(--text);">• ${gc.name}${unitBadge(gcUnit)}${categoryBadge(gc.category)}${pricingBadge(gc.pricing_type)}
+              <button class="btn-sm btn-secondary" style="margin-left:8px;" onclick="showHeadPropertiesModal('dr_swapna','${gc.id}','${gc.name.replace(/'/g,"\\'")}','${gc.unit_mode || ''}','${myUnit}','${gc.category || ''}','${gc.pricing_type || 'auction'}')">⚙</button>
               <button class="btn-sm btn-danger" style="margin-left:8px;" onclick="deleteSwapna('${gc.id}')">✕</button>
             </div>
           `; }).join('') : ''}
@@ -245,9 +270,9 @@ function renderSwapnaItems(swapna, inheritedUnit) {
     const myUnit = effectiveUnit(item.unit_mode, inheritedUnit);
     return `
     <div class="list-item" style="padding:5px 0;">
-      <span style="font-size:13px;">• ${item.name}${unitBadge(myUnit)}</span>
+      <span style="font-size:13px;">• ${item.name}${unitBadge(myUnit)}${categoryBadge(item.category)}${pricingBadge(item.pricing_type)}</span>
       <div class="list-item-actions">
-        ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_swapna_items','${item.id}','${item.name.replace(/'/g,"\\'")}','${item.unit_mode || ''}','${inheritedUnit}')">⚖️</button>` : ''}
+        <button class="btn-sm btn-secondary" onclick="showHeadPropertiesModal('dr_swapna_items','${item.id}','${item.name.replace(/'/g,"\\'")}','${item.unit_mode || ''}','${inheritedUnit}','${item.category || ''}','${item.pricing_type || 'auction'}')">⚙</button>
         <button class="btn-sm btn-secondary" onclick="showEditSwapnaItemModal('${item.id}','${item.name.replace(/'/g,"\\'")}')">Edit</button>
         <button class="btn-sm btn-danger" onclick="deleteSwapnaItem('${item.id}')">✕</button>
       </div>
@@ -257,38 +282,67 @@ function renderSwapnaItems(swapna, inheritedUnit) {
 
 function unitBadge(resolvedUnit) {
   if (resolvedUnit === 'mun') return ' <span style="font-size:10px;font-weight:700;background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:8px;">MUN</span>';
+  if (resolvedUnit === 'aani') return ' <span style="font-size:10px;font-weight:700;background:#F3E5F5;color:#7B1FA2;padding:2px 6px;border-radius:8px;">AANI</span>';
   return '';
 }
 
-function showHeadUnitModal(table, id, name, ownMode, inheritedFrom) {
+function categoryBadge(category) {
+  if (!category) return ' <span style="font-size:10px;font-weight:600;background:#f5f5f5;color:#999;padding:2px 6px;border-radius:8px;">Uncategorized</span>';
+  return ` <span style="font-size:10px;font-weight:600;background:#FFF3E0;color:#E65100;padding:2px 6px;border-radius:8px;">${category}</span>`;
+}
+
+function pricingBadge(pricingType) {
+  if (pricingType === 'auction') return ' <span style="font-size:10px;font-weight:600;background:#E8EAF6;color:#3949AB;padding:2px 6px;border-radius:8px;">BID</span>';
+  return ' <span style="font-size:10px;font-weight:600;background:#E0F2F1;color:#00695C;padding:2px 6px;border-radius:8px;">FIXED</span>';
+}
+
+function showHeadPropertiesModal(table, id, name, ownMode, inheritedFrom, category, pricingType) {
+  const inheritedLabel = inheritedFrom === 'mun' ? 'Mun' : inheritedFrom === 'aani' ? 'Aani' : '₹ Rupees';
   showModal(`
-    <div class="modal-title">Unit — ${name}</div>
+    <div class="modal-title">⚙ Properties — ${name}</div>
     <div class="form-group">
-      <label>This head's boli is spoken in</label>
+      <label>Unit — this head's boli is spoken in</label>
       <select id="head-unit-mode-select">
-        <option value="" ${!ownMode ? 'selected' : ''}>↳ Inherit (currently: ${inheritedFrom === 'mun' ? 'Mun' : '₹ Rupees'})</option>
+        <option value="" ${!ownMode ? 'selected' : ''}>↳ Inherit (currently: ${inheritedLabel})</option>
         <option value="rupees" ${ownMode === 'rupees' ? 'selected' : ''}>₹ Rupees</option>
         <option value="mun" ${ownMode === 'mun' ? 'selected' : ''}>Mun</option>
+        <option value="aani" ${ownMode === 'aani' ? 'selected' : ''}>Aani</option>
       </select>
-      <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">Setting this here applies to everything below it too, unless overridden lower down.</p>
+      <p style="font-size:11px;color:var(--text-muted);margin-top:4px;">Setting this here applies to everything below it too, unless overridden lower down.</p>
+    </div>
+    <div class="form-group">
+      <label>Category (for reports)</label>
+      <select id="head-category-select">
+        <option value="" ${!category ? 'selected' : ''}>-- Uncategorized --</option>
+        ${DR_CATEGORIES.map(c => `<option value="${c}" ${category === c ? 'selected' : ''}>${c}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Pricing</label>
+      <select id="head-pricing-select">
+        <option value="fixed" ${pricingType === 'fixed' ? 'selected' : ''}>Fixed</option>
+        <option value="auction" ${pricingType === 'auction' ? 'selected' : ''}>Auction (Bid)</option>
+      </select>
     </div>
     <div class="modal-actions">
-      <button class="btn-primary" onclick="saveHeadUnit('${table}','${id}')">Save</button>
+      <button class="btn-primary" onclick="saveHeadProperties('${table}','${id}')">Save</button>
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>
     </div>
   `);
 }
 
-async function saveHeadUnit(table, id) {
-  const mode = document.getElementById('head-unit-mode-select').value || null;
+async function saveHeadProperties(table, id) {
+  const unit_mode = document.getElementById('head-unit-mode-select').value || null;
+  const category = document.getElementById('head-category-select').value || null;
+  const pricing_type = document.getElementById('head-pricing-select').value;
 
   const { error } = await db.from(table)
-    .update({ unit_mode: mode })
+    .update({ unit_mode, category, pricing_type })
     .eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
   closeModal();
-  showToast('Unit saved!', 'success');
+  showToast('Saved!', 'success');
   if (table === 'dr_general_heads') await loadGeneralHeadsList();
   else await loadSwapnaList();
 }
@@ -420,11 +474,11 @@ function renderGeneralMainHead(head, num, subHeads) {
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#ffffff;cursor:pointer;"
            onclick="toggleGeneralHead('${head.id}')">
         <strong style="color:var(--primary);font-size:15px;">
-          ${hasSubHeads ? (isExpanded ? '▼' : '▶') : '◦'} ${num}. ${head.name}${unitBadge(myUnit)}
+          ${hasSubHeads ? (isExpanded ? '▼' : '▶') : '◦'} ${num}. ${head.name}${unitBadge(myUnit)}${categoryBadge(head.category)}${pricingBadge(head.pricing_type)}
           ${hasSubHeads ? `<span style="font-size:11px;font-weight:400;color:var(--text-muted);"> (${mySubHeads.length} sub)</span>` : ''}
         </strong>
         <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
-          ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_general_heads','${head.id}','${head.name.replace(/'/g,"\\'")}','${head.unit_mode || ''}','rupees')">⚖️</button>` : ''}
+          <button class="btn-sm btn-secondary" onclick="showHeadPropertiesModal('dr_general_heads','${head.id}','${head.name.replace(/'/g,"\\'")}','${head.unit_mode || ''}','rupees','${head.category || ''}','${head.pricing_type || 'fixed'}')">⚙</button>
           <button class="btn-sm btn-secondary" onclick="showAddGeneralSubHeadModal('${head.id}','${head.name.replace(/'/g,"\\'")}')">+ Sub</button>
           <button class="btn-sm btn-secondary" onclick="showEditGeneralHeadModal('${head.id}','${head.name.replace(/'/g,"\\'")}')">Edit</button>
           <button class="btn-sm btn-danger" onclick="deleteGeneralHead('${head.id}')">Delete</button>
@@ -436,9 +490,9 @@ function renderGeneralMainHead(head, num, subHeads) {
             const subUnit = effectiveUnit(sub.unit_mode, myUnit);
             return `
             <div class="list-item" style="padding:6px 0;display:flex;align-items:center;justify-content:space-between;">
-              <span style="font-size:13px;color:var(--text);">└ ${sub.name}${unitBadge(subUnit)}</span>
+              <span style="font-size:13px;color:var(--text);">└ ${sub.name}${unitBadge(subUnit)}${categoryBadge(sub.category)}${pricingBadge(sub.pricing_type)}</span>
               <div style="display:flex;gap:6px;">
-                ${orgBoliUnitMode === 'mixed' ? `<button class="btn-sm btn-secondary" onclick="showHeadUnitModal('dr_general_heads','${sub.id}','${sub.name.replace(/'/g,"\\'")}','${sub.unit_mode || ''}','${myUnit}')">⚖️</button>` : ''}
+                <button class="btn-sm btn-secondary" onclick="showHeadPropertiesModal('dr_general_heads','${sub.id}','${sub.name.replace(/'/g,"\\'")}','${sub.unit_mode || ''}','${myUnit}','${sub.category || ''}','${sub.pricing_type || 'fixed'}')">⚙</button>
                 <button class="btn-sm btn-secondary" onclick="showEditGeneralHeadModal('${sub.id}','${sub.name.replace(/'/g,"\\'")}')">Edit</button>
                 <button class="btn-sm btn-danger" onclick="deleteGeneralHead('${sub.id}')">✕</button>
               </div>

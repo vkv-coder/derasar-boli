@@ -70,7 +70,7 @@ function buildNav() {
     { id: 'members', label: '👥 Members' },
     { id: 'donors', label: '🤝 Donors' },
     { id: 'entry', label: '💰 Donation Entry' },
-    { id: 'tokens', label: '🎫 Pending Tokens' },
+    { id: 'tokens', label: '🎫 Token Desk' },
     { id: 'live', label: '🔴 Live View' },
     { id: 'reports', label: '📊 Reports' },
     { id: 'users', label: '👤 Users' },

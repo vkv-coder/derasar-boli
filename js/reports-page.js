@@ -122,6 +122,8 @@ async function loadReport() {
       </div>
     </div>
 
+    ${buildCategorySummary()}
+
     <!-- Filter + Excel -->
     <div class="card">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -231,6 +233,64 @@ function getDonationHeadName(d) {
     }
   }
   return '—';
+}
+
+// ========== GET CATEGORY FOR DONATION (walks up to parent if unset) ==========
+function getDonationCategory(d) {
+  if (d.head_type === 'swapna_item' && d.swapna_item_id) {
+    const item = reportSwapnaItems.find(s => s.id === d.swapna_item_id);
+    if (item?.category) return item.category;
+    const parent = reportSwapnaTree.find(s => s.id === item?.swapna_id);
+    if (parent?.category) return parent.category;
+    const grandParent = parent ? reportSwapnaTree.find(s => s.id === parent.parent_id) : null;
+    if (grandParent?.category) return grandParent.category;
+  }
+  if (d.head_type === 'swapna' && d.swapna_id) {
+    const sw = reportSwapnaTree.find(s => s.id === d.swapna_id);
+    if (sw?.category) return sw.category;
+    const parent = sw ? reportSwapnaTree.find(s => s.id === sw.parent_id) : null;
+    if (parent?.category) return parent.category;
+  }
+  if (d.head_type === 'general_head' && d.general_head_id) {
+    const gh = reportGeneralHeads.find(h => h.id === d.general_head_id);
+    if (gh?.category) return gh.category;
+    const parent = gh ? reportGeneralHeads.find(h => h.id === gh.parent_id) : null;
+    if (parent?.category) return parent.category;
+  }
+  return null;
+}
+
+function buildCategorySummary() {
+  const totals = {};
+  reportAllDonations.forEach(d => {
+    const cat = getDonationCategory(d) || 'Uncategorized';
+    if (!totals[cat]) totals[cat] = { entered: 0, received: 0 };
+    totals[cat].entered += parseFloat(d.amount || 0);
+    totals[cat].received += parseFloat(d.received_amount || 0);
+  });
+
+  const rows = Object.entries(totals);
+  if (rows.length === 0) return '';
+
+  return `
+    <div class="card">
+      <div class="card-title">📂 Category-wise Summary</div>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Category</th><th style="text-align:right;">Entered</th><th style="text-align:right;">Received</th></tr></thead>
+          <tbody>
+            ${rows.map(([cat, v]) => `
+              <tr>
+                <td>${cat}</td>
+                <td style="text-align:right;">₹${v.entered.toLocaleString('en-IN')}</td>
+                <td style="text-align:right;color:#4CAF50;">₹${v.received.toLocaleString('en-IN')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 // ========== GET STATUS ==========
@@ -504,6 +564,14 @@ async function downloadExcelReport() {
     if (filtered.length === 0) return;
     const label = 'Gen - ' + mainHead.name;
     const result = buildHeadSheet(wb, label, filtered);
+    indexRows.push(result);
+  });
+
+  // Category sheets (a donation's category, or "Uncategorized" if its head has none set)
+  DR_CATEGORIES.concat(['Uncategorized']).forEach(cat => {
+    const filtered = reportAllDonations.filter(d => (getDonationCategory(d) || 'Uncategorized') === cat);
+    if (filtered.length === 0) return;
+    const result = buildHeadSheet(wb, 'Cat - ' + cat, filtered);
     indexRows.push(result);
   });
 

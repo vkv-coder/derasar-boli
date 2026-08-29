@@ -1,6 +1,10 @@
 // ==========================================
-// DERASAR BOLI - Donation Entry
+// DERASAR BOLI - Donation Entry (Token Desk)
 // ==========================================
+// Workflow: pick/enter the donor ONCE for this visit, browse heads and
+// "+ Add" each item into a running cart, then either save the cart
+// directly (quick single entries) or "Generate Token" to bundle every
+// cart line under one token + one printed slip for the payment table.
 
 let entryEventId = null;
 let expandedEntryHeads = {};
@@ -8,26 +12,35 @@ let recentEntries = [];
 let lastSavedDonationId = null;
 let entryBoliMode = 'rupees';
 let entryBoliRate = null;
+let entryAaniRate = null;
 let entrySplitThreshold = 20000;
 
-// Resolves the effective unit for a given swapna head/item, based on the
-// org-wide master switch (Boli Unit Setup) — only 'mixed' mode looks at the
+let currentCart = [];
+let cartPayer = null; // { memberId, name, phone, familyNo }
+
+// Resolves the effective unit for a given head, based on the org-wide
+// master switch (Boli Unit Setup) — only 'mixed' mode looks at the
 // per-head unit_mode (which itself cascades down the tree, see
-// entryEffectiveUnit()); the ₹-per-mun rate is always the single org-wide
-// rate ("one temple, one rate"), never a per-head value.
+// entryEffectiveUnit()); rates are always the single org-wide rate
+// ("one temple, one rate"), never a per-head value.
 function resolveHeadUnit(effectiveUnitMode) {
   if (entryBoliMode === 'rupees') return { mode: 'rupees', rate: null };
   if (entryBoliMode === 'mun') return { mode: 'mun', rate: entryBoliRate };
-  return effectiveUnitMode === 'mun' ? { mode: 'mun', rate: entryBoliRate } : { mode: 'rupees', rate: null };
+  if (entryBoliMode === 'aani') return { mode: 'aani', rate: entryAaniRate };
+  if (effectiveUnitMode === 'mun') return { mode: 'mun', rate: entryBoliRate };
+  if (effectiveUnitMode === 'aani') return { mode: 'aani', rate: entryAaniRate };
+  return { mode: 'rupees', rate: null };
 }
 
 // Own unit_mode wins if set, otherwise inherits from the parent's resolved value.
 function entryEffectiveUnit(ownUnitMode, inheritedUnit) {
-  return ownUnitMode === 'mun' || ownUnitMode === 'rupees' ? ownUnitMode : inheritedUnit;
+  return (ownUnitMode === 'mun' || ownUnitMode === 'rupees' || ownUnitMode === 'aani') ? ownUnitMode : inheritedUnit;
 }
 
 function entryUnitBadge(resolvedUnit) {
-  return resolvedUnit === 'mun' ? ' <span style="font-size:10px;font-weight:700;background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:8px;">MUN</span>' : '';
+  if (resolvedUnit === 'mun') return ' <span style="font-size:10px;font-weight:700;background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:8px;">MUN</span>';
+  if (resolvedUnit === 'aani') return ' <span style="font-size:10px;font-weight:700;background:#F3E5F5;color:#7B1FA2;padding:2px 6px;border-radius:8px;">AANI</span>';
+  return '';
 }
 
 async function renderEntry() {
@@ -39,16 +52,79 @@ async function renderEntry() {
       .eq('is_live', true)
       .eq('org_id', currentOrgId)
       .order('created_at', { ascending: false }),
-    db.from('dr_organizations').select('boli_unit_mode, rate_per_mun, split_receipt_threshold').eq('id', currentOrgId).single()
+    db.from('dr_organizations').select('boli_unit_mode, rate_per_mun, rate_per_aani, split_receipt_threshold').eq('id', currentOrgId).single()
   ]);
 
   entryBoliMode = orgData?.boli_unit_mode || 'rupees';
   entryBoliRate = orgData?.rate_per_mun ?? null;
+  entryAaniRate = orgData?.rate_per_aani ?? null;
   entrySplitThreshold = orgData?.split_receipt_threshold ?? 20000;
+
+  currentCart = [];
+  cartPayer = null;
+  modalSelectedMember = null;
 
   content.innerHTML = `
     <div class="card">
-      <div class="card-title">💰 Donation Entry</div>
+      <div class="card-title">👤 Current Visit — Who's Donating?</div>
+      <div class="form-group">
+        <label>Donor Type</label>
+        <select id="cart-donor-type" onchange="onCartDonorTypeChange()">
+          <option value="">-- Select --</option>
+          <option value="other">Other (Type Name)</option>
+          <option value="member">Member (Search)</option>
+        </select>
+      </div>
+      <div id="cart-other-fields" style="display:none;">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" id="cart-other-name" placeholder="Donor name" />
+        </div>
+        <div class="form-group">
+          <label>Phone No. (10 digits — required, for collection follow-up)</label>
+          <div style="display:flex;gap:4px;justify-content:center;margin-top:6px;" id="phone-boxes">
+            ${[...Array(10)].map((_, i) => `
+              <input type="tel" inputmode="numeric" maxlength="1"
+                id="ph-${i}"
+                oninput="phoneBoxInput(this,${i})"
+                onkeydown="phoneBoxKey(event,${i})"
+                onpaste="phoneBoxPaste(event,${i})"
+                style="width:28px;height:36px;text-align:center;font-size:16px;font-weight:700;border:2px solid var(--border);border-radius:6px;outline:none;padding:0;"
+              />
+            `).join('')}
+          </div>
+          <input type="hidden" id="cart-other-phone" />
+        </div>
+      </div>
+      <div id="cart-member-fields" style="display:none;">
+        <div class="form-group">
+          <label>Search Member</label>
+          <input type="text" id="cart-member-search" placeholder="Type name or family no..." oninput="searchCartMember()" />
+          <div id="cart-member-results" style="max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;margin-top:4px;display:none;"></div>
+        </div>
+        <div id="cart-selected-member" style="display:none;padding:8px;background:#FFF8F0;border-radius:6px;border:1.5px solid var(--accent);margin-bottom:8px;">
+          <button class="btn-sm" style="float:right;background:#eee;color:#333;font-size:11px;" onclick="clearCartMember()">Change</button>
+          <div><strong id="cart-selected-name"></strong> <span id="cart-selected-family" style="font-size:12px;color:var(--text-muted);"></span></div>
+          <div id="cart-selected-phone" style="font-size:12px;margin-top:2px;"></div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Receipt In Name Of</label>
+        <select id="cart-receipt-name-select" style="display:none;margin-bottom:6px;" onchange="onCartReceiptNameSelectChange()"></select>
+        <input type="text" id="cart-receipt-name" placeholder="e.g. a deceased family member's name" />
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🛒 This Visit's Items</div>
+      <div id="cart-list"><p style="color:var(--text-muted);font-size:13px;">No items added yet — browse heads below and click "+ Add".</p></div>
+      <div id="cart-actions" style="display:none;margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-primary btn-sm" onclick="saveCartIndividually()">✅ Save Individually</button>
+        <button class="btn-primary btn-sm" style="background:#7B1E3B;" onclick="generateTokenFromCart()">🎫 Generate Token</button>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="form-group">
         <label>Select Event</label>
         <select id="entry-event" onchange="onEntryEventChange()">
@@ -121,7 +197,7 @@ async function loadEventHeadsEntry() {
 
   const topLevel = data.filter(s => !s.parent_id);
   const children = data.filter(s => s.parent_id);
-  const rootUnit = entryBoliMode === 'mun' ? 'mun' : 'rupees';
+  const rootUnit = entryBoliMode === 'mun' ? 'mun' : entryBoliMode === 'aani' ? 'aani' : 'rupees';
 
   el.innerHTML = topLevel.map(head => renderEntryMainHead(head, children, data, rootUnit)).join('');
 }
@@ -209,7 +285,7 @@ function renderEntrySwapnaItems(swapna, inheritedUnit) {
     return `
     <div style="padding:6px 0;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
       <span style="font-size:13px;">• ${item.name}${entryUnitBadge(myUnit)}</span>
-      <button class="btn-accent btn-sm" onclick="showDonationModal('${item.id}','${(swapna.name+' → '+item.name).replace(/'/g,"\\'")}','swapna_item',null,'${myUnit}')">+ Add</button>
+      <button class="btn-accent btn-sm" onclick="showAddToCartModal('${item.id}','${(swapna.name+' → '+item.name).replace(/'/g,"\\'")}','swapna_item','${myUnit}')">+ Add</button>
     </div>
   `; }).join('');
 }
@@ -217,7 +293,7 @@ function renderEntrySwapnaItems(swapna, inheritedUnit) {
 function renderEntryAddButton(id, name, type, resolvedUnit) {
   return `
     <div style="padding:8px 0;">
-      <button class="btn-accent btn-sm" onclick="showDonationModal('${id}','${name.replace(/'/g,"\\'")}','${type}',null,'${resolvedUnit}')">+ Add Donation</button>
+      <button class="btn-accent btn-sm" onclick="showAddToCartModal('${id}','${name.replace(/'/g,"\\'")}','${type}','${resolvedUnit}')">+ Add Donation</button>
     </div>
   `;
 }
@@ -243,11 +319,11 @@ async function loadGeneralHeadsEntry() {
     return;
   }
 
-  const rootUnit = entryBoliMode === 'mun' ? 'mun' : 'rupees';
+  const rootUnit = entryBoliMode === 'mun' ? 'mun' : entryBoliMode === 'aani' ? 'aani' : 'rupees';
   const byId = {};
   data.forEach(h => { byId[h.id] = h; });
   const resolveGeneralUnit = h => {
-    if (h.unit_mode === 'mun' || h.unit_mode === 'rupees') return h.unit_mode;
+    if (h.unit_mode === 'mun' || h.unit_mode === 'rupees' || h.unit_mode === 'aani') return h.unit_mode;
     const parent = h.parent_id ? byId[h.parent_id] : null;
     return parent ? resolveGeneralUnit(parent) : rootUnit;
   };
@@ -257,237 +333,112 @@ async function loadGeneralHeadsEntry() {
     return `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
       <span style="font-size:14px;color:var(--text);">${h.name}${entryUnitBadge(myUnit)}</span>
-      <button class="btn-accent btn-sm" onclick="showDonationModal('${h.id}','${h.name.replace(/'/g,"\\'")}','general',null,'${myUnit}')">+ Add</button>
+      <button class="btn-accent btn-sm" onclick="showAddToCartModal('${h.id}','${h.name.replace(/'/g,"\\'")}','general','${myUnit}')">+ Add</button>
     </div>
   `; }).join('');
 }
 
-// ========== DONATION MODAL ==========
-function showDonationModal(headId, headName, headType, prefillMemberId, unitMode) {
+// ========== ADD-TO-CART MODAL (amount/qty only — donor is set once per visit) ==========
+function showAddToCartModal(headId, headName, headType, unitMode) {
   const resolved = resolveHeadUnit(unitMode);
 
   showModal(`
-    <div class="modal-title">+ Add Donation</div>
+    <div class="modal-title">+ Add to Cart</div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">${headName}</div>
-
-    <div class="form-group">
-      <label>Donor Type</label>
-      <select id="modal-donor-type" onchange="onModalDonorTypeChange()" onclick="onModalDonorTypeChange()">
-        <option value="">-- Select --</option>
-        <option value="other">Other (Type Name)</option>
-        <option value="member">Member (Search)</option>
-      </select>
-    </div>
-
-    <div id="modal-other-fields" style="display:none;">
-      <div class="form-group">
-        <label>Name</label>
-        <input type="text" id="modal-other-name" placeholder="Donor name" />
-      </div>
-      <div class="form-group">
-        <label>Phone No. (10 digits — required, for collection follow-up)</label>
-        <div style="display:flex;gap:4px;justify-content:center;margin-top:6px;" id="phone-boxes">
-          ${[...Array(10)].map((_,i) => `
-            <input type="tel" inputmode="numeric" maxlength="1"
-              id="ph-${i}"
-              oninput="phoneBoxInput(this,${i})"
-              onkeydown="phoneBoxKey(event,${i})"
-              onpaste="phoneBoxPaste(event,${i})"
-              style="width:28px;height:36px;text-align:center;font-size:16px;font-weight:700;border:2px solid var(--border);border-radius:6px;outline:none;padding:0;"
-            />
-          `).join('')}
-        </div>
-        <input type="hidden" id="modal-other-phone" />
-      </div>
-    </div>
-
-    <div id="modal-member-fields" style="display:none;">
-      <div class="form-group">
-        <label>Search Member</label>
-        <input type="text" id="modal-member-search" placeholder="Type name or family no..." oninput="searchModalMember()" />
-        <div id="modal-member-results" style="max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;margin-top:4px;display:none;"></div>
-      </div>
-      <div id="modal-selected-member" style="display:none;padding:8px;background:#FFF8F0;border-radius:6px;border:1.5px solid var(--accent);margin-bottom:8px;">
-        <button class="btn-sm" style="float:right;background:#eee;color:#333;font-size:11px;" onclick="clearModalMember()">Change</button>
-        <div><strong id="modal-selected-name"></strong> <span id="modal-selected-family" style="font-size:12px;color:var(--text-muted);"></span></div>
-        <div id="modal-selected-phone" style="font-size:12px;margin-top:2px;"></div>
-      </div>
-    </div>
-
-    <div class="form-group">
-      <label>Receipt In Name Of</label>
-      <select id="modal-receipt-name-select" style="display:none;margin-bottom:6px;" onchange="onReceiptNameSelectChange()"></select>
-      <input type="text" id="modal-receipt-name" placeholder="e.g. a deceased family member's name" />
-    </div>
 
     ${resolved.mode === 'rupees' ? `
       <div class="form-group">
         <label>Amount (₹)</label>
-        <input type="number" id="modal-amount" placeholder="0" min="1" inputmode="numeric" oninput="onModalAmountOrMunChange()" />
+        <input type="number" id="cart-item-amount" placeholder="0" min="1" inputmode="numeric" />
       </div>
     ` : `
       <div class="form-group">
-        <label>Quantity (Mun)</label>
-        <input type="number" id="modal-mun-qty" placeholder="0" min="0.01" step="0.01" inputmode="decimal" oninput="updateMunPreview(); onModalAmountOrMunChange();" />
-        <div id="modal-mun-preview" style="font-size:12px;color:var(--text-muted);margin-top:4px;">@ ₹${resolved.rate}/mun</div>
-        <input type="hidden" id="modal-mun-rate" value="${resolved.rate}" />
+        <label>Quantity (${resolved.mode === 'mun' ? 'Mun' : 'Aani'})</label>
+        <input type="number" id="cart-item-qty" placeholder="0" min="0.01" step="0.01" inputmode="decimal" oninput="updateCartItemPreview()" />
+        <div id="cart-item-preview" style="font-size:12px;color:var(--text-muted);margin-top:4px;">@ ₹${resolved.rate}/${resolved.mode}</div>
+        <input type="hidden" id="cart-item-rate" value="${resolved.rate}" />
+        <input type="hidden" id="cart-item-unit" value="${resolved.mode}" />
       </div>
     `}
 
-    <div id="modal-split-options" style="display:none;border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
-      <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">This amount is ₹${entrySplitThreshold.toLocaleString('en-IN')} or above. A single receipt still works fine — use these only if the donor wants the amount split across multiple names.</p>
-      <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
-        <button class="btn-sm btn-secondary" onclick="startSplitNow('${headId}','${headName.replace(/'/g,"\\'")}','${headType}')">🔀 Split Into Multiple Names</button>
-        <button class="btn-sm btn-secondary" onclick="issueTokenFromModal('${headId}','${headName.replace(/'/g,"\\'")}','${headType}')">🎫 Issue Token (Decide Later)</button>
-      </div>
-      <div id="modal-split-builder"></div>
-    </div>
-
     <div class="modal-actions">
-      <button class="btn-primary" onclick="saveDonationFromModal('${headId}','${headName.replace(/'/g,"\\'")}','${headType}')">✅ Save (Single Receipt)</button>
+      <button class="btn-primary" onclick="addToCart('${headId}','${headName.replace(/'/g,"\\'")}','${headType}','${resolved.mode}',${resolved.rate || 'null'})">+ Add</button>
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>
     </div>
   `);
 }
 
-function getCurrentModalAmount() {
-  const munInput = document.getElementById('modal-mun-qty');
-  if (munInput) {
-    const qty = parseFloat(munInput.value) || 0;
-    const rate = parseFloat(document.getElementById('modal-mun-rate')?.value) || 0;
-    return qty * rate;
+function updateCartItemPreview() {
+  const previewEl = document.getElementById('cart-item-preview');
+  const qtyInput = document.getElementById('cart-item-qty');
+  if (!previewEl || !qtyInput) return;
+  const rate = parseFloat(document.getElementById('cart-item-rate').value) || 0;
+  const unit = document.getElementById('cart-item-unit').value;
+  const qty = parseFloat(qtyInput.value) || 0;
+  previewEl.textContent = `@ ₹${rate}/${unit} = ₹${(qty * rate).toLocaleString('en-IN')}`;
+}
+
+function addToCart(headId, headName, headType, unit, rate) {
+  let amount, qty = null;
+  if (unit === 'rupees') {
+    amount = parseFloat(document.getElementById('cart-item-amount').value);
+    if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+  } else {
+    qty = parseFloat(document.getElementById('cart-item-qty').value);
+    if (!qty || qty <= 0) { showToast(`Enter a valid ${unit} quantity`, 'error'); return; }
+    amount = qty * rate;
   }
-  const amtInput = document.getElementById('modal-amount');
-  return parseFloat(amtInput?.value) || 0;
+
+  currentCart.push({ headId, headName, headType, amount, qty, unit, rate });
+  closeModal();
+  renderCartList();
 }
 
-function onModalAmountOrMunChange() {
-  const el = document.getElementById('modal-split-options');
-  if (!el) return;
-  el.style.display = (getCurrentModalAmount() >= entrySplitThreshold) ? 'block' : 'none';
+function removeCartItem(index) {
+  currentCart.splice(index, 1);
+  renderCartList();
 }
 
-function getModalPayerInfo() {
-  const donorType = document.getElementById('modal-donor-type').value;
-  if (donorType === 'other') {
-    const name = document.getElementById('modal-other-name').value.trim();
-    const phone = document.getElementById('modal-other-phone').value.trim();
-    if (!name) { showToast('Enter donor name first', 'error'); return null; }
-    if (phone.length !== 10) { showToast('Enter a 10-digit phone number first', 'error'); return null; }
-    return { memberId: null, name, phone, familyNo: null };
-  } else if (donorType === 'member') {
-    if (!modalSelectedMember) { showToast('Select a member first', 'error'); return null; }
-    return { memberId: modalSelectedMember.id, name: modalSelectedMember.name, phone: modalSelectedMember.phone || null, familyNo: modalSelectedMember.familyNo };
+function renderCartList() {
+  const listEl = document.getElementById('cart-list');
+  const actionsEl = document.getElementById('cart-actions');
+  if (!listEl) return;
+
+  if (currentCart.length === 0) {
+    listEl.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No items added yet — browse heads below and click "+ Add".</p>`;
+    actionsEl.style.display = 'none';
+    return;
   }
-  showToast('Select donor type first', 'error');
-  return null;
+
+  const total = currentCart.reduce((s, c) => s + c.amount, 0);
+  listEl.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table class="data-table">
+        <thead><tr><th>Head</th><th>Amount</th><th></th></tr></thead>
+        <tbody>
+          ${currentCart.map((c, i) => `
+            <tr>
+              <td style="font-size:13px;">${c.headName}${c.qty ? `<div style="font-size:11px;color:var(--text-muted);">${c.qty} ${c.unit}</div>` : ''}</td>
+              <td><strong>${formatAmount(c.amount)}</strong></td>
+              <td><button class="btn-sm btn-danger" onclick="removeCartItem(${i})">✕</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+        <tfoot><tr style="font-weight:700;"><td>Total</td><td>${formatAmount(total)}</td><td></td></tr></tfoot>
+      </table>
+    </div>
+  `;
+  actionsEl.style.display = 'flex';
 }
 
-function startSplitNow(headId, headName, headType) {
-  const amount = getCurrentModalAmount();
-  if (!amount || amount <= 0) { showToast('Enter a valid amount first', 'error'); return; }
-  const payer = getModalPayerInfo();
-  if (!payer) return;
-
-  const builder = document.getElementById('modal-split-builder');
-  builder.innerHTML = renderSplitRows('modal-split-rows', amount, payer.familyNo) +
-    `<button class="btn-primary btn-sm" style="margin-top:8px;" onclick="saveSplitFromModal('${headId}','${headName.replace(/'/g,"\\'")}','${headType}')">💾 Save Split Receipts</button>`;
+// ========== CART-LEVEL DONOR SELECTION ==========
+function onCartDonorTypeChange() {
+  const type = document.getElementById('cart-donor-type').value;
+  document.getElementById('cart-other-fields').style.display = type === 'other' ? 'block' : 'none';
+  document.getElementById('cart-member-fields').style.display = type === 'member' ? 'block' : 'none';
+  if (type !== 'member') clearCartMember();
 }
 
-async function saveSplitFromModal(headId, headName, headType) {
-  const rows = readSplitRows('modal-split-rows');
-  if (!rows) return;
-
-  const munQtyInput = document.getElementById('modal-mun-qty');
-  const rateUsed = munQtyInput ? parseFloat(document.getElementById('modal-mun-rate').value) : null;
-  const totalAmount = getCurrentModalAmount();
-
-  const baseRecord = {
-    event_id: headType !== 'general' ? entryEventId : null,
-    head_type: headType === 'swapna_item' ? 'swapna_item' : headType === 'swapna' ? 'swapna' : 'general_head',
-    swapna_item_id: headType === 'swapna_item' ? headId : null,
-    swapna_id: headType === 'swapna' ? headId : null,
-    general_head_id: headType === 'general' ? headId : null,
-    entered_by: currentUser?.id || null,
-    org_id: currentOrgId
-  };
-
-  const records = rows.map(r => ({
-    ...baseRecord,
-    member_id: r.memberId,
-    donor_name: r.name,
-    receipt_name: r.name,
-    family_no: r.familyNo || null,
-    phone: null,
-    amount: r.amount,
-    mun_qty: rateUsed ? +(r.amount / rateUsed).toFixed(2) : null,
-    rate_per_mun_used: rateUsed || null,
-    is_split_row: true
-  }));
-
-  const { data: saved, error } = await db.from('dr_donations').insert(records).select();
-  if (error) { showToast('Error: ' + error.message, 'error'); return; }
-
-  closeModal();
-  showToast(`✅ Saved ${saved.length} split entries totalling ₹${totalAmount.toLocaleString('en-IN')}`, 'success');
-
-  saved.forEach(s => recentEntries.unshift({ id: s.id, donor: s.donor_name, family: '—', phone: '—', head: headName, amount: s.amount, munQty: s.mun_qty }));
-  updateRecentEntries();
-
-  if (headType === 'general') await loadGeneralHeadsEntry(); else await loadEventHeadsEntry();
-}
-
-async function issueTokenFromModal(headId, headName, headType) {
-  const amount = getCurrentModalAmount();
-  if (!amount || amount <= 0) { showToast('Enter a valid amount first', 'error'); return; }
-  const payer = getModalPayerInfo();
-  if (!payer) return;
-
-  const munQtyInput = document.getElementById('modal-mun-qty');
-  const rateUsed = munQtyInput ? parseFloat(document.getElementById('modal-mun-rate').value) : null;
-
-  const record = {
-    org_id: currentOrgId,
-    event_id: headType !== 'general' ? entryEventId : null,
-    head_type: headType === 'swapna_item' ? 'swapna_item' : headType === 'swapna' ? 'swapna' : 'general_head',
-    swapna_item_id: headType === 'swapna_item' ? headId : null,
-    swapna_id: headType === 'swapna' ? headId : null,
-    general_head_id: headType === 'general' ? headId : null,
-    member_id: payer.memberId,
-    payer_name: payer.name,
-    phone: payer.phone,
-    family_no: payer.familyNo,
-    total_amount: amount,
-    mun_qty: rateUsed ? +(amount / rateUsed).toFixed(2) : null,
-    rate_per_mun_used: rateUsed || null,
-    created_by: currentUser?.id || null,
-    status: 'pending'
-  };
-
-  const { data: saved, error } = await db.from('dr_receipt_tokens').insert(record).select().single();
-  if (error) { showToast('Error: ' + error.message, 'error'); return; }
-
-  closeModal();
-  showToast(`🎫 Token issued for ₹${amount.toLocaleString('en-IN')} — give the slip to the donor`, 'success');
-  showTokenSlip(saved.id);
-
-  if (headType === 'general') await loadGeneralHeadsEntry(); else await loadEventHeadsEntry();
-}
-
-function updateMunPreview() {
-  const rate = parseFloat(document.getElementById('modal-mun-rate').value) || 0;
-  const qty = parseFloat(document.getElementById('modal-mun-qty').value) || 0;
-  document.getElementById('modal-mun-preview').textContent = `@ ₹${rate}/mun = ₹${(qty * rate).toLocaleString('en-IN')}`;
-}
-
-function onModalDonorTypeChange() {
-  const type = document.getElementById('modal-donor-type').value;
-  document.getElementById('modal-other-fields').style.display = type === 'other' ? 'block' : 'none';
-  document.getElementById('modal-member-fields').style.display = type === 'member' ? 'block' : 'none';
-  if (type !== 'member') clearModalMember();
-}
-
-// ========== 10-BOX PHONE INPUT ==========
 function phoneBoxInput(el, index) {
   el.value = el.value.replace(/[^0-9]/g, "");
   if (el.value.length === 1 && index < 9) {
@@ -523,7 +474,7 @@ function updateHiddenPhone() {
     const box = document.getElementById("ph-" + i);
     if (box) val += box.value;
   }
-  const hidden = document.getElementById("modal-other-phone");
+  const hidden = document.getElementById("cart-other-phone");
   if (hidden) hidden.value = val;
   for (let i = 0; i < 10; i++) {
     const box = document.getElementById("ph-" + i);
@@ -534,11 +485,11 @@ function updateHiddenPhone() {
 let modalMemberTimer = null;
 let modalSelectedMember = null;
 
-function searchModalMember() {
+function searchCartMember() {
   clearTimeout(modalMemberTimer);
   modalMemberTimer = setTimeout(async () => {
-    const q = document.getElementById('modal-member-search').value.trim();
-    const resultsEl = document.getElementById('modal-member-results');
+    const q = document.getElementById('cart-member-search').value.trim();
+    const resultsEl = document.getElementById('cart-member-results');
     if (q.length < 1) { resultsEl.style.display = 'none'; return; }
 
     const { data } = await db
@@ -557,7 +508,7 @@ function searchModalMember() {
     resultsEl.innerHTML = data.map(m => `
       <div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;"
            onmouseover="this.style.background='#FFF8F0'" onmouseout="this.style.background=''"
-           onclick="selectModalMember('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${m.family_no}','${(m.phone_no || '').replace(/'/g,"\\'")}')">
+           onclick="selectCartMember('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${m.family_no}','${(m.phone_no || '').replace(/'/g,"\\'")}')">
         <strong>${m.person_name}</strong>
         <span style="color:var(--text-muted);margin-left:6px;">Family: ${m.family_no}</span>
       </div>
@@ -565,14 +516,14 @@ function searchModalMember() {
   }, 300);
 }
 
-async function selectModalMember(id, name, familyNo, phone) {
+async function selectCartMember(id, name, familyNo, phone) {
   modalSelectedMember = { id, name, familyNo, phone: phone || null };
-  document.getElementById('modal-member-results').style.display = 'none';
-  document.getElementById('modal-member-search').value = '';
-  document.getElementById('modal-selected-member').style.display = 'block';
-  document.getElementById('modal-selected-name').textContent = name;
-  document.getElementById('modal-selected-family').textContent = 'Family: ' + familyNo;
-  const phoneEl = document.getElementById('modal-selected-phone');
+  document.getElementById('cart-member-results').style.display = 'none';
+  document.getElementById('cart-member-search').value = '';
+  document.getElementById('cart-selected-member').style.display = 'block';
+  document.getElementById('cart-selected-name').textContent = name;
+  document.getElementById('cart-selected-family').textContent = 'Family: ' + familyNo;
+  const phoneEl = document.getElementById('cart-selected-phone');
   if (phone) {
     phoneEl.style.color = 'var(--text-muted)';
     phoneEl.textContent = '📞 ' + phone;
@@ -581,12 +532,12 @@ async function selectModalMember(id, name, familyNo, phone) {
     phoneEl.textContent = '⚠ No phone on file for this member';
   }
 
-  await loadReceiptNameOptions(familyNo);
+  await loadCartReceiptNameOptions(familyNo);
 }
 
-async function loadReceiptNameOptions(familyNo) {
-  const sel = document.getElementById('modal-receipt-name-select');
-  const freeText = document.getElementById('modal-receipt-name');
+async function loadCartReceiptNameOptions(familyNo) {
+  const sel = document.getElementById('cart-receipt-name-select');
+  const freeText = document.getElementById('cart-receipt-name');
   if (!sel) return;
 
   const { data: members } = await db.from('dr_family_individuals')
@@ -603,9 +554,9 @@ async function loadReceiptNameOptions(familyNo) {
   freeText.value = '';
 }
 
-function onReceiptNameSelectChange() {
-  const sel = document.getElementById('modal-receipt-name-select');
-  const freeText = document.getElementById('modal-receipt-name');
+function onCartReceiptNameSelectChange() {
+  const sel = document.getElementById('cart-receipt-name-select');
+  const freeText = document.getElementById('cart-receipt-name');
   if (sel.value === '__other__') {
     freeText.style.display = 'block';
     freeText.value = '';
@@ -616,108 +567,118 @@ function onReceiptNameSelectChange() {
   }
 }
 
-function clearModalMember() {
+function clearCartMember() {
   modalSelectedMember = null;
-  document.getElementById('modal-selected-member').style.display = 'none';
-  document.getElementById('modal-member-search').value = '';
-  document.getElementById('modal-member-results').style.display = 'none';
-  const sel = document.getElementById('modal-receipt-name-select');
-  const freeText = document.getElementById('modal-receipt-name');
+  document.getElementById('cart-selected-member').style.display = 'none';
+  document.getElementById('cart-member-search').value = '';
+  document.getElementById('cart-member-results').style.display = 'none';
+  const sel = document.getElementById('cart-receipt-name-select');
+  const freeText = document.getElementById('cart-receipt-name');
   sel.style.display = 'none';
   sel.innerHTML = '';
   freeText.style.display = 'block';
   freeText.value = '';
 }
 
-async function saveDonationFromModal(headId, headName, headType) {
-  const donorType = document.getElementById('modal-donor-type').value;
-  const note = '';
-
-  let amount, munQty = null, rateUsed = null;
-  const munQtyInput = document.getElementById('modal-mun-qty');
-  if (munQtyInput) {
-    munQty = parseFloat(munQtyInput.value);
-    rateUsed = parseFloat(document.getElementById('modal-mun-rate').value);
-    if (!munQty || munQty <= 0) { showToast('Enter valid mun quantity', 'error'); return; }
-    amount = munQty * rateUsed;
-  } else {
-    amount = parseFloat(document.getElementById('modal-amount').value);
-    if (!amount || amount <= 0) { showToast('Enter valid amount', 'error'); return; }
-  }
-
-  if (!donorType) { showToast('Select donor type', 'error'); return; }
-
-  let donorName = null;
-  let phone = null;
-  let memberId = null;
-  let familyNo = null;
-
+function getCartPayer() {
+  const donorType = document.getElementById('cart-donor-type').value;
   if (donorType === 'other') {
-    donorName = document.getElementById('modal-other-name').value.trim();
-    phone = document.getElementById('modal-other-phone').value.trim();
-    if (!donorName) { showToast('Enter donor name', 'error'); return; }
-    if (phone.length !== 10) { showToast('Enter a 10-digit phone number', 'error'); return; }
+    const name = document.getElementById('cart-other-name').value.trim();
+    const phone = document.getElementById('cart-other-phone').value.trim();
+    if (!name) { showToast('Enter donor name', 'error'); return null; }
+    if (phone.length !== 10) { showToast('Enter a 10-digit phone number', 'error'); return null; }
+    return { memberId: null, name, phone, familyNo: null };
   } else if (donorType === 'member') {
-    if (!modalSelectedMember) { showToast('Select a member', 'error'); return; }
-    memberId = modalSelectedMember.id;
-    donorName = modalSelectedMember.name;
-    familyNo = modalSelectedMember.familyNo;
-    phone = modalSelectedMember.phone || null;
+    if (!modalSelectedMember) { showToast('Select a member', 'error'); return null; }
+    return { memberId: modalSelectedMember.id, name: modalSelectedMember.name, phone: modalSelectedMember.phone || null, familyNo: modalSelectedMember.familyNo };
   }
+  showToast('Select donor type first', 'error');
+  return null;
+}
 
-  const receiptSel = document.getElementById('modal-receipt-name-select');
-  let receiptName;
-  if (receiptSel && receiptSel.style.display !== 'none' && receiptSel.value && receiptSel.value !== '__other__') {
-    receiptName = receiptSel.value;
-  } else {
-    receiptName = document.getElementById('modal-receipt-name').value.trim();
+function getCartReceiptName() {
+  const sel = document.getElementById('cart-receipt-name-select');
+  if (sel && sel.style.display !== 'none' && sel.value && sel.value !== '__other__') {
+    return sel.value;
   }
+  return document.getElementById('cart-receipt-name').value.trim();
+}
 
-  const record = {
-    event_id: headType !== 'general' ? entryEventId : null,
-    head_type: headType === 'swapna_item' ? 'swapna_item' : headType === 'swapna' ? 'swapna' : 'general_head',
-    swapna_item_id: headType === 'swapna_item' ? headId : null,
-    swapna_id: headType === 'swapna' ? headId : null,
-    general_head_id: headType === 'general' ? headId : null,
-    member_id: memberId || null,
-    donor_name: donorName,
+// ========== SAVE CART ==========
+function buildCartRecords(payer, receiptName) {
+  return currentCart.map(c => ({
+    org_id: currentOrgId,
+    event_id: c.headType !== 'general' ? entryEventId : null,
+    head_type: c.headType === 'swapna_item' ? 'swapna_item' : c.headType === 'swapna' ? 'swapna' : 'general_head',
+    swapna_item_id: c.headType === 'swapna_item' ? c.headId : null,
+    swapna_id: c.headType === 'swapna' ? c.headId : null,
+    general_head_id: c.headType === 'general' ? c.headId : null,
+    member_id: payer.memberId,
+    donor_name: payer.name,
     receipt_name: receiptName || null,
-    family_no: familyNo || null,
-    phone: phone || null,
-    amount,
-    mun_qty: munQty,
-    rate_per_mun_used: rateUsed,
-    note: note || null,
-    entered_by: currentUser?.id || null,
-    org_id: currentOrgId
-  };
+    family_no: payer.familyNo || null,
+    phone: payer.phone || null,
+    amount: c.amount,
+    mun_qty: c.unit === 'mun' ? c.qty : null,
+    rate_per_mun_used: c.unit === 'mun' ? c.rate : null,
+    aani_qty: c.unit === 'aani' ? c.qty : null,
+    rate_per_aani_used: c.unit === 'aani' ? c.rate : null,
+    entered_by: currentUser?.id || null
+  }));
+}
 
-  const { data: saved, error } = await db.from('dr_donations').insert(record).select().single();
+async function saveCartIndividually() {
+  if (currentCart.length === 0) { showToast('Add at least one item first', 'error'); return; }
+  const payer = getCartPayer();
+  if (!payer) return;
+  const receiptName = getCartReceiptName();
+
+  const records = buildCartRecords(payer, receiptName);
+  const { data: saved, error } = await db.from('dr_donations').insert(records).select();
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
-  lastSavedDonationId = saved.id;
-  modalSelectedMember = null;
-  closeModal();
-  showToast(`✅ Saved! ${donorName} → ${munQty ? munQty + ' mun (₹' + amount.toLocaleString('en-IN') + ')' : '₹' + amount}`, 'success');
+  showToast(`✅ Saved ${saved.length} entries totalling ${formatAmount(currentCart.reduce((s,c)=>s+c.amount,0))}`, 'success');
+  lastSavedDonationId = saved[saved.length - 1].id;
 
-  recentEntries.unshift({
-    id: saved.id,
-    donor: donorName,
-    family: familyNo || '—',
-    phone: phone || '—',
-    head: headName,
-    amount,
-    munQty
-  });
-
+  saved.forEach((s, i) => recentEntries.unshift({ id: s.id, donor: s.donor_name, family: s.family_no || '—', phone: s.phone || '—', head: currentCart[i]?.headName || '—', amount: s.amount, munQty: s.mun_qty }));
   updateRecentEntries();
 
-  // Refresh the relevant section
-  if (headType === 'general') {
-    await loadGeneralHeadsEntry();
-  } else {
-    await loadEventHeadsEntry();
-  }
+  currentCart = [];
+  renderCartList();
+  await loadGeneralHeadsEntry();
+  if (entryEventId) await loadEventHeadsEntry();
+}
+
+async function generateTokenFromCart() {
+  if (currentCart.length === 0) { showToast('Add at least one item first', 'error'); return; }
+  const payer = getCartPayer();
+  if (!payer) return;
+  const receiptName = getCartReceiptName();
+  const total = currentCart.reduce((s, c) => s + c.amount, 0);
+
+  const { data: token, error: tErr } = await db.from('dr_receipt_tokens').insert({
+    org_id: currentOrgId,
+    member_id: payer.memberId,
+    payer_name: payer.name,
+    phone: payer.phone,
+    family_no: payer.familyNo,
+    total_amount: total,
+    created_by: currentUser?.id || null,
+    status: 'pending'
+  }).select().single();
+  if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
+
+  const records = buildCartRecords(payer, receiptName).map(r => ({ ...r, token_id: token.id }));
+  const { error: dErr } = await db.from('dr_donations').insert(records);
+  if (dErr) { showToast('Error: ' + dErr.message, 'error'); return; }
+
+  showToast(`🎫 Token issued for ${formatAmount(total)} — give the slip to the donor`, 'success');
+  showTokenSlip(token.id);
+
+  currentCart = [];
+  renderCartList();
+  await loadGeneralHeadsEntry();
+  if (entryEventId) await loadEventHeadsEntry();
 }
 
 function updateRecentEntries() {
@@ -798,6 +759,13 @@ async function showEditDonationModal(id, refreshFn) {
         <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">@ ₹${d.rate_per_mun_used}/mun</div>
         <input type="hidden" id="edit-don-mun-rate" value="${d.rate_per_mun_used}" />
       </div>
+    ` : d.aani_qty ? `
+      <div class="form-group">
+        <label>Quantity (Aani)</label>
+        <input type="number" id="edit-don-aani-qty" value="${d.aani_qty}" min="0.01" step="0.01" />
+        <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">@ ₹${d.rate_per_aani_used}/aani</div>
+        <input type="hidden" id="edit-don-aani-rate" value="${d.rate_per_aani_used}" />
+      </div>
     ` : `
       <div class="form-group">
         <label>Amount</label>
@@ -817,6 +785,7 @@ async function updateDonation(id, refreshFn) {
   const receipt_name = document.getElementById('edit-don-receipt-name').value.trim();
 
   const munQtyInput = document.getElementById('edit-don-mun-qty');
+  const aaniQtyInput = document.getElementById('edit-don-aani-qty');
   const update = { donor_name, phone: phone || null, receipt_name: receipt_name || null };
 
   if (munQtyInput) {
@@ -825,6 +794,12 @@ async function updateDonation(id, refreshFn) {
     if (!munQty || munQty <= 0) { showToast('Enter valid mun quantity', 'error'); return; }
     update.mun_qty = munQty;
     update.amount = munQty * rate;
+  } else if (aaniQtyInput) {
+    const aaniQty = parseFloat(aaniQtyInput.value);
+    const rate = parseFloat(document.getElementById('edit-don-aani-rate').value);
+    if (!aaniQty || aaniQty <= 0) { showToast('Enter valid aani quantity', 'error'); return; }
+    update.aani_qty = aaniQty;
+    update.amount = aaniQty * rate;
   } else {
     const amount = parseFloat(document.getElementById('edit-don-amount').value);
     if (!amount || amount <= 0) { showToast('Enter valid amount', 'error'); return; }

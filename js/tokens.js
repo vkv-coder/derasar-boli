@@ -1,55 +1,87 @@
 // ==========================================
-// DERASAR BOLI - Pending Tokens (Split-Receipt Allocation)
-// Admin-only screen: allocate a "Payment Offer Accepted" token
-// into individually-named receipts once the donor returns with names.
+// DERASAR BOLI - Token Desk (Received + Print)
+// Consolidated page: staff at the payment table look up a token, confirm
+// cash received, and print — immediately for the common single-name case,
+// or defer to split-allocation for large auction amounts where the donor
+// wants the receipt divided across family names. Received/Token/Print all
+// live on this one page by design.
 // ==========================================
+
+function tokenDisplayCode(t) {
+  const dt = new Date(t.created_at);
+  return 'TKN-' + dt.getFullYear() + '-' + String(t.id || '').slice(-6).padStart(6, '0');
+}
 
 async function renderTokens() {
   const content = document.getElementById('page-content');
   content.innerHTML = `
     <div class="card">
-      <div class="card-title">🎫 Pending Tokens</div>
+      <div class="card-title">🎫 Token Desk — Received &amp; Print</div>
       <div class="form-group">
-        <input type="text" id="token-search" placeholder="Search by name or phone..." oninput="loadPendingTokens()" />
+        <input type="text" id="token-search" placeholder="Search by name, phone, or token code..." oninput="loadTokensList()" />
       </div>
       <div id="tokens-list">Loading...</div>
     </div>
   `;
-  await loadPendingTokens();
+  await loadTokensList();
 }
 
-async function loadPendingTokens() {
+async function loadTokensList() {
   const el = document.getElementById('tokens-list');
   if (!el) return;
 
-  const q = (document.getElementById('token-search')?.value || '').trim();
-  let query = db.from('dr_receipt_tokens').select('*').eq('org_id', currentOrgId).eq('status', 'pending').order('created_at', { ascending: false });
-  if (q) query = query.or(`payer_name.ilike.%${q}%,phone.ilike.%${q}%`);
+  const { data: tokens, error } = await db.from('dr_receipt_tokens')
+    .select('*').eq('org_id', currentOrgId)
+    .in('status', ['pending', 'paid_awaiting_split'])
+    .order('created_at', { ascending: false });
 
-  const { data, error } = await query;
   if (error) { el.innerHTML = `<p style="color:var(--danger);">Error: ${error.message}</p>`; return; }
+  if (!tokens || tokens.length === 0) {
+    el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No tokens awaiting action.</p>`;
+    return;
+  }
 
-  if (!data || data.length === 0) {
-    el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No pending tokens.</p>`;
+  const tokenIds = tokens.map(t => t.id);
+  const { data: lines } = await db.from('dr_donations').select('token_id').in('token_id', tokenIds);
+  const countByToken = {};
+  (lines || []).forEach(l => { countByToken[l.token_id] = (countByToken[l.token_id] || 0) + 1; });
+
+  const q = (document.getElementById('token-search')?.value || '').toLowerCase().trim();
+  const filtered = q
+    ? tokens.filter(t =>
+        (t.payer_name || '').toLowerCase().includes(q) ||
+        (t.phone || '').toLowerCase().includes(q) ||
+        tokenDisplayCode(t).toLowerCase().includes(q))
+    : tokens;
+
+  if (filtered.length === 0) {
+    el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No matching tokens.</p>`;
     return;
   }
 
   el.innerHTML = `
     <div style="overflow-x:auto;">
       <table class="data-table">
-        <thead><tr><th>Payer</th><th>Phone</th><th>Amount</th><th>Date</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Code</th><th>Payer</th><th>Phone</th><th>Items</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>
-          ${data.map(t => `
+          ${filtered.map(t => `
             <tr>
-              <td>${t.payer_name}</td>
-              <td>${t.phone || '—'}</td>
-              <td><strong>₹${parseFloat(t.total_amount).toLocaleString('en-IN')}</strong></td>
-              <td style="font-size:12px;">${new Date(t.created_at).toLocaleDateString('en-IN')}</td>
+              <td style="font-size:12px;">${tokenDisplayCode(t)}</td>
+              <td><strong>${t.payer_name}</strong></td>
+              <td style="font-size:12px;">${t.phone || '—'}</td>
+              <td>${countByToken[t.id] || 0}</td>
+              <td><strong>${formatAmount(parseFloat(t.total_amount))}</strong></td>
+              <td>${t.status === 'pending' ? '<span style="color:#ff9800;">Pending</span>' : '<span style="color:#1565C0;">Paid — Split Pending</span>'}</td>
               <td>
                 <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                  <button class="btn-sm btn-primary" onclick="showAllocateTokenModal('${t.id}')">Allocate</button>
+                  ${t.status === 'pending' ? `
+                    <button class="btn-sm btn-primary" onclick="confirmTokenReceived('${t.id}', false)">✅ Received — Print</button>
+                    <button class="btn-sm btn-secondary" onclick="confirmTokenReceived('${t.id}', true)">✅ Received — Split Later</button>
+                    <button class="btn-sm btn-danger" onclick="cancelToken('${t.id}')">Cancel</button>
+                  ` : `
+                    <button class="btn-sm btn-primary" onclick="showAllocateTokenModal('${t.id}')">Allocate &amp; Print</button>
+                  `}
                   <button class="btn-sm btn-secondary" onclick="showTokenSlip('${t.id}')">🖨 Slip</button>
-                  <button class="btn-sm btn-danger" onclick="cancelToken('${t.id}')">Cancel</button>
                 </div>
               </td>
             </tr>
@@ -60,12 +92,36 @@ async function loadPendingTokens() {
   `;
 }
 
+// Marks every line under this token received (cash is already counted at
+// this point) — splitLater only changes whether we print now or wait.
+async function confirmTokenReceived(tokenId, splitLater) {
+  const { data: lines, error: lErr } = await db.from('dr_donations').select('id, amount').eq('token_id', tokenId);
+  if (lErr || !lines || lines.length === 0) { showToast('Could not load token items', 'error'); return; }
+
+  for (const line of lines) {
+    const { error } = await db.from('dr_donations').update({ received_amount: line.amount }).eq('id', line.id);
+    if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  }
+
+  const newStatus = splitLater ? 'paid_awaiting_split' : 'paid';
+  const { error: tErr } = await db.from('dr_receipt_tokens')
+    .update({ status: newStatus, paid_at: new Date().toISOString() })
+    .eq('id', tokenId);
+  if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
+
+  showToast(splitLater ? '✅ Marked received — split & print whenever ready' : '✅ Received — opening receipt', 'success');
+  await loadTokensList();
+  if (!splitLater) showCombinedTokenReceipt(tokenId);
+}
+
 async function cancelToken(tokenId) {
-  if (!confirm('Cancel this token? This cannot be undone.')) return;
+  if (!confirm('Cancel this token? Its donation lines will be deleted too. This cannot be undone.')) return;
+  const { error: dErr } = await db.from('dr_donations').delete().eq('token_id', tokenId);
+  if (dErr) { showToast('Error: ' + dErr.message, 'error'); return; }
   const { error } = await db.from('dr_receipt_tokens').update({ status: 'cancelled' }).eq('id', tokenId).eq('org_id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Token cancelled');
-  await loadPendingTokens();
+  await loadTokensList();
 }
 
 async function showAllocateTokenModal(tokenId) {
@@ -74,10 +130,10 @@ async function showAllocateTokenModal(tokenId) {
 
   showModal(`
     <div class="modal-title">Allocate Token — ${t.payer_name}</div>
-    <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Total: ₹${parseFloat(t.total_amount).toLocaleString('en-IN')}</div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Total: ${formatAmount(parseFloat(t.total_amount))}</div>
     <div id="token-allocate-builder">${renderSplitRows('token-alloc-rows', t.total_amount, t.family_no)}</div>
     <div class="modal-actions">
-      <button class="btn-primary" onclick="saveTokenAllocation('${t.id}')">💾 Save & Generate Receipts</button>
+      <button class="btn-primary" onclick="saveTokenAllocation('${t.id}')">💾 Save Split</button>
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>
     </div>
   `);
@@ -87,34 +143,16 @@ async function saveTokenAllocation(tokenId) {
   const rows = readSplitRows('token-alloc-rows');
   if (!rows) return;
 
-  const { data: t, error: tErr } = await db.from('dr_receipt_tokens').select('*').eq('id', tokenId).single();
-  if (tErr || !t) { showToast('Could not load token', 'error'); return; }
-
-  const baseRecord = {
-    org_id: t.org_id,
-    event_id: t.event_id,
-    head_type: t.head_type,
-    swapna_id: t.swapna_id,
-    swapna_item_id: t.swapna_item_id,
-    general_head_id: t.general_head_id,
-    entered_by: currentUser?.id || null
-  };
-
   const records = rows.map(r => ({
-    ...baseRecord,
-    member_id: r.memberId,
-    donor_name: r.name,
-    receipt_name: r.name,
-    family_no: r.familyNo || null,
-    phone: null,
+    token_id: tokenId,
+    org_id: currentOrgId,
+    name: r.name,
     amount: r.amount,
-    mun_qty: t.rate_per_mun_used ? +(r.amount / t.rate_per_mun_used).toFixed(2) : null,
-    rate_per_mun_used: t.rate_per_mun_used || null,
-    is_split_row: true,
-    split_token_id: t.id
+    member_id: r.memberId,
+    family_no: r.familyNo || null
   }));
 
-  const { error: insErr } = await db.from('dr_donations').insert(records);
+  const { data: saved, error: insErr } = await db.from('dr_token_splits').insert(records).select();
   if (insErr) { showToast('Error: ' + insErr.message, 'error'); return; }
 
   const { error: updErr } = await db.from('dr_receipt_tokens')
@@ -123,10 +161,24 @@ async function saveTokenAllocation(tokenId) {
   if (updErr) { showToast('Error: ' + updErr.message, 'error'); return; }
 
   closeModal();
-  showToast(`✅ Allocated into ${records.length} receipts — enter received amount per name to print`, 'success');
+  showToast(`✅ Allocated into ${saved.length} receipts`, 'success');
+  showAllocationResultsModal(saved);
+  await loadTokensList();
+}
 
-  // This can be triggered from either the Pending Tokens tab or the Donors
-  // tab (which also surfaces pending tokens) — refresh whichever is showing.
-  if (activeTab === 'donors' && typeof loadDonorsList === 'function') await loadDonorsList();
-  else if (document.getElementById('tokens-list')) await loadPendingTokens();
+// A browser only allows one popup per user click — so rather than trying to
+// auto-open every split receipt at once (which gets blocked after the
+// first), list them with individual print buttons.
+function showAllocationResultsModal(splits) {
+  showModal(`
+    <div class="modal-title">✅ Allocated</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">Print each receipt:</p>
+    ${splits.map(s => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+        <span>${s.name} — <strong>${formatAmount(parseFloat(s.amount))}</strong></span>
+        <button class="btn-sm btn-secondary" onclick="showSplitReceipt('${s.id}')">🖨 Print</button>
+      </div>
+    `).join('')}
+    <div class="modal-actions"><button class="btn-secondary" onclick="closeModal()">Close</button></div>
+  `);
 }

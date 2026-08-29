@@ -304,10 +304,10 @@ async function showDonationReceipt(donationId) {
     <div class="receipt-title">પહોંચ &nbsp;·&nbsp; RECEIPT</div>
     <div class="meta"><span>ન. : ${receiptNo}</span><span>તા. : ${receiptDate}</span></div>
     <div class="row"><span class="row-label">નામ :</span><span class="row-value">${d.receipt_name || d.donor_name}</span></div>
-    ${d.is_split_row ? '' : `<div class="row"><span class="row-label">કુટુંબ ક્રમ :</span><span class="row-value">${d.family_no || '—'}</span></div>`}
+    <div class="row"><span class="row-label">કુટુંબ ક્રમ :</span><span class="row-value">${d.family_no || '—'}</span></div>
     <table class="heads-table">
       <thead><tr><th style="width:28px;text-align:center;">ક્ર.</th><th>દાન ની વિગત</th><th>રકમ</th></tr></thead>
-      <tbody><tr><td style="text-align:center;color:#888;">1</td><td>${headName}${itemName ? ' → ' + itemName : ''}${d.mun_qty ? `<br><span style="font-size:10px;color:#888;">${d.mun_qty} mun</span>` : ''}</td><td>₹ ${total.toLocaleString('en-IN')}</td></tr></tbody>
+      <tbody><tr><td style="text-align:center;color:#888;">1</td><td>${headName}${itemName ? ' → ' + itemName : ''}${d.mun_qty ? `<br><span style="font-size:10px;color:#888;">${d.mun_qty} mun</span>` : ''}${d.aani_qty ? `<br><span style="font-size:10px;color:#888;">${d.aani_qty} aani</span>` : ''}</td><td>₹ ${total.toLocaleString('en-IN')}</td></tr></tbody>
     </table>
     <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
     <div class="words-row">${numToGujaratiWords(total)} રૂપિયા</div>
@@ -324,6 +324,141 @@ async function showDonationReceipt(donationId) {
 
   const win = window.open('', '_blank', 'width=430,height=720,scrollbars=yes');
   if (!win) { showToast('Allow pop-ups to view receipt', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+}
+
+// Default single-name receipt for a token: every dr_donations line under
+// this token, itemized, one grand total — for the common case where the
+// donor doesn't need the amount split across other names.
+async function showCombinedTokenReceipt(tokenId) {
+  const { data: t, error: tErr } = await db.from('dr_receipt_tokens').select('*').eq('id', tokenId).single();
+  if (tErr || !t) { showToast('Could not load token', 'error'); return; }
+
+  const { data: lines, error: lErr } = await db.from('dr_donations').select('*').eq('token_id', tokenId).order('created_at');
+  if (lErr || !lines || lines.length === 0) { showToast('Could not load token items', 'error'); return; }
+
+  const { data: org } = await db.from('dr_organizations').select('*').eq('id', t.org_id || currentOrgId).single();
+  const templeHeader = buildTempleHeader(org);
+
+  const rows = [];
+  let sno = 1;
+  for (const d of lines) {
+    let headName = '', itemName = '';
+    if (d.head_type === 'general_head' && d.general_head_id) {
+      const { data: h } = await db.from('dr_general_heads').select('name').eq('id', d.general_head_id).single();
+      headName = h?.name || 'General';
+    } else if (d.head_type === 'swapna_item' && d.swapna_item_id) {
+      const { data: item } = await db.from('dr_swapna_items').select('name, dr_swapna(name)').eq('id', d.swapna_item_id).single();
+      headName = item?.dr_swapna?.name || 'Swapna';
+      itemName = item?.name || '';
+    } else if (d.head_type === 'swapna' && d.swapna_id) {
+      const { data: s } = await db.from('dr_swapna').select('name').eq('id', d.swapna_id).single();
+      headName = s?.name || 'Swapna';
+    }
+    rows.push({ sno: sno++, headName: headName + (itemName ? ' → ' + itemName : ''), amount: parseFloat(d.amount), munQty: d.mun_qty, aaniQty: d.aani_qty });
+  }
+
+  const dt = new Date(t.created_at);
+  const receiptDate = dt.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const receiptNo = 'DB-' + dt.getFullYear() + '-' + String(t.id || '').slice(-6).padStart(6, '0');
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+  const receiptName = lines[0].receipt_name || t.payer_name;
+
+  const tableRows = rows.map(r => `
+    <tr>
+      <td style="text-align:center;color:#888;">${r.sno}</td>
+      <td>${r.headName}${r.munQty ? `<br><span style="font-size:10px;color:#888;">${r.munQty} mun</span>` : ''}${r.aaniQty ? `<br><span style="font-size:10px;color:#888;">${r.aaniQty} aani</span>` : ''}</td>
+      <td>₹ ${r.amount.toLocaleString('en-IN')}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="gu">
+<head>
+<meta charset="UTF-8"/>
+<title>Receipt – ${receiptName}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
+<style>${RECEIPT_CSS}</style>
+</head>
+<body>
+<div class="receipt">
+  ${templeHeader}
+  <div class="receipt-body">
+    <div class="receipt-title"><span class="rt-label">પહોંચ &nbsp;·&nbsp; RECEIPT</span><span class="rt-no">ન.&nbsp;${receiptNo}</span></div>
+    <div class="meta" style="justify-content:flex-end;"><span>તા. : ${receiptDate}</span></div>
+    <div class="row"><span class="row-label">નામ :</span><span class="row-value">${receiptName}</span></div>
+    <div class="row"><span class="row-label">કુટુંબ ક્રમ :</span><span class="row-value">${t.family_no || '—'}</span></div>
+    <table class="heads-table">
+      <thead><tr><th style="width:28px;text-align:center;">ક્ર.</th><th>દાન ની વિગત</th><th>રકમ</th></tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+    <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
+    <div class="words-row">${numToGujaratiWords(total)} રૂપિયા</div>
+    <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
+    <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
+  </div>
+</div>
+<div class="btns">
+  <button class="btn btn-print" onclick="window.print()">🖨 Print / PDF</button>
+  <button class="btn btn-close" onclick="window.close()">Close</button>
+</div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=430,height=800,scrollbars=yes');
+  if (!win) { showToast('Allow pop-ups to view receipt', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+}
+
+// Split-name receipt: just Name + Amount, no item breakdown (a bundled
+// token can span several different heads, so a share divided by name can't
+// be cleanly attributed back to one head) and no family number (the
+// receipt-holder isn't necessarily on the payer's own family roster row).
+async function showSplitReceipt(splitId) {
+  const { data: s, error } = await db.from('dr_token_splits').select('*, dr_receipt_tokens(org_id)').eq('id', splitId).single();
+  if (error || !s) { showToast('Could not load receipt', 'error'); return; }
+
+  const { data: org } = await db.from('dr_organizations').select('*').eq('id', s.dr_receipt_tokens?.org_id || currentOrgId).single();
+  const templeHeader = buildTempleHeader(org);
+
+  const dt = new Date(s.created_at);
+  const receiptDate = dt.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const receiptNo = 'DB-' + dt.getFullYear() + '-' + String(s.id || '').slice(-6).padStart(6, '0');
+  const total = parseFloat(s.amount);
+
+  const html = `<!DOCTYPE html>
+<html lang="gu">
+<head>
+<meta charset="UTF-8"/>
+<title>Receipt – ${s.name}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
+<style>${RECEIPT_CSS}</style>
+</head>
+<body>
+<div class="receipt">
+  ${templeHeader}
+  <div class="receipt-body">
+    <div class="receipt-title"><span class="rt-label">પહોંચ &nbsp;·&nbsp; RECEIPT</span><span class="rt-no">ન.&nbsp;${receiptNo}</span></div>
+    <div class="meta" style="justify-content:flex-end;"><span>તા. : ${receiptDate}</span></div>
+    <div class="row"><span class="row-label">નામ :</span><span class="row-value">${s.name}</span></div>
+    <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
+    <div class="words-row">${numToGujaratiWords(total)} રૂપિયા</div>
+    <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
+    <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
+  </div>
+</div>
+<div class="btns">
+  <button class="btn btn-print" onclick="window.print()">🖨 Print / PDF</button>
+  <button class="btn btn-close" onclick="window.close()">Close</button>
+</div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=430,height=720,scrollbars=yes');
+  if (!win) { showToast('Allow pop-ups to view slip', 'error'); return; }
   win.document.write(html);
   win.document.close();
 }
