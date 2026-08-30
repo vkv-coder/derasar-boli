@@ -28,6 +28,7 @@ async function renderReports() {
     .order('created_at', { ascending: false });
 
   content.innerHTML = `
+    ${tokenDeskSectionHTML()}
     <div class="card">
       <div class="card-title">📊 Reports</div>
       <div class="form-group">
@@ -40,6 +41,8 @@ async function renderReports() {
     </div>
     <div id="report-content"></div>
   `;
+
+  await loadTokensList();
 
   if (events && events.length === 1) {
     document.getElementById('report-event-select').value = events[0].id;

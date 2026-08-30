@@ -118,15 +118,15 @@ async function renderEntry() {
     <div class="card">
       <div class="card-title">🛒 This Visit's Items</div>
       <div id="cart-list"><p style="color:var(--text-muted);font-size:13px;">No items added yet — browse heads below and click "+ Add".</p></div>
-      <div id="cart-actions" style="display:none;margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn-primary btn-sm" onclick="saveCartIndividually()">✅ Save Individually</button>
+      <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Every donation needs a token, regardless of amount — this is what the donor takes to the cash counter to pay.</p>
+      <div id="cart-actions" style="display:none;margin-top:6px;">
         <button class="btn-primary btn-sm" style="background:#7B1E3B;" onclick="generateTokenFromCart()">🎫 Generate Token</button>
       </div>
     </div>
 
     <div class="card">
       <div class="card-title">🎫 Generate Token for Already-Saved Donations</div>
-      <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Already used "Save Individually" for someone and now need a token for those entries? Search by name or phone below — only unpaid, not-yet-tokened entries show up.</p>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">For older entries saved before tokens were required (no token yet). Search by name or phone below — only unpaid, not-yet-tokened entries show up.</p>
       <button class="btn-secondary btn-sm" onclick="showExistingDonationsTokenModal()">🔎 Find &amp; Generate Token</button>
     </div>
 
@@ -633,28 +633,6 @@ function buildCartRecords(payer, receiptName) {
   }));
 }
 
-async function saveCartIndividually() {
-  if (currentCart.length === 0) { showToast('Add at least one item first', 'error'); return; }
-  const payer = getCartPayer();
-  if (!payer) return;
-  const receiptName = getCartReceiptName();
-
-  const records = buildCartRecords(payer, receiptName);
-  const { data: saved, error } = await db.from('dr_donations').insert(records).select();
-  if (error) { showToast('Error: ' + error.message, 'error'); return; }
-
-  showToast(`✅ Saved ${saved.length} entries totalling ${formatAmount(currentCart.reduce((s,c)=>s+c.amount,0))}`, 'success');
-  lastSavedDonationId = saved[saved.length - 1].id;
-
-  saved.forEach((s, i) => recentEntries.unshift({ id: s.id, donor: s.donor_name, family: s.family_no || '—', phone: s.phone || '—', head: currentCart[i]?.headName || '—', amount: s.amount, munQty: s.mun_qty }));
-  updateRecentEntries();
-
-  currentCart = [];
-  renderCartList();
-  await loadGeneralHeadsEntry();
-  if (entryEventId) await loadEventHeadsEntry();
-}
-
 async function generateTokenFromCart() {
   if (currentCart.length === 0) { showToast('Add at least one item first', 'error'); return; }
   const payer = getCartPayer();
@@ -675,10 +653,15 @@ async function generateTokenFromCart() {
   if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
 
   const records = buildCartRecords(payer, receiptName).map(r => ({ ...r, token_id: token.id }));
-  const { error: dErr } = await db.from('dr_donations').insert(records);
+  const { data: saved, error: dErr } = await db.from('dr_donations').insert(records).select();
   if (dErr) { showToast('Error: ' + dErr.message, 'error'); return; }
 
-  showToast(`🎫 Token issued for ${formatAmount(total)} — give the slip to the donor`, 'success');
+  showToast(`✅ All entries saved successfully — 🎫 Token issued for ${formatAmount(total)}. Give the slip to the donor.`, 'success');
+  lastSavedDonationId = saved[saved.length - 1].id;
+
+  saved.forEach((s, i) => recentEntries.unshift({ id: s.id, donor: s.donor_name, family: s.family_no || '—', phone: s.phone || '—', head: currentCart[i]?.headName || '—', amount: s.amount, munQty: s.mun_qty }));
+  updateRecentEntries();
+
   showTokenSlip(token.id);
 
   currentCart = [];

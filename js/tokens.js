@@ -1,10 +1,12 @@
 // ==========================================
 // DERASAR BOLI - Token Desk (Received + Print)
-// Consolidated page: staff at the payment table look up a token, confirm
-// cash received, and print — immediately for the common single-name case,
-// or defer to split-allocation for large auction amounts where the donor
-// wants the receipt divided across family names. Received/Token/Print all
-// live on this one page by design.
+// Rendered as a section inside the Reports page (not its own tab) — the
+// cash-counter admin looks up a token (by name, phone, or token number —
+// every donation gets a token regardless of amount, so this is the only
+// lookup path into "pending"), confirms cash received, and prints
+// immediately for the common single-name case, or defers to
+// split-allocation for large auction amounts where the donor wants the
+// receipt divided across family names.
 // ==========================================
 
 function tokenDisplayCode(t) {
@@ -12,18 +14,16 @@ function tokenDisplayCode(t) {
   return 'TKN-' + dt.getFullYear() + '-' + String(t.id || '').slice(-6).padStart(6, '0');
 }
 
-async function renderTokens() {
-  const content = document.getElementById('page-content');
-  content.innerHTML = `
+function tokenDeskSectionHTML() {
+  return `
     <div class="card">
-      <div class="card-title">🎫 Token Desk — Received &amp; Print</div>
+      <div class="card-title">🎫 Tokens — Received &amp; Print</div>
       <div class="form-group">
-        <input type="text" id="token-search" placeholder="Search by name, phone, or token code..." oninput="loadTokensList()" />
+        <input type="text" id="token-search" placeholder="Search by name, phone, or token no. (e.g. TKN-2026-000123)..." oninput="loadTokensList()" />
       </div>
       <div id="tokens-list">Loading...</div>
     </div>
   `;
-  await loadTokensList();
 }
 
 async function loadTokensList() {
