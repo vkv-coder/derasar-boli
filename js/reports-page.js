@@ -7,7 +7,8 @@ let reportAllDonations = [];
 let reportSwapnaTree = [];
 let reportSwapnaItems = [];
 let reportGeneralHeads = [];
-let reportView = 'item'; // 'item' (line-by-line accounting) or 'donor' (grouped, all-time)
+let reportView = 'item'; // 'item' (line-by-line accounting), 'donor' (grouped, all-time), or 'register' (audit)
+let registerRows = [];
 
 // ========== RENDER REPORTS PAGE ==========
 async function renderReports() {
@@ -31,9 +32,10 @@ async function renderReports() {
   content.innerHTML = `
     ${tokenDeskSectionHTML()}
     <div class="card">
-      <div style="display:flex;gap:8px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn-sm ${reportView === 'item' ? 'btn-primary' : 'btn-secondary'}" onclick="switchReportView('item')">📋 By Item</button>
         <button class="btn-sm ${reportView === 'donor' ? 'btn-primary' : 'btn-secondary'}" onclick="switchReportView('donor')">🤝 By Donor</button>
+        <button class="btn-sm ${reportView === 'register' ? 'btn-primary' : 'btn-secondary'}" onclick="switchReportView('register')">🧾 Receipt Register</button>
       </div>
     </div>
     <div id="report-view-item" style="display:${reportView === 'item' ? 'block' : 'none'};">
@@ -52,12 +54,17 @@ async function renderReports() {
     <div id="report-view-donor" style="display:${reportView === 'donor' ? 'block' : 'none'};">
       ${donorsSectionHTML()}
     </div>
+    <div id="report-view-register" style="display:${reportView === 'register' ? 'block' : 'none'};">
+      ${receiptRegisterSectionHTML()}
+    </div>
   `;
 
   await loadTokensList();
 
   if (reportView === 'donor') {
     await loadDonorsList();
+  } else if (reportView === 'register') {
+    initReceiptRegisterDates();
   } else if (events && events.length === 1) {
     document.getElementById('report-event-select').value = events[0].id;
     onReportEventChange();
@@ -694,4 +701,193 @@ async function downloadExcelReport() {
   const fileName = `DerasarBoli_${eventName.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.xlsx`;
   XLSX.writeFile(wb, fileName);
   showToast('✅ Excel downloaded!', 'success');
+}
+
+// ==========================================
+// RECEIPT REGISTER — date-range audit list across every issued receipt
+// (dr_receipt_tokens combined receipts, dr_token_splits split-name
+// receipts, and any legacy dr_donations single-line receipts), all
+// sharing one numbering sequence, sorted by receipt number so a missing
+// or duplicated number is immediately visible.
+// ==========================================
+
+function receiptRegisterSectionHTML() {
+  return `
+    <div class="card">
+      <div class="card-title">🧾 Receipt Register</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label>From</label>
+          <input type="date" id="register-from" />
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>To</label>
+          <input type="date" id="register-to" />
+        </div>
+        <button class="btn-primary btn-sm" onclick="loadReceiptRegister()">Load</button>
+        <button class="btn-sm btn-secondary" onclick="downloadReceiptRegisterExcel()">⬇️ Excel</button>
+        <button class="btn-sm btn-secondary" onclick="printReceiptRegister()">🖨 Print All</button>
+      </div>
+      <div id="register-table-container"><p style="color:var(--text-muted);font-size:13px;">Pick a date range and click Load.</p></div>
+    </div>
+  `;
+}
+
+function initReceiptRegisterDates() {
+  const fromEl = document.getElementById('register-from');
+  const toEl = document.getElementById('register-to');
+  if (!fromEl || !toEl || fromEl.value) return; // don't clobber a range the admin already picked
+  const today = new Date().toISOString().slice(0, 10);
+  fromEl.value = today;
+  toEl.value = today;
+}
+
+async function loadReceiptRegister() {
+  const fromDate = document.getElementById('register-from')?.value;
+  const toDate = document.getElementById('register-to')?.value;
+  if (!fromDate || !toDate) { showToast('Select a from and to date', 'error'); return; }
+
+  const fromTs = new Date(fromDate + 'T00:00:00').toISOString();
+  const toTs = new Date(toDate + 'T23:59:59.999').toISOString();
+
+  const [{ data: tokens }, { data: splits }, { data: donations }] = await Promise.all([
+    db.from('dr_receipt_tokens').select('id, receipt_no, receipt_no_assigned_at, payer_name, total_amount')
+      .eq('org_id', currentOrgId).not('receipt_no', 'is', null)
+      .gte('receipt_no_assigned_at', fromTs).lte('receipt_no_assigned_at', toTs),
+    db.from('dr_token_splits').select('id, receipt_no, receipt_no_assigned_at, name, amount')
+      .eq('org_id', currentOrgId).not('receipt_no', 'is', null)
+      .gte('receipt_no_assigned_at', fromTs).lte('receipt_no_assigned_at', toTs),
+    db.from('dr_donations').select('id, receipt_no, receipt_no_assigned_at, donor_name, receipt_name, amount')
+      .eq('org_id', currentOrgId).not('receipt_no', 'is', null)
+      .gte('receipt_no_assigned_at', fromTs).lte('receipt_no_assigned_at', toTs)
+  ]);
+
+  registerRows = [
+    ...(tokens || []).map(t => ({ receiptNo: t.receipt_no, date: t.receipt_no_assigned_at, name: t.payer_name, amount: parseFloat(t.total_amount), source: 'Token', sourceId: t.id })),
+    ...(splits || []).map(s => ({ receiptNo: s.receipt_no, date: s.receipt_no_assigned_at, name: s.name, amount: parseFloat(s.amount), source: 'Split', sourceId: s.id })),
+    ...(donations || []).map(d => ({ receiptNo: d.receipt_no, date: d.receipt_no_assigned_at, name: d.receipt_name || d.donor_name, amount: parseFloat(d.amount), source: 'Donation', sourceId: d.id }))
+  ].sort((a, b) => a.receiptNo - b.receiptNo);
+
+  renderReceiptRegisterTable();
+}
+
+function renderReceiptRegisterTable() {
+  const el = document.getElementById('register-table-container');
+  if (!el) return;
+
+  if (registerRows.length === 0) {
+    el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No receipts in this range.</p>`;
+    return;
+  }
+
+  let gapWarning = '';
+  for (let i = 1; i < registerRows.length; i++) {
+    if (registerRows[i].receiptNo !== registerRows[i - 1].receiptNo + 1) {
+      gapWarning = `<p style="color:var(--danger);font-size:12px;font-weight:600;margin-bottom:8px;">⚠ Gap in sequence: #${registerRows[i - 1].receiptNo} → #${registerRows[i].receiptNo}</p>`;
+      break;
+    }
+  }
+
+  const total = registerRows.reduce((s, r) => s + r.amount, 0);
+
+  el.innerHTML = `
+    ${gapWarning}
+    <div style="overflow-x:auto;">
+      <table class="data-table">
+        <thead><tr><th>Receipt No.</th><th>Date</th><th>Name</th><th>Amount</th><th>Source</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${registerRows.map(r => `
+            <tr>
+              <td><strong>${r.receiptNo}</strong></td>
+              <td style="font-size:12px;">${new Date(r.date).toLocaleDateString('en-IN')}</td>
+              <td>${r.name}</td>
+              <td>${formatAmount(r.amount)}</td>
+              <td style="font-size:11px;color:var(--text-muted);">${r.source}</td>
+              <td><button class="btn-sm btn-secondary" onclick="reprintRegisterRow('${r.source}','${r.sourceId}')">🖨</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+        <tfoot><tr style="font-weight:700;"><td colspan="3">${registerRows.length} receipts</td><td>${formatAmount(total)}</td><td colspan="2"></td></tr></tfoot>
+      </table>
+    </div>
+  `;
+}
+
+function reprintRegisterRow(source, id) {
+  if (source === 'Token') showCombinedTokenReceipt(id);
+  else if (source === 'Split') showSplitReceipt(id);
+  else showDonationReceipt(id);
+}
+
+function downloadReceiptRegisterExcel() {
+  if (registerRows.length === 0) { showToast('Load the register first', 'error'); return; }
+  if (typeof XLSX === 'undefined') { showToast('Excel library not loaded. Check internet connection.', 'error'); return; }
+
+  const rows = [['Receipt No.', 'Date', 'Name', 'Amount (₹)', 'Source']];
+  registerRows.forEach(r => rows.push([r.receiptNo, new Date(r.date).toLocaleDateString('en-IN'), r.name, r.amount, r.source]));
+  rows.push([]);
+  rows.push(['', 'TOTAL', '', registerRows.reduce((s, r) => s + r.amount, 0), '']);
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 10 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Receipt Register');
+
+  const fromDate = document.getElementById('register-from')?.value || '';
+  const toDate = document.getElementById('register-to')?.value || '';
+  XLSX.writeFile(wb, `Receipt_Register_${fromDate}_to_${toDate}.xlsx`);
+  showToast('✅ Excel downloaded!', 'success');
+}
+
+// A clean tabular printout for the physical audit file — not each receipt
+// re-rendered in full branded format (that's already one click away per row
+// via the 🖨 reprint button), just the register itself as a signable list.
+function printReceiptRegister() {
+  if (registerRows.length === 0) { showToast('Load the register first', 'error'); return; }
+
+  const fromDate = document.getElementById('register-from')?.value || '';
+  const toDate = document.getElementById('register-to')?.value || '';
+  const total = registerRows.reduce((s, r) => s + r.amount, 0);
+
+  const rowsHtml = registerRows.map(r => `
+    <tr>
+      <td>${r.receiptNo}</td>
+      <td>${new Date(r.date).toLocaleDateString('en-IN')}</td>
+      <td>${r.name}</td>
+      <td style="text-align:right;">₹${r.amount.toLocaleString('en-IN')}</td>
+      <td>${r.source}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>Receipt Register ${fromDate} to ${toDate}</title>
+<style>
+  body{font-family:Arial,sans-serif;padding:20px;color:#222;}
+  h2{margin-bottom:2px;}
+  table{width:100%;border-collapse:collapse;margin-top:14px;}
+  th,td{border:1px solid #999;padding:6px 8px;font-size:12px;text-align:left;}
+  th{background:#7B1E3B;color:#fff;}
+  tfoot td{font-weight:700;background:#f5f5f5;}
+  .btn{margin-top:20px;padding:10px 18px;border:none;border-radius:8px;background:#7B1E3B;color:#fff;font-size:13px;cursor:pointer;}
+  @media print{ @page{size:A4;margin:12mm;} .btn{display:none;} }
+</style>
+</head>
+<body>
+  <h2>Receipt Register</h2>
+  <div style="font-size:12px;color:#555;">${fromDate} to ${toDate} — ${registerRows.length} receipts</div>
+  <table>
+    <thead><tr><th>Receipt No.</th><th>Date</th><th>Name</th><th>Amount</th><th>Source</th></tr></thead>
+    <tbody>${rowsHtml}</tbody>
+    <tfoot><tr><td colspan="3">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td><td></td></tr></tfoot>
+  </table>
+  <button class="btn" onclick="window.print()">🖨 Print</button>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=800,height=900,scrollbars=yes');
+  if (!win) { showToast('Allow pop-ups to view the register', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
 }
