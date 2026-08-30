@@ -62,7 +62,7 @@ async function loadTokensList() {
   el.innerHTML = `
     <div style="overflow-x:auto;">
       <table class="data-table">
-        <thead><tr><th>Code</th><th>Payer</th><th>Phone</th><th>Items</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Code</th><th>Payer</th><th>Phone</th><th>Items</th><th>Amount</th><th>Amt Received</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>
           ${filtered.map(t => `
             <tr>
@@ -71,12 +71,18 @@ async function loadTokensList() {
               <td style="font-size:12px;">${t.phone || '—'}</td>
               <td>${countByToken[t.id] || 0}</td>
               <td><strong>${formatAmount(parseFloat(t.total_amount))}</strong></td>
+              <td>
+                ${t.status === 'pending' ? `
+                  <input type="number" id="token-recd-${t.id}" value="${t.total_amount}" min="0" step="0.01"
+                    style="width:100px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:600;" />
+                ` : '—'}
+              </td>
               <td>${t.status === 'pending' ? '<span style="color:#ff9800;">Pending</span>' : '<span style="color:#1565C0;">Paid — Split Pending</span>'}</td>
               <td>
                 <div style="display:flex;gap:4px;flex-wrap:wrap;">
                   ${t.status === 'pending' ? `
-                    <button class="btn-sm btn-primary" onclick="confirmTokenReceived('${t.id}', false)">✅ Received — Print</button>
-                    <button class="btn-sm btn-secondary" onclick="confirmTokenReceived('${t.id}', true)">✅ Received — Split Later</button>
+                    <button class="btn-sm btn-primary" onclick="confirmTokenReceived('${t.id}', false)">✅ Print</button>
+                    <button class="btn-sm btn-secondary" onclick="confirmTokenReceived('${t.id}', true)">✅ Split Later</button>
                     <button class="btn-sm btn-danger" onclick="cancelToken('${t.id}')">Cancel</button>
                   ` : `
                     <button class="btn-sm btn-primary" onclick="showAllocateTokenModal('${t.id}')">Allocate &amp; Print</button>
@@ -92,14 +98,25 @@ async function loadTokensList() {
   `;
 }
 
-// Marks every line under this token received (cash is already counted at
-// this point) — splitLater only changes whether we print now or wait.
+// Cash admin enters ONE amount against the whole token (pre-filled with the
+// full total, so the common case is just tap-and-go) — that single figure
+// cascades to every item under it, scaled proportionally, so nobody has to
+// type an amount per line. Entering the full total (the normal case) means
+// every item is marked fully received exactly as listed.
 async function confirmTokenReceived(tokenId, splitLater) {
+  const input = document.getElementById(`token-recd-${tokenId}`);
+  const enteredAmount = input ? parseFloat(input.value) : NaN;
+  if (!enteredAmount || enteredAmount <= 0) { showToast('Enter a valid received amount', 'error'); return; }
+
   const { data: lines, error: lErr } = await db.from('dr_donations').select('id, amount').eq('token_id', tokenId);
   if (lErr || !lines || lines.length === 0) { showToast('Could not load token items', 'error'); return; }
 
+  const lineTotal = lines.reduce((s, l) => s + parseFloat(l.amount), 0);
+  const ratio = enteredAmount / lineTotal;
+
   for (const line of lines) {
-    const { error } = await db.from('dr_donations').update({ received_amount: line.amount }).eq('id', line.id);
+    const recd = Math.round(parseFloat(line.amount) * ratio * 100) / 100;
+    const { error } = await db.from('dr_donations').update({ received_amount: recd }).eq('id', line.id);
     if (error) { showToast('Error: ' + error.message, 'error'); return; }
   }
 
