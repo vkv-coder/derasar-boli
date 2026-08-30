@@ -38,23 +38,44 @@ async function loadTokensList() {
     .order('created_at', { ascending: false });
 
   if (error) { el.innerHTML = `<p style="color:var(--danger);">Error: ${error.message}</p>`; return; }
-  if (!tokens || tokens.length === 0) {
+
+  // Allocated tokens don't just vanish — they stay on this list until every
+  // split receipt has actually been printed (dr_token_splits.receipt_no is
+  // only set once showSplitReceipt() runs for that row), not merely allocated.
+  const { data: allocatedTokens } = await db.from('dr_receipt_tokens')
+    .select('*, dr_token_splits(id, receipt_no)')
+    .eq('org_id', currentOrgId)
+    .eq('status', 'allocated')
+    .order('created_at', { ascending: false });
+
+  const incompletePrint = (allocatedTokens || [])
+    .filter(t => (t.dr_token_splits || []).some(s => !s.receipt_no))
+    .map(t => ({
+      ...t,
+      _printStatus: true,
+      _printed: (t.dr_token_splits || []).filter(s => s.receipt_no).length,
+      _splitTotal: (t.dr_token_splits || []).length
+    }));
+
+  const allTokens = [...(tokens || []), ...incompletePrint];
+
+  if (allTokens.length === 0) {
     el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No tokens awaiting action.</p>`;
     return;
   }
 
-  const tokenIds = tokens.map(t => t.id);
+  const tokenIds = allTokens.map(t => t.id);
   const { data: lines } = await db.from('dr_donations').select('token_id').in('token_id', tokenIds);
   const countByToken = {};
   (lines || []).forEach(l => { countByToken[l.token_id] = (countByToken[l.token_id] || 0) + 1; });
 
   const q = (document.getElementById('token-search')?.value || '').toLowerCase().trim();
   const filtered = q
-    ? tokens.filter(t =>
+    ? allTokens.filter(t =>
         (t.payer_name || '').toLowerCase().includes(q) ||
         (t.phone || '').toLowerCase().includes(q) ||
         tokenDisplayCode(t).toLowerCase().includes(q))
-    : tokens;
+    : allTokens;
 
   if (filtered.length === 0) {
     el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No matching tokens.</p>`;
@@ -79,13 +100,19 @@ async function loadTokensList() {
                     style="width:100px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:600;" />
                 ` : '—'}
               </td>
-              <td>${t.status === 'pending' ? '<span style="color:#ff9800;">Pending</span>' : '<span style="color:#1565C0;">Paid — Split Pending</span>'}</td>
+              <td>${
+                t.status === 'pending' ? '<span style="color:#ff9800;">Pending</span>' :
+                t._printStatus ? `<span style="color:#6A1B9A;">🖨 ${t._printed}/${t._splitTotal} Printed</span>` :
+                '<span style="color:#1565C0;">Paid — Split Pending</span>'
+              }</td>
               <td>
                 <div style="display:flex;gap:4px;flex-wrap:wrap;">
                   ${t.status === 'pending' ? `
                     <button class="btn-sm btn-primary" onclick="confirmTokenReceived('${t.id}', false)">✅ Print</button>
                     <button class="btn-sm btn-secondary" onclick="confirmTokenReceived('${t.id}', true)">✅ Split Later</button>
                     <button class="btn-sm btn-danger" onclick="cancelToken('${t.id}')">Cancel</button>
+                  ` : t._printStatus ? `
+                    <button class="btn-sm btn-primary" onclick="showTokenSplitsModal('${t.id}')">View &amp; Print Remaining</button>
                   ` : `
                     <button class="btn-sm btn-primary" onclick="showAllocateTokenModal('${t.id}')">Allocate &amp; Print</button>
                   `}
@@ -98,6 +125,12 @@ async function loadTokensList() {
       </table>
     </div>
   `;
+}
+
+async function showTokenSplitsModal(tokenId) {
+  const { data: splits, error } = await db.from('dr_token_splits').select('*').eq('token_id', tokenId).order('created_at');
+  if (error || !splits) { showToast('Could not load splits', 'error'); return; }
+  await showAllocationResultsModal(splits, tokenId);
 }
 
 // Cash admin enters ONE amount against the whole token (pre-filled with the
@@ -179,25 +212,31 @@ async function saveTokenAllocation(tokenId) {
     .eq('id', tokenId);
   if (updErr) { showToast('Error: ' + updErr.message, 'error'); return; }
 
-  closeModal();
   showToast(`✅ Allocated into ${saved.length} receipts`, 'success');
-  showAllocationResultsModal(saved);
+  await showAllocationResultsModal(saved.map(s => ({ ...s, receipt_no: null })), tokenId);
   await loadTokensList();
 }
 
 // A browser only allows one popup per user click — so rather than trying to
 // auto-open every split receipt at once (which gets blocked after the
-// first), list them with individual print buttons.
-function showAllocationResultsModal(splits) {
+// first), list them with individual print buttons. Stays open on the same
+// token (reload from DB) after each print so the ✅ Printed marker updates
+// live — this is also what "View & Print Remaining" reopens later.
+async function showAllocationResultsModal(splits, tokenId) {
   showModal(`
-    <div class="modal-title">✅ Allocated</div>
+    <div class="modal-title">Split Receipts</div>
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">Print each receipt:</p>
     ${splits.map(s => `
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
-        <span>${s.name} — <strong>${formatAmount(parseFloat(s.amount))}</strong></span>
-        <button class="btn-sm btn-secondary" onclick="showSplitReceipt('${s.id}')">🖨 Print</button>
+        <span>${s.name} — <strong>${formatAmount(parseFloat(s.amount))}</strong>${s.receipt_no ? ` <span style="font-size:11px;color:#4CAF50;">✅ Printed (#${s.receipt_no})</span>` : ''}</span>
+        <button class="btn-sm btn-secondary" onclick="printSplitAndRefresh('${s.id}','${tokenId}')">🖨 ${s.receipt_no ? 'Reprint' : 'Print'}</button>
       </div>
     `).join('')}
-    <div class="modal-actions"><button class="btn-secondary" onclick="closeModal()">Close</button></div>
+    <div class="modal-actions"><button class="btn-secondary" onclick="closeModal(); loadTokensList();">Close</button></div>
   `);
+}
+
+async function printSplitAndRefresh(splitId, tokenId) {
+  await showSplitReceipt(splitId);
+  await showTokenSplitsModal(tokenId);
 }
