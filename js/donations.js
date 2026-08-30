@@ -125,6 +125,12 @@ async function renderEntry() {
     </div>
 
     <div class="card">
+      <div class="card-title">🎫 Generate Token for Already-Saved Donations</div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Already used "Save Individually" for someone and now need a token for those entries? Search by name or phone below — only unpaid, not-yet-tokened entries show up.</p>
+      <button class="btn-secondary btn-sm" onclick="showExistingDonationsTokenModal()">🔎 Find &amp; Generate Token</button>
+    </div>
+
+    <div class="card">
       <div class="form-group">
         <label>Select Event</label>
         <select id="entry-event" onchange="onEntryEventChange()">
@@ -679,6 +685,108 @@ async function generateTokenFromCart() {
   renderCartList();
   await loadGeneralHeadsEntry();
   if (entryEventId) await loadEventHeadsEntry();
+}
+
+// ========== GENERATE TOKEN FROM ALREADY-SAVED DONATIONS ==========
+// For entries saved via "Save Individually" (or any donation never bundled
+// into a token) that now need a token after all — e.g. several small
+// entries for the same person add up and the donor wants to pay at the
+// counter with one token instead of separately for each.
+function showExistingDonationsTokenModal() {
+  showModal(`
+    <div class="modal-title">🎫 Generate Token from Existing Donations</div>
+    <div class="form-group">
+      <label>Search by donor name or phone</label>
+      <input type="text" id="existing-don-search" placeholder="Type name or phone..." oninput="searchExistingDonations()" />
+    </div>
+    <div id="existing-don-results"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+    </div>
+  `);
+}
+
+let existingDonSearchTimer = null;
+function searchExistingDonations() {
+  clearTimeout(existingDonSearchTimer);
+  existingDonSearchTimer = setTimeout(async () => {
+    const q = document.getElementById('existing-don-search').value.trim();
+    const resultsEl = document.getElementById('existing-don-results');
+    if (q.length < 2) { resultsEl.innerHTML = ''; return; }
+
+    const { data } = await db.from('dr_donations')
+      .select('*')
+      .eq('org_id', currentOrgId)
+      .is('token_id', null)
+      .is('received_amount', null)
+      .or(`donor_name.ilike.%${q}%,phone.ilike.%${q}%`)
+      .order('created_at', { ascending: false });
+
+    if (!data || data.length === 0) {
+      resultsEl.innerHTML = '<p style="font-size:13px;color:var(--text-muted);margin-top:8px;">No matching unpaid, not-yet-tokened entries found.</p>';
+      return;
+    }
+
+    resultsEl.innerHTML = `
+      <div style="max-height:280px;overflow-y:auto;margin:10px 0;">
+        ${data.map(d => `
+          <label style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;">
+            <input type="checkbox" class="existing-don-check" value="${d.id}" data-amount="${d.amount}" data-donor="${d.donor_name.replace(/"/g,'&quot;')}" data-phone="${d.phone || ''}" checked onchange="updateExistingDonTotal()" />
+            <span style="flex:1;">${d.donor_name}${d.phone ? ' · ' + d.phone : ''} — <strong>${formatAmount(parseFloat(d.amount))}</strong>
+              <span style="color:var(--text-muted);font-size:11px;">(${new Date(d.created_at).toLocaleDateString('en-IN')})</span>
+            </span>
+          </label>
+        `).join('')}
+      </div>
+      <div id="existing-don-total" style="font-weight:700;margin-bottom:10px;"></div>
+      <button class="btn-primary btn-sm" onclick="generateTokenFromExisting()">🎫 Generate Token for Selected</button>
+    `;
+    updateExistingDonTotal();
+  }, 300);
+}
+
+function updateExistingDonTotal() {
+  const checked = document.querySelectorAll('.existing-don-check:checked');
+  const total = Array.from(checked).reduce((s, c) => s + parseFloat(c.dataset.amount), 0);
+  const el = document.getElementById('existing-don-total');
+  if (el) el.textContent = `Selected Total: ${formatAmount(total)}`;
+}
+
+async function generateTokenFromExisting() {
+  const checked = document.querySelectorAll('.existing-don-check:checked');
+  if (checked.length === 0) { showToast('Select at least one entry', 'error'); return; }
+
+  const donorKeys = new Set(Array.from(checked).map(c => c.dataset.donor + '|' + c.dataset.phone));
+  if (donorKeys.size > 1) {
+    showToast('Selected entries must all belong to the same donor', 'error');
+    return;
+  }
+
+  const ids = Array.from(checked).map(c => c.value);
+  const { data: rows, error: fErr } = await db.from('dr_donations').select('*').in('id', ids);
+  if (fErr || !rows || rows.length === 0) { showToast('Could not load selected entries', 'error'); return; }
+
+  const total = rows.reduce((s, r) => s + parseFloat(r.amount), 0);
+  const first = rows[0];
+
+  const { data: token, error: tErr } = await db.from('dr_receipt_tokens').insert({
+    org_id: currentOrgId,
+    member_id: first.member_id,
+    payer_name: first.donor_name,
+    phone: first.phone,
+    family_no: first.family_no,
+    total_amount: total,
+    created_by: currentUser?.id || null,
+    status: 'pending'
+  }).select().single();
+  if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
+
+  const { error: uErr } = await db.from('dr_donations').update({ token_id: token.id }).in('id', ids);
+  if (uErr) { showToast('Error: ' + uErr.message, 'error'); return; }
+
+  closeModal();
+  showToast(`🎫 Token issued for ${formatAmount(total)} — give the slip to the donor`, 'success');
+  showTokenSlip(token.id);
 }
 
 function updateRecentEntries() {

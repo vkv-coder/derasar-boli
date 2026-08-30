@@ -2,7 +2,7 @@
 // DERASAR BOLI - Service Worker
 // ==========================================
 
-const CACHE_NAME = 'derasar-boli-v57';
+const CACHE_NAME = 'derasar-boli-v58';
 const ASSETS = [
   '/',
   '/index.html',
