@@ -9,9 +9,11 @@
 // receipt divided across family names.
 // ==========================================
 
+// Simple sequential number (dr_receipt_tokens.token_no, assigned by a DB
+// trigger on insert) — not derived from the id, so it's short and easy to
+// type/search at the payment counter.
 function tokenDisplayCode(t) {
-  const dt = new Date(t.created_at);
-  return 'TKN-' + dt.getFullYear() + '-' + String(t.id || '').slice(-6).padStart(6, '0');
+  return String(t.token_no ?? '—');
 }
 
 function tokenDeskSectionHTML() {
@@ -19,7 +21,7 @@ function tokenDeskSectionHTML() {
     <div class="card">
       <div class="card-title">🎫 Tokens — Received &amp; Print</div>
       <div class="form-group">
-        <input type="text" id="token-search" placeholder="Search by name, phone, or token no. (e.g. TKN-2026-000123)..." oninput="loadTokensList()" />
+        <input type="text" id="token-search" placeholder="Search by name, phone, or token no. (e.g. 12)..." oninput="loadTokensList()" />
       </div>
       <div id="tokens-list">Loading...</div>
     </div>

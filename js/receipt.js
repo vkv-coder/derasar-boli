@@ -497,12 +497,12 @@ async function showSplitReceipt(splitId) {
 // staff can tear it in half: one part to the donor, one part retained &
 // manually stamped as the office copy.
 async function showTokenSlip(tokenId) {
-  const { data: t, error } = await db.from('dr_receipt_tokens').select('id, payer_name, total_amount, created_at').eq('id', tokenId).single();
+  const { data: t, error } = await db.from('dr_receipt_tokens').select('id, payer_name, total_amount, created_at, token_no').eq('id', tokenId).single();
   if (error || !t) { showToast('Could not load token', 'error'); return; }
 
   const dt = new Date(t.created_at);
   const dateStr = dt.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const code = 'TKN-' + dt.getFullYear() + '-' + String(t.id || '').slice(-6).padStart(6, '0');
+  const code = t.token_no ?? '—';
   const amountStr = parseFloat(t.total_amount).toLocaleString('en-IN');
 
   const slipBlock = (label) => `
@@ -511,7 +511,7 @@ async function showTokenSlip(tokenId) {
       <div class="slip-title">OFFER ACCEPTED</div>
       <div class="slip-row"><span>Name</span><span>${t.payer_name}</span></div>
       <div class="slip-row"><span>Amount</span><span>₹ ${amountStr}</span></div>
-      <div class="slip-row"><span>Code No.</span><span>${code}</span></div>
+      <div class="slip-row"><span>Token No.</span><span>${code}</span></div>
       <div class="slip-row"><span>Date</span><span>${dateStr}</span></div>
       <div class="slip-stamp">Stamp / Sign</div>
     </div>
