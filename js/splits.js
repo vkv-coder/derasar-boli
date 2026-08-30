@@ -2,14 +2,21 @@
 // DERASAR BOLI - Split Receipt Rows
 // Shared "name + amount rows, must sum to total" widget used by both
 // the donation-entry "Split now" flow (js/donations.js) and the
-// admin "Pending Tokens" allocation screen (js/tokens.js).
+// admin token-allocation screen (js/tokens.js).
 // ==========================================
 
 let splitRowsState = {};
 
-// familyNo is optional — when present, "+ Add family member" is offered.
-function renderSplitRows(containerId, totalAmount, familyNo) {
-  splitRowsState[containerId] = { totalAmount, familyNo: familyNo || null, rows: [] };
+// familyNo/payerName are optional — when present, every row's name field
+// offers the payer's own name + family members as dropdown picks, with
+// manual typing always available too (as the first/default option).
+function renderSplitRows(containerId, totalAmount, familyNo, payerName) {
+  splitRowsState[containerId] = { totalAmount, familyNo: familyNo || null, payerName: payerName || null, familyMembers: [], rows: [] };
+
+  // Fire the family-member fetch now (if we have a family) so every row's
+  // dropdown has options ready by the time it first renders.
+  if (familyNo) loadFamilyMembersForState(containerId, familyNo);
+
   return `
     <div id="${containerId}">
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;padding:8px;background:#f5f5f5;border-radius:8px;">
@@ -18,19 +25,42 @@ function renderSplitRows(containerId, totalAmount, familyNo) {
         <button class="btn-sm btn-secondary" onclick="generateEqualSplitRows('${containerId}')">Generate Rows</button>
       </div>
       <div id="${containerId}-rows"></div>
-      <div style="display:flex;gap:8px;margin:8px 0;">
-        ${familyNo ? `<button class="btn-sm btn-secondary" onclick="addFamilyMemberRows('${containerId}','${familyNo}')">+ Add Family Member</button>` : ''}
-        <button class="btn-sm btn-secondary" onclick="addOtherNameRow('${containerId}')">+ Add Other Name</button>
+      <div style="margin:8px 0;">
+        <button class="btn-sm btn-secondary" onclick="addOtherNameRow('${containerId}')">+ Add Row</button>
       </div>
-      <div id="${containerId}-fampicker" style="display:none;"></div>
       <div id="${containerId}-sum" style="font-size:13px;font-weight:600;margin-top:4px;"></div>
     </div>
   `;
 }
 
+async function loadFamilyMembersForState(containerId, familyNo) {
+  const { data: members } = await db.from('dr_family_individuals')
+    .select('*').eq('org_id', currentOrgId).eq('family_no', familyNo)
+    .order('is_head', { ascending: false });
+
+  const state = splitRowsState[containerId];
+  if (!state) return;
+  state.familyMembers = members || [];
+  splitRowsRedraw(containerId);
+}
+
+// Every row's name dropdown: manual entry first (the default/fallback),
+// then the payer's own name, then the rest of their family.
+function nameDropdownOptions(state, row) {
+  const opts = [`<option value="__manual__" ${row.isManual ? 'selected' : ''}>✍️ Type Manually</option>`];
+  if (state.payerName) {
+    opts.push(`<option value="${state.payerName.replace(/"/g,'&quot;')}" ${!row.isManual && row.name === state.payerName ? 'selected' : ''}>${state.payerName} (Payer)</option>`);
+  }
+  (state.familyMembers || []).forEach(m => {
+    if (m.person_name === state.payerName) return; // don't list the payer twice
+    opts.push(`<option value="${m.person_name.replace(/"/g,'&quot;')}" ${!row.isManual && row.name === m.person_name ? 'selected' : ''}>${m.person_name}${m.is_head ? ' (Head)' : ''}</option>`);
+  });
+  return opts.join('');
+}
+
 // Pre-fills N rows with an equal share of the total (last row absorbs the
-// rounding remainder so the sum stays exact) — admin then edits names and
-// can freely adjust amounts afterward as long as the total still matches.
+// rounding remainder so the sum stays exact) — admin then picks/types names
+// and can freely adjust amounts afterward as long as the total still matches.
 function generateEqualSplitRows(containerId) {
   const state = splitRowsState[containerId];
   if (!state) return;
@@ -44,7 +74,7 @@ function generateEqualSplitRows(containerId) {
 
   state.rows = [];
   for (let i = 0; i < n; i++) {
-    state.rows.push({ name: '', amount: share + (i === n - 1 ? remainder : 0), memberId: null, familyNo: null });
+    state.rows.push({ name: '', amount: share + (i === n - 1 ? remainder : 0), memberId: null, familyNo: null, isManual: true });
   }
   splitRowsRedraw(containerId);
 }
@@ -55,16 +85,41 @@ function splitRowsRedraw(containerId) {
   if (!rowsEl || !state) return;
 
   rowsEl.innerHTML = state.rows.map((r, i) => `
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
-      <input type="text" value="${(r.name || '').replace(/"/g, '&quot;')}" placeholder="Name"
-        oninput="splitRowUpdate('${containerId}',${i},'name',this.value)" style="flex:2;" />
-      <input type="number" value="${r.amount || ''}" placeholder="₹" min="1"
-        oninput="splitRowUpdate('${containerId}',${i},'amount',this.value)" style="flex:1;" />
-      <button class="btn-sm btn-danger" onclick="splitRowRemove('${containerId}',${i})">✕</button>
+    <div style="margin-bottom:6px;">
+      <div style="display:flex;gap:6px;align-items:center;">
+        <select onchange="splitRowNameSelect('${containerId}',${i},this.value)" style="flex:2;">
+          ${nameDropdownOptions(state, r)}
+        </select>
+        <input type="number" value="${r.amount || ''}" placeholder="₹" min="1"
+          oninput="splitRowUpdate('${containerId}',${i},'amount',this.value)" style="flex:1;" />
+        <button class="btn-sm btn-danger" onclick="splitRowRemove('${containerId}',${i})">✕</button>
+      </div>
+      ${r.isManual ? `
+        <input type="text" value="${(r.name || '').replace(/"/g, '&quot;')}" placeholder="Type name"
+          oninput="splitRowUpdate('${containerId}',${i},'name',this.value)" style="width:100%;margin-top:4px;" />
+      ` : ''}
     </div>
   `).join('');
 
   splitRowsUpdateSum(containerId);
+}
+
+function splitRowNameSelect(containerId, index, value) {
+  const state = splitRowsState[containerId];
+  if (!state || !state.rows[index]) return;
+  const row = state.rows[index];
+
+  if (value === '__manual__') {
+    row.isManual = true;
+    row.name = '';
+    row.familyNo = null;
+  } else {
+    row.isManual = false;
+    row.name = value;
+    // Payer or a family member — either way it's the same family for attribution.
+    row.familyNo = state.familyNo || null;
+  }
+  splitRowsRedraw(containerId);
 }
 
 function splitRowsUpdateSum(containerId) {
@@ -95,64 +150,7 @@ function splitRowRemove(containerId, index) {
 function addOtherNameRow(containerId) {
   const state = splitRowsState[containerId];
   if (!state) return;
-  state.rows.push({ name: '', amount: '', memberId: null, familyNo: null });
-  splitRowsRedraw(containerId);
-}
-
-// Renders inline (not a nested modal — this app has a single modal-box, and the
-// split-rows UI already lives inside one; opening another showModal() here would
-// wipe out the donation-entry modal that's currently open).
-async function addFamilyMemberRows(containerId, familyNo) {
-  const state = splitRowsState[containerId];
-  if (!state) return;
-
-  const { data: members, error } = await db.from('dr_family_individuals')
-    .select('*').eq('org_id', currentOrgId).eq('family_no', familyNo)
-    .order('is_head', { ascending: false });
-
-  if (error || !members || members.length === 0) {
-    showToast('No family members found for this family', 'error');
-    return;
-  }
-
-  state.familyMembers = members;
-  const pickerEl = document.getElementById(containerId + '-fampicker');
-  if (!pickerEl) return;
-
-  pickerEl.style.display = 'block';
-  pickerEl.innerHTML = `
-    <div style="border:1.5px solid var(--accent);border-radius:8px;padding:10px;margin-bottom:8px;background:#FFF8F0;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">Pick Family Member(s)</div>
-      ${members.map((m, i) => `
-        <label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">
-          <input type="checkbox" id="fam-pick-${containerId}-${i}" />
-          <span>${m.person_name}${m.is_head ? ' (Head)' : ''}</span>
-        </label>
-      `).join('')}
-      <div style="display:flex;gap:8px;margin-top:8px;">
-        <button class="btn-sm btn-primary" onclick="confirmFamilyMemberPick('${containerId}')">Add Selected</button>
-        <button class="btn-sm btn-secondary" onclick="document.getElementById('${containerId}-fampicker').style.display='none'">Cancel</button>
-      </div>
-    </div>
-  `;
-}
-
-function confirmFamilyMemberPick(containerId) {
-  const state = splitRowsState[containerId];
-  if (!state || !state.familyMembers) return;
-
-  state.familyMembers.forEach((m, i) => {
-    const cb = document.getElementById(`fam-pick-${containerId}-${i}`);
-    if (cb && cb.checked) {
-      // m.id is a dr_family_individuals id, not a dr_members id (which is
-      // head-only) — never store it as dr_donations.member_id, that FK
-      // points at dr_members. family_no alone is enough to attribute the split.
-      state.rows.push({ name: m.person_name, amount: '', memberId: null, familyNo: m.family_no });
-    }
-  });
-
-  const pickerEl = document.getElementById(containerId + '-fampicker');
-  if (pickerEl) { pickerEl.style.display = 'none'; pickerEl.innerHTML = ''; }
+  state.rows.push({ name: '', amount: '', memberId: null, familyNo: null, isManual: true });
   splitRowsRedraw(containerId);
 }
 

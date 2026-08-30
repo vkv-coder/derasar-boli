@@ -148,7 +148,7 @@ async function showAllocateTokenModal(tokenId) {
   showModal(`
     <div class="modal-title">Allocate Token — ${t.payer_name}</div>
     <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Total: ${formatAmount(parseFloat(t.total_amount))}</div>
-    <div id="token-allocate-builder">${renderSplitRows('token-alloc-rows', t.total_amount, t.family_no)}</div>
+    <div id="token-allocate-builder">${renderSplitRows('token-alloc-rows', t.total_amount, t.family_no, t.payer_name)}</div>
     <div class="modal-actions">
       <button class="btn-primary" onclick="saveTokenAllocation('${t.id}')">💾 Save Split</button>
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>

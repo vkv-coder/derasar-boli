@@ -261,6 +261,32 @@ function numToGujaratiWords(n) {
   win.document.close();
 }
 
+// Assigns a real sequential receipt number the first time a receipt is
+// printed and reuses the same stored number on every reprint — done via a
+// SECURITY DEFINER RPC per table (dr_assign_receipt_no_donation/_token/
+// _split) so the check-then-assign happens atomically server-side (two
+// rapid clicks can't get two different numbers) and doesn't depend on the
+// caller having UPDATE rights on the underlying table (which is admin-only
+// via RLS on dr_donations/dr_receipt_tokens). Prefix is org-configurable
+// (blank by default) and can be set later without touching this logic.
+const RECEIPT_NO_RPC = {
+  dr_donations: 'dr_assign_receipt_no_donation',
+  dr_receipt_tokens: 'dr_assign_receipt_no_token',
+  dr_token_splits: 'dr_assign_receipt_no_split'
+};
+
+async function getOrAssignReceiptNo(table, row) {
+  if (row.receipt_no) return row.receipt_no;
+  const { data: no, error } = await db.rpc(RECEIPT_NO_RPC[table], { p_id: row.id });
+  if (error) { console.error(error); return null; }
+  return no;
+}
+
+function formatReceiptNo(prefix, no) {
+  if (!no) return '—';
+  return (prefix || '') + no;
+}
+
 async function showDonationReceipt(donationId) {
   const { data: d, error } = await db.from('dr_donations').select('*').eq('id', donationId).single();
   if (error || !d) { showToast('Could not load donation', 'error'); return; }
@@ -285,7 +311,8 @@ async function showDonationReceipt(donationId) {
 
   const dt = new Date(d.created_at);
   const receiptDate = dt.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const receiptNo = 'DB-' + dt.getFullYear() + '-' + String(d.id || '').slice(-6).padStart(6, '0');
+  const assignedNo = await getOrAssignReceiptNo('dr_donations', d);
+  const receiptNo = formatReceiptNo(org?.receipt_prefix, assignedNo);
   const total = parseFloat(d.amount);
 
   const html = `<!DOCTYPE html>
@@ -361,7 +388,8 @@ async function showCombinedTokenReceipt(tokenId) {
 
   const dt = new Date(t.created_at);
   const receiptDate = dt.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const receiptNo = 'DB-' + dt.getFullYear() + '-' + String(t.id || '').slice(-6).padStart(6, '0');
+  const assignedNo = await getOrAssignReceiptNo('dr_receipt_tokens', t);
+  const receiptNo = formatReceiptNo(org?.receipt_prefix, assignedNo);
   const total = rows.reduce((s, r) => s + r.amount, 0);
   const receiptName = lines[0].receipt_name || t.payer_name;
 
@@ -425,7 +453,8 @@ async function showSplitReceipt(splitId) {
 
   const dt = new Date(s.created_at);
   const receiptDate = dt.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const receiptNo = 'DB-' + dt.getFullYear() + '-' + String(s.id || '').slice(-6).padStart(6, '0');
+  const assignedNo = await getOrAssignReceiptNo('dr_token_splits', s);
+  const receiptNo = formatReceiptNo(org?.receipt_prefix, assignedNo);
   const total = parseFloat(s.amount);
 
   const html = `<!DOCTYPE html>
