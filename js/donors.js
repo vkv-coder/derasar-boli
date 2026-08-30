@@ -1,10 +1,12 @@
 // ==========================================
-// DERASAR BOLI - Donors Tab
+// DERASAR BOLI - Donors ("By Donor" view, rendered inside the Reports tab)
 // ==========================================
 // Sourced directly from dr_donations (grouped by whoever actually pays —
 // a member, or name+phone for a non-member) so every donation entered
 // shows up here immediately. Paid/pending reuses the same
-// amount vs received_amount tracking as the Reports tab.
+// amount vs received_amount tracking as the Reports tab. Deliberately
+// all-time across every event (not scoped to Reports' event filter) —
+// "how much has this person ever given" is the more useful question here.
 //
 // Reuses getDonationHeadName()/whatsappReportRow() from reports-page.js
 // (plain globals, safe to call cross-file) by populating the same
@@ -14,9 +16,8 @@
 
 let allDonorDonations = [];
 
-async function renderDonors() {
-  const content = document.getElementById('page-content');
-  content.innerHTML = `
+function donorsSectionHTML() {
+  return `
     <div class="card">
       <div class="section-header">
         <h3>🤝 Donors</h3>
@@ -30,7 +31,6 @@ async function renderDonors() {
       <div id="donors-list">Loading...</div>
     </div>
   `;
-  await loadDonorsList();
 }
 
 async function loadDonorsList() {

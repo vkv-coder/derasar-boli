@@ -7,6 +7,7 @@ let reportAllDonations = [];
 let reportSwapnaTree = [];
 let reportSwapnaItems = [];
 let reportGeneralHeads = [];
+let reportView = 'item'; // 'item' (line-by-line accounting) or 'donor' (grouped, all-time)
 
 // ========== RENDER REPORTS PAGE ==========
 async function renderReports() {
@@ -30,24 +31,42 @@ async function renderReports() {
   content.innerHTML = `
     ${tokenDeskSectionHTML()}
     <div class="card">
-      <div class="card-title">📊 Reports</div>
-      <div class="form-group">
-        <label>Select Event</label>
-        <select id="report-event-select" onchange="onReportEventChange()">
-          <option value="">-- Select Event --</option>
-          ${(events || []).map(ev => `<option value="${ev.id}">${ev.name}</option>`).join('')}
-        </select>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-sm ${reportView === 'item' ? 'btn-primary' : 'btn-secondary'}" onclick="switchReportView('item')">📋 By Item</button>
+        <button class="btn-sm ${reportView === 'donor' ? 'btn-primary' : 'btn-secondary'}" onclick="switchReportView('donor')">🤝 By Donor</button>
       </div>
     </div>
-    <div id="report-content"></div>
+    <div id="report-view-item" style="display:${reportView === 'item' ? 'block' : 'none'};">
+      <div class="card">
+        <div class="card-title">📊 Reports</div>
+        <div class="form-group">
+          <label>Select Event</label>
+          <select id="report-event-select" onchange="onReportEventChange()">
+            <option value="">-- Select Event --</option>
+            ${(events || []).map(ev => `<option value="${ev.id}">${ev.name}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div id="report-content"></div>
+    </div>
+    <div id="report-view-donor" style="display:${reportView === 'donor' ? 'block' : 'none'};">
+      ${donorsSectionHTML()}
+    </div>
   `;
 
   await loadTokensList();
 
-  if (events && events.length === 1) {
+  if (reportView === 'donor') {
+    await loadDonorsList();
+  } else if (events && events.length === 1) {
     document.getElementById('report-event-select').value = events[0].id;
     onReportEventChange();
   }
+}
+
+function switchReportView(view) {
+  reportView = view;
+  renderReports();
 }
 
 async function onReportEventChange() {
