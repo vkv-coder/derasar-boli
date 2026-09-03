@@ -2,7 +2,7 @@
 // DERASAR BOLI - Service Worker
 // ==========================================
 
-const CACHE_NAME = 'derasar-boli-v66';
+const CACHE_NAME = 'derasar-boli-v67';
 const ASSETS = [
   '/',
   '/index.html',
@@ -50,7 +50,17 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.url.includes('supabase.co')) return; // Don't cache API calls
+  if (e.request.method !== 'GET') return;
+
+  // Network-first: always try to get the latest file so deploys reach
+  // clients immediately. Fall back to cache only when offline.
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
+    fetch(e.request)
+      .then(res => {
+        const resClone = res.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(e.request, resClone));
+        return res;
+      })
+      .catch(() => caches.match(e.request))
   );
 });
