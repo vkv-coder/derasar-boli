@@ -32,11 +32,19 @@ async function loadUsersList() {
     return;
   }
 
+  el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">Loading...</p>`;
+
+  // Email lives in Supabase auth.users, not dr_profiles — fetch it via an
+  // edge function using the service role, since the browser can't read
+  // auth.users directly. Table still renders even if this call fails.
+  const emails = await fetchUserEmails();
+
   el.innerHTML = `
     <table class="data-table">
       <thead>
         <tr>
           <th>Name</th>
+          <th>Email</th>
           <th>Role</th>
           <th>Actions</th>
         </tr>
@@ -45,6 +53,7 @@ async function loadUsersList() {
         ${users.map(u => `
           <tr>
             <td><div style="font-weight:600;">${u.full_name}</div></td>
+            <td style="font-size:12px;color:var(--text-muted);">${emails[u.id] || '—'}</td>
             <td>
               <span class="badge ${u.role === 'admin' ? 'badge-swapna' : 'badge-general'}">
                 ${u.role === 'admin' ? '🔑 Admin' : '✏️ Operator'}
@@ -63,6 +72,25 @@ async function loadUsersList() {
     </table>
     <p style="font-size:12px;color:var(--text-muted);margin-top:10px;">Total: ${users.length} users</p>
   `;
+}
+
+async function fetchUserEmails() {
+  try {
+    const { data: { session } } = await db.auth.getSession();
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/list-users`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': SUPABASE_ANON_KEY
+      }
+    });
+    if (!response.ok) return {};
+    const data = await response.json();
+    return data.emails || {};
+  } catch (e) {
+    return {};
+  }
 }
 
 function showAddUserModal() {
