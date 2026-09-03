@@ -99,7 +99,7 @@ async function renderEntry() {
       <div id="cart-member-fields" style="display:none;">
         <div class="form-group">
           <label>Search Member</label>
-          <input type="text" id="cart-member-search" placeholder="Type name or family no..." oninput="searchCartMember()" />
+          <input type="text" id="cart-member-search" placeholder="Type name or family no..." oninput="searchCartMember()" onkeydown="handleCartMemberSearchKeydown(event)" />
           <div id="cart-member-results" style="max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;margin-top:4px;display:none;"></div>
         </div>
         <div id="cart-selected-member" style="display:none;padding:8px;background:#FFF8F0;border-radius:6px;border:1.5px solid var(--accent);margin-bottom:8px;">
@@ -490,13 +490,15 @@ function updateHiddenPhone() {
 
 let modalMemberTimer = null;
 let modalSelectedMember = null;
+let cartMemberSearchResults = [];
+let cartMemberHighlightIndex = -1;
 
 function searchCartMember() {
   clearTimeout(modalMemberTimer);
   modalMemberTimer = setTimeout(async () => {
     const q = document.getElementById('cart-member-search').value.trim();
     const resultsEl = document.getElementById('cart-member-results');
-    if (q.length < 1) { resultsEl.style.display = 'none'; return; }
+    if (q.length < 1) { resultsEl.style.display = 'none'; cartMemberSearchResults = []; cartMemberHighlightIndex = -1; return; }
 
     const { data } = await db
       .from('dr_members')
@@ -505,21 +507,64 @@ function searchCartMember() {
       .or(`person_name.ilike.%${q}%,family_no.ilike.%${q}%`)
       .limit(8);
 
-    if (!data || data.length === 0) {
+    cartMemberSearchResults = data || [];
+    cartMemberHighlightIndex = cartMemberSearchResults.length > 0 ? 0 : -1;
+    resultsEl.style.display = 'block';
+
+    if (cartMemberSearchResults.length === 0) {
       resultsEl.innerHTML = '<p style="padding:8px;font-size:13px;color:var(--text-muted);">No members found.</p>';
       return;
     }
 
-    resultsEl.style.display = 'block';
-    resultsEl.innerHTML = data.map(m => `
-      <div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;"
-           onmouseover="this.style.background='#FFF8F0'" onmouseout="this.style.background=''"
-           onclick="selectCartMember('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${m.family_no}','${(m.phone_no || '').replace(/'/g,"\\'")}')">
-        <strong>${m.person_name}</strong>
-        <span style="color:var(--text-muted);margin-left:6px;">Family: ${m.family_no}</span>
-      </div>
-    `).join('');
+    renderCartMemberResults();
   }, 300);
+}
+
+function renderCartMemberResults() {
+  const resultsEl = document.getElementById('cart-member-results');
+  if (!resultsEl) return;
+  resultsEl.innerHTML = cartMemberSearchResults.map((m, i) => `
+    <div id="cart-mr-${i}"
+         style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;background:${i === cartMemberHighlightIndex ? '#FFF8F0' : ''};"
+         onmouseenter="cartMemberHighlightIndex=${i};highlightCartMemberResults();"
+         onclick="selectCartMember('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${m.family_no}','${(m.phone_no || '').replace(/'/g,"\\'")}')">
+      <strong>${m.person_name}</strong>
+      <span style="color:var(--text-muted);margin-left:6px;">Family: ${m.family_no}</span>
+    </div>
+  `).join('');
+}
+
+// Re-colors the already-rendered result rows and scrolls the active one
+// into view, without re-querying the DB — used by both arrow-key and
+// mouse-hover navigation so the two stay in sync.
+function highlightCartMemberResults() {
+  cartMemberSearchResults.forEach((_, i) => {
+    const el = document.getElementById('cart-mr-' + i);
+    if (el) el.style.background = i === cartMemberHighlightIndex ? '#FFF8F0' : '';
+  });
+  const activeEl = document.getElementById('cart-mr-' + cartMemberHighlightIndex);
+  if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+}
+
+function handleCartMemberSearchKeydown(e) {
+  const resultsEl = document.getElementById('cart-member-results');
+  if (!resultsEl || resultsEl.style.display === 'none' || cartMemberSearchResults.length === 0) return;
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    cartMemberHighlightIndex = (cartMemberHighlightIndex + 1) % cartMemberSearchResults.length;
+    highlightCartMemberResults();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    cartMemberHighlightIndex = (cartMemberHighlightIndex - 1 + cartMemberSearchResults.length) % cartMemberSearchResults.length;
+    highlightCartMemberResults();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    const m = cartMemberSearchResults[cartMemberHighlightIndex];
+    if (m) selectCartMember(m.id, m.person_name, m.family_no, m.phone_no || '');
+  } else if (e.key === 'Escape') {
+    resultsEl.style.display = 'none';
+  }
 }
 
 async function selectCartMember(id, name, familyNo, phone) {
