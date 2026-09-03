@@ -96,7 +96,7 @@ async function loadTokensList() {
               <td><strong>${formatAmount(parseFloat(t.total_amount))}</strong></td>
               <td>
                 ${t.status === 'pending' ? `
-                  <input type="number" id="token-recd-${t.id}" value="${t.total_amount}" min="0" step="0.01"
+                  <input type="number" id="token-recd-${t.id}" placeholder="0" min="0" step="0.01"
                     style="width:100px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:600;" />
                 ` : '—'}
               </td>
@@ -133,11 +133,12 @@ async function showTokenSplitsModal(tokenId) {
   await showAllocationResultsModal(splits, tokenId);
 }
 
-// Cash admin enters ONE amount against the whole token (pre-filled with the
-// full total, so the common case is just tap-and-go) — that single figure
-// cascades to every item under it, scaled proportionally, so nobody has to
-// type an amount per line. Entering the full total (the normal case) means
-// every item is marked fully received exactly as listed.
+// Cash admin enters ONE amount against the whole token — left blank rather
+// than pre-filled, so the cashier has to actually type what they counted
+// instead of confirming the total by reflex. That single figure cascades
+// to every item under it, scaled proportionally, so nobody has to type an
+// amount per line. Entering the full total (the normal case) means every
+// item is marked fully received exactly as listed.
 async function confirmTokenReceived(tokenId, splitLater) {
   const input = document.getElementById(`token-recd-${tokenId}`);
   const enteredAmount = input ? parseFloat(input.value) : NaN;
