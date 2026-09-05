@@ -492,10 +492,19 @@ async function showSplitReceipt(splitId) {
   win.document.close();
 }
 
+// Remembers the last paper size picked at the printer so the next token
+// slip opens pre-set to it (different printers on site support different
+// sizes — e.g. one Canon here has no A6 tray option, another printer does).
+function setTokenSlipSize(v) {
+  try { localStorage.setItem('dr_token_slip_size', v); } catch (e) {}
+}
+
 // Deliberately minimal, no org name/phone/head-detail — just Offer Accepted,
-// Name, Amount, Code No. Printed as two identical copies on one A5 sheet so
-// staff can tear it in half: one part to the donor, one part retained &
-// manually stamped as the office copy.
+// Name, Amount, Code No.
+// A5 = two identical copies stacked on one sheet, torn in half (Donor/Office).
+// A6 = one copy per sheet (an A6 sheet is roughly half an A5 — stacking two
+// full copies on it would force unreadably small text), print twice via the
+// browser's own "Copies: 2" field if both a donor and office copy are needed.
 async function showTokenSlip(tokenId) {
   const { data: t, error } = await db.from('dr_receipt_tokens').select('id, payer_name, total_amount, created_at, token_no').eq('id', tokenId).single();
   if (error || !t) { showToast('Could not load token', 'error'); return; }
@@ -504,6 +513,9 @@ async function showTokenSlip(tokenId) {
   const dateStr = dt.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const code = t.token_no ?? '—';
   const amountStr = parseFloat(t.total_amount).toLocaleString('en-IN');
+
+  let startSize = 'A5';
+  try { startSize = localStorage.getItem('dr_token_slip_size') || 'A5'; } catch (e) {}
 
   const slipBlock = (label) => `
     <div class="slip">
@@ -526,6 +538,7 @@ async function showTokenSlip(tokenId) {
   *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,sans-serif;}
   body{background:#eee;display:flex;flex-direction:column;align-items:center;padding:16px;gap:12px;}
   .page{background:#fff;width:396px;border:1px solid #ccc;}
+  .page.size-a6{width:280px;}
   .slip{padding:16px;border-bottom:2px dashed #999;position:relative;}
   .slip:last-child{border-bottom:none;}
   .slip-label{font-size:10px;color:#888;text-align:right;margin-bottom:4px;}
@@ -534,31 +547,69 @@ async function showTokenSlip(tokenId) {
   .slip-row span:first-child{color:#555;}
   .slip-row span:last-child{font-weight:700;}
   .slip-stamp{margin-top:14px;height:40px;border:1px dashed #bbb;display:flex;align-items:center;justify-content:center;font-size:10px;color:#aaa;}
-  .btns{display:flex;gap:8px;}
+  .btns{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
   .btn{padding:10px 18px;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600;font-family:inherit;}
   .btn-print{background:#333;color:#fff;}
   .btn-close{background:#e8e8e8;color:#333;}
-  @media print{
-    @page{size:A5;margin:6mm;}
-    body{background:#fff;padding:0;}
-    .page{border:none;width:100%;}
-    .btns{display:none;}
-  }
+  .size-picker{display:flex;gap:6px;align-items:center;font-size:13px;}
+  .size-picker select{padding:6px 8px;border-radius:6px;border:1.5px solid #ccc;font-size:13px;}
+  .size-note{font-size:11px;color:#888;width:100%;}
+  #print-style-a5, #print-style-a6{ display:none; }
 </style>
 </head>
 <body>
-<div class="page">
+<div class="page" id="slip-page">
   ${slipBlock('Donor Copy')}
-  ${slipBlock('Office Copy')}
+  <div id="office-copy">${slipBlock('Office Copy')}</div>
 </div>
 <div class="btns">
-  <button class="btn btn-print" onclick="window.print()">🖨 Print (A5, 2 copies)</button>
+  <span class="size-picker">
+    <label for="paper-size">Paper:</label>
+    <select id="paper-size">
+      <option value="A5">A5 (2 copies, 1 sheet)</option>
+      <option value="A6">A6 (1 copy per sheet)</option>
+    </select>
+  </span>
+  <button class="btn btn-print" id="print-btn" onclick="window.print()">🖨 Print</button>
   <button class="btn btn-close" onclick="window.close()">Close</button>
+  <div class="size-note" id="size-note"></div>
 </div>
+<style id="page-size-style"></style>
+<script>
+  var pageSizeStyle = document.getElementById('page-size-style');
+  var officeCopy = document.getElementById('office-copy');
+  var slipPage = document.getElementById('slip-page');
+  var printBtn = document.getElementById('print-btn');
+  var sizeNote = document.getElementById('size-note');
+  var select = document.getElementById('paper-size');
+
+  function applySize(v) {
+    if (v === 'A6') {
+      pageSizeStyle.textContent = '@media print{ @page{size:A6;margin:4mm;} body{background:#fff;padding:0;} .page{border:none;width:100%;} .btns{display:none;} }';
+      officeCopy.style.display = 'none';
+      slipPage.classList.add('size-a6');
+      printBtn.textContent = '🖨 Print (A6, 1 copy)';
+      sizeNote.textContent = 'Need both Donor + Office copies? Set "Copies: 2" in the print dialog and stamp one as Office.';
+    } else {
+      pageSizeStyle.textContent = '@media print{ @page{size:A5;margin:6mm;} body{background:#fff;padding:0;} .page{border:none;width:100%;} .btns{display:none;} }';
+      officeCopy.style.display = '';
+      slipPage.classList.remove('size-a6');
+      printBtn.textContent = '🖨 Print (A5, 2 copies)';
+      sizeNote.textContent = '';
+    }
+  }
+
+  select.value = ${JSON.stringify(startSize)};
+  applySize(select.value);
+  select.onchange = function() {
+    applySize(this.value);
+    if (window.opener && window.opener.setTokenSlipSize) window.opener.setTokenSlipSize(this.value);
+  };
+</script>
 </body>
 </html>`;
 
-  const win = window.open('', '_blank', 'width=430,height=720,scrollbars=yes');
+  const win = window.open('', '_blank', 'width=430,height=760,scrollbars=yes');
   if (!win) { showToast('Allow pop-ups to view slip', 'error'); return; }
   win.document.write(html);
   win.document.close();
