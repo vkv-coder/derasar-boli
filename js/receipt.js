@@ -552,7 +552,7 @@ async function showTokenSlip(tokenId) {
   .page.size-a6 .slip-stamp{margin-top:6px;height:22px;font-size:8px;}
   .cut-gap{height:0;}
   .page.size-a6 .slip{border-bottom:none;}
-  .page.size-a6 .cut-gap{height:2in;display:flex;align-items:center;justify-content:center;}
+  .page.size-a6 .cut-gap{height:1in;display:flex;align-items:center;justify-content:center;}
   .cut-line{width:100%;border-top:1.5px dashed #999;position:relative;}
   .cut-line::after{content:'✂';position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#fff;padding:0 5px;font-size:11px;color:#999;}
   .btns{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
