@@ -39,7 +39,7 @@ const RECEIPT_CSS = `
   .total-row{display:flex;justify-content:space-between;padding:8px 6px;background:#fff4f4;border:1.5px solid #c00;border-radius:3px;margin-bottom:6px;font-weight:700;font-size:14px}
   .total-row .lbl{color:#555;font-size:12px}
   .total-row .val{color:#c00;font-size:16px}
-  .words-row{text-align:center;font-size:11.5px;color:#333;font-style:italic;margin-bottom:10px;padding:4px 6px;background:#FFF8F0;border-radius:3px}
+  .words-row{text-align:left;font-size:11.5px;color:#333;font-style:italic;margin-bottom:10px;padding:4px 6px;background:#FFF8F0;border-radius:3px}
   .pay-info{font-size:11px;color:#555;margin-bottom:10px;padding:6px;background:#f9f9f9;border:1px solid #e8e8e8;border-radius:3px;line-height:1.8}
   .pay-info strong{color:#333}
   .sys-note{text-align:center;font-size:9.5px;color:#888;margin-top:10px;padding:6px 4px;border-top:1px dashed #ddd;line-height:1.6}
@@ -52,9 +52,11 @@ const RECEIPT_CSS = `
   .btn-close{background:#e8e8e8;color:#333}
   .pending-badge{display:inline-block;background:#ff9800;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;margin-bottom:6px}
   @media print{
-    @page{size:105mm 148mm;margin:4mm}
+    @page{size:A5;margin:8mm}
     body{background:#fff;padding:0;margin:0}
-    .receipt{box-shadow:none;border:1.5px solid #c00;width:100%;max-width:100%}
+    .receipt{box-shadow:none;border:1.5px solid #c00;width:100%;max-width:100%;min-height:186mm;display:flex;flex-direction:column}
+    .receipt-body{flex:1;display:flex;flex-direction:column}
+    .footer{margin-top:auto}
     .btns{display:none}
   }`;
 
@@ -236,7 +238,7 @@ function numToGujaratiWords(n) {
       <tbody>${tableRows}</tbody>
     </table>
     <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
-    <div class="words-row">${numToGujaratiWords(total)} રૂપિયા</div>
+    <div class="words-row">અંકે ${numToGujaratiWords(total)} રૂપિયા</div>
     ${payInfoHTML}
     ${receipt.notes ? `<div class="row" style="margin-bottom:8px;"><span class="row-label">નોંધ :</span><span class="row-value" style="font-size:11px;">${receipt.notes}</span></div>` : ''}
     <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
@@ -247,7 +249,7 @@ function numToGujaratiWords(n) {
   ✅ Receipt PNG downloaded. WhatsApp opened.<br>In WhatsApp: tap 📎 Attach → select PNG → Send.
 </div>
 <div class="btns">
-  <button class="btn btn-print" onclick="window.print()">🖨 Print (A6)</button>
+  <button class="btn btn-print" onclick="window.print()">🖨 Print (A5)</button>
   <button class="btn btn-dl" onclick="downloadReceipt()">⬇ Download HTML</button>
   <button id="wa-btn" class="btn btn-wa" onclick="sendWA()">📲 WhatsApp</button>
   <button class="btn btn-close" onclick="window.close()">Close</button>
@@ -337,7 +339,7 @@ async function showDonationReceipt(donationId) {
       <tbody><tr><td style="text-align:center;color:#888;">1</td><td>${headName}${itemName ? ' → ' + itemName : ''}${d.mun_qty ? `<br><span style="font-size:10px;color:#888;">${d.mun_qty} mun</span>` : ''}${d.aani_qty ? `<br><span style="font-size:10px;color:#888;">${d.aani_qty} aani</span>` : ''}</td><td>₹ ${total.toLocaleString('en-IN')}</td></tr></tbody>
     </table>
     <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
-    <div class="words-row">${numToGujaratiWords(total)} રૂપિયા</div>
+    <div class="words-row">અંકે ${numToGujaratiWords(total)} રૂપિયા</div>
     <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
     <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
   </div>
@@ -422,7 +424,7 @@ async function showCombinedTokenReceipt(tokenId) {
       <tbody>${tableRows}</tbody>
     </table>
     <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
-    <div class="words-row">${numToGujaratiWords(total)} રૂપિયા</div>
+    <div class="words-row">અંકે ${numToGujaratiWords(total)} રૂપિયા</div>
     <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
     <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
   </div>
@@ -474,7 +476,7 @@ async function showSplitReceipt(splitId) {
     <div class="meta" style="justify-content:flex-end;"><span>તા. : ${receiptDate}</span></div>
     <div class="row"><span class="row-label">નામ :</span><span class="row-value">${s.name}</span></div>
     <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
-    <div class="words-row">${numToGujaratiWords(total)} રૂપિયા</div>
+    <div class="words-row">અંકે ${numToGujaratiWords(total)} રૂપિયા</div>
     <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
     <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
   </div>
