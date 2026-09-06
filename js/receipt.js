@@ -500,11 +500,9 @@ function setTokenSlipSize(v) {
 }
 
 // Deliberately minimal, no org name/phone/head-detail — just Offer Accepted,
-// Name, Amount, Code No.
-// A5 = two identical copies stacked on one sheet, torn in half (Donor/Office).
-// A6 = one copy per sheet (an A6 sheet is roughly half an A5 — stacking two
-// full copies on it would force unreadably small text), print twice via the
-// browser's own "Copies: 2" field if both a donor and office copy are needed.
+// Name, Amount, Code No. Both A5 and A6 print two identical copies (Donor/
+// Office) stacked on one sheet, torn in half — A6 just uses a tighter,
+// smaller layout to fit both copies on the smaller sheet.
 async function showTokenSlip(tokenId) {
   const { data: t, error } = await db.from('dr_receipt_tokens').select('id, payer_name, total_amount, created_at, token_no').eq('id', tokenId).single();
   if (error || !t) { showToast('Could not load token', 'error'); return; }
@@ -547,6 +545,11 @@ async function showTokenSlip(tokenId) {
   .slip-row span:first-child{color:#555;}
   .slip-row span:last-child{font-weight:700;}
   .slip-stamp{margin-top:14px;height:40px;border:1px dashed #bbb;display:flex;align-items:center;justify-content:center;font-size:10px;color:#aaa;}
+  .page.size-a6 .slip{padding:8px 10px;}
+  .page.size-a6 .slip-title{font-size:12px;margin-bottom:5px;}
+  .page.size-a6 .slip-row{font-size:11px;padding:3px 0;}
+  .page.size-a6 .slip-label{font-size:8px;margin-bottom:2px;}
+  .page.size-a6 .slip-stamp{margin-top:6px;height:22px;font-size:8px;}
   .btns{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
   .btn{padding:10px 18px;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600;font-family:inherit;}
   .btn-print{background:#333;color:#fff;}
@@ -567,7 +570,7 @@ async function showTokenSlip(tokenId) {
     <label for="paper-size">Paper:</label>
     <select id="paper-size">
       <option value="A5">A5 (2 copies, 1 sheet)</option>
-      <option value="A6">A6 (1 copy per sheet)</option>
+      <option value="A6">A6 (2 copies, 1 sheet)</option>
     </select>
   </span>
   <button class="btn btn-print" id="print-btn" onclick="window.print()">🖨 Print</button>
@@ -585,11 +588,11 @@ async function showTokenSlip(tokenId) {
 
   function applySize(v) {
     if (v === 'A6') {
-      pageSizeStyle.textContent = '@media print{ @page{size:A6;margin:4mm;} body{background:#fff;padding:0;} .page{border:none;width:100%;} .btns{display:none;} }';
-      officeCopy.style.display = 'none';
+      pageSizeStyle.textContent = '@media print{ @page{size:A6;margin:3mm;} body{background:#fff;padding:0;} .page{border:none;width:100%;} .btns{display:none;} }';
+      officeCopy.style.display = '';
       slipPage.classList.add('size-a6');
-      printBtn.textContent = '🖨 Print (A6, 1 copy)';
-      sizeNote.textContent = 'Need both Donor + Office copies? Set "Copies: 2" in the print dialog and stamp one as Office.';
+      printBtn.textContent = '🖨 Print (A6, 2 copies)';
+      sizeNote.textContent = '';
     } else {
       pageSizeStyle.textContent = '@media print{ @page{size:A5;margin:6mm;} body{background:#fff;padding:0;} .page{border:none;width:100%;} .btns{display:none;} }';
       officeCopy.style.display = '';
