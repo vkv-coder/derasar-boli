@@ -122,6 +122,7 @@ async function loadMasterHeadsList() {
   const rows = [];
 
   (generalHeads || []).forEach(h => {
+    if (h.name === 'અષ્ટમંગલ') return; // its own 8 items are already listed individually below — the parent wrapper row is redundant
     const parent = h.parent_id ? ghById[h.parent_id] : null;
     rows.push({
       table: 'dr_general_heads', id: h.id,
