@@ -9,6 +9,10 @@ let reportSwapnaItems = [];
 let reportGeneralHeads = [];
 let reportView = 'item'; // 'item' (line-by-line accounting), 'donor' (grouped, all-time), or 'register' (audit)
 let registerRows = [];
+let reportTokenMap = {};      // token_id -> dr_receipt_tokens row (for resolving receipt no.)
+let reportSplitsByToken = {}; // token_id -> [dr_token_splits rows]
+let reportOrgPrefix = '';
+let expandedSummaryRows = {}; // rowId -> bool, shared by category + item-wise summary tables
 
 // ========== RENDER REPORTS PAGE ==========
 async function renderReports() {
@@ -92,19 +96,35 @@ async function loadReport() {
     { data: swapnaTree },
     { data: swapnaItems },
     { data: generalHeads },
-    { data: receipts }
+    { data: receipts },
+    { data: tokens },
+    { data: splits },
+    { data: orgRow }
   ] = await Promise.all([
     db.from('dr_donations').select('*').eq('org_id', currentOrgId).or(`event_id.eq.${reportEventId},event_id.is.null`).order('created_at', { ascending: true }),
     db.from('dr_swapna').select('*').eq('org_id', currentOrgId).eq('event_id', reportEventId).order('sort_order'),
     db.from('dr_swapna_items').select('*').eq('org_id', currentOrgId),
     db.from('dr_general_heads').select('*').eq('org_id', currentOrgId).order('display_order'),
-    db.from('dr_receipts').select('*').eq('org_id', currentOrgId).or(`event_id.eq.${reportEventId},event_id.is.null`)
+    db.from('dr_receipts').select('*').eq('org_id', currentOrgId).or(`event_id.eq.${reportEventId},event_id.is.null`),
+    db.from('dr_receipt_tokens').select('id, receipt_no, status').eq('org_id', currentOrgId),
+    db.from('dr_token_splits').select('token_id, receipt_no').eq('org_id', currentOrgId),
+    db.from('dr_organizations').select('receipt_prefix').eq('id', currentOrgId).single()
   ]);
 
   reportAllDonations = donations || [];
   reportSwapnaTree = swapnaTree || [];
   reportSwapnaItems = swapnaItems || [];
   reportGeneralHeads = generalHeads || [];
+  reportOrgPrefix = orgRow?.receipt_prefix || '';
+
+  reportTokenMap = {};
+  (tokens || []).forEach(t => { reportTokenMap[t.id] = t; });
+
+  reportSplitsByToken = {};
+  (splits || []).forEach(s => {
+    if (!reportSplitsByToken[s.token_id]) reportSplitsByToken[s.token_id] = [];
+    reportSplitsByToken[s.token_id].push(s);
+  });
 
   // Map receipt_id → receipt for quick lookup
   const receiptMap = {};
@@ -151,7 +171,8 @@ async function loadReport() {
       </div>
     </div>
 
-    ${buildCategorySummary()}
+    <div id="category-summary-container"></div>
+    <div id="item-summary-container"></div>
 
     <!-- Filter + Excel -->
     <div class="card">
@@ -176,6 +197,8 @@ async function loadReport() {
   `;
 
   renderReportTable(reportAllDonations, receiptMap);
+  renderCategorySummary();
+  renderItemWiseSummary();
 }
 
 // ========== FILTER ==========
@@ -289,37 +312,166 @@ function getDonationCategory(d) {
   return null;
 }
 
-function buildCategorySummary() {
-  const totals = {};
-  reportAllDonations.forEach(d => {
-    const cat = getDonationCategory(d) || 'Uncategorized';
-    if (!totals[cat]) totals[cat] = { entered: 0, received: 0 };
-    totals[cat].entered += parseFloat(d.amount || 0);
-    totals[cat].received += parseFloat(d.received_amount || 0);
-  });
+// A single receipt can bundle donation lines from several different heads/
+// categories (one token per visit, not per item) — so a category's or an
+// item's total is made up of PORTIONS of possibly several receipts, and one
+// receipt number can appear under several different categories/items at
+// once. This resolves, per donation line, which printed receipt it belongs
+// to (or "Pending" if not printed yet). Split-allocated tokens are a known
+// exception: the split names/amounts are divided by person, not by head, so
+// there's no single receipt no. to point back to for one line — every split
+// receipt for that token is listed instead, without a false per-line split.
+function getDonationReceiptInfo(d) {
+  if (d.receipt_no) return { label: formatReceiptNo(reportOrgPrefix, d.receipt_no), pending: false };
+  if (d._receipt?.receipt_no) return { label: formatReceiptNo(reportOrgPrefix, d._receipt.receipt_no), pending: false };
+  if (d.token_id) {
+    const t = reportTokenMap[d.token_id];
+    if (t) {
+      if (t.receipt_no) return { label: formatReceiptNo(reportOrgPrefix, t.receipt_no), pending: false };
+      const splits = (reportSplitsByToken[t.id] || []).filter(s => s.receipt_no);
+      if (splits.length) {
+        return { label: 'Split: ' + splits.map(s => formatReceiptNo(reportOrgPrefix, s.receipt_no)).join(', '), pending: false, isSplit: true };
+      }
+      return { label: 'Pending print', pending: true };
+    }
+  }
+  return { label: '—', pending: true };
+}
 
-  const rows = Object.entries(totals);
-  if (rows.length === 0) return '';
+function toggleSummaryRow(rowId) {
+  expandedSummaryRows[rowId] = !expandedSummaryRows[rowId];
+  if (rowId.startsWith('cat-')) renderCategorySummary();
+  else renderItemWiseSummary();
+}
 
-  return `
+// Shared renderer for both the 8-category summary and the item-wise summary
+// — each row expands in place to list the donations that make up its total,
+// with the receipt no. each one was actually printed under.
+function renderExpandableSummaryTable(containerId, titleHTML, rows, colLabel) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (rows.length === 0) { el.innerHTML = ''; return; }
+
+  el.innerHTML = `
     <div class="card">
-      <div class="card-title">📂 Category-wise Summary</div>
+      <div class="card-title">${titleHTML}</div>
       <div style="overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th>Category</th><th style="text-align:right;">Entered</th><th style="text-align:right;">Received</th></tr></thead>
+          <thead><tr><th style="width:20px;"></th><th>${colLabel}</th><th style="text-align:right;">Entered</th><th style="text-align:right;">Received</th></tr></thead>
           <tbody>
-            ${rows.map(([cat, v]) => `
-              <tr>
-                <td>${cat}</td>
-                <td style="text-align:right;">₹${v.entered.toLocaleString('en-IN')}</td>
-                <td style="text-align:right;color:#4CAF50;">₹${v.received.toLocaleString('en-IN')}</td>
-              </tr>
-            `).join('')}
+            ${rows.map(r => {
+              const isOpen = !!expandedSummaryRows[r.rowId];
+              return `
+                <tr style="cursor:pointer;" onclick="toggleSummaryRow('${r.rowId}')">
+                  <td style="color:var(--text-muted);">${isOpen ? '▾' : '▸'}</td>
+                  <td>${r.name}</td>
+                  <td style="text-align:right;">₹${r.entered.toLocaleString('en-IN')}</td>
+                  <td style="text-align:right;color:#4CAF50;">₹${r.received.toLocaleString('en-IN')}</td>
+                </tr>
+                ${isOpen ? `
+                <tr>
+                  <td></td>
+                  <td colspan="3" style="padding:0 0 8px 0;">
+                    ${r.lines.length === 0 ? `<div style="font-size:12px;color:var(--text-muted);padding:6px 4px;">No donations yet.</div>` : `
+                    <table class="data-table" style="width:100%;background:#faf9f7;">
+                      <thead><tr><th>Name</th><th style="text-align:right;">Amount</th><th>Receipt No.</th></tr></thead>
+                      <tbody>
+                        ${r.lines.map(d => {
+                          const rec = getDonationReceiptInfo(d);
+                          return `<tr>
+                            <td style="font-size:12px;">${d.receipt_name || d.donor_name || '—'}</td>
+                            <td style="text-align:right;font-size:12px;">₹${parseFloat(d.amount || 0).toLocaleString('en-IN')}</td>
+                            <td style="font-size:12px;font-weight:600;${rec.pending ? 'color:#ff9800;' : 'color:var(--primary);'}">${rec.label}</td>
+                          </tr>`;
+                        }).join('')}
+                      </tbody>
+                    </table>`}
+                  </td>
+                </tr>` : ''}
+              `;
+            }).join('')}
           </tbody>
         </table>
       </div>
     </div>
   `;
+}
+
+// ========== CATEGORY-WISE SUMMARY (8 fixed categories) ==========
+function renderCategorySummary() {
+  const CATEGORY_ORDER = DR_CATEGORIES; // shared with Heads Setup — keeps order + Gujarati text in sync
+
+  const byCat = {};
+  reportAllDonations.forEach(d => {
+    const cat = getDonationCategory(d) || 'Uncategorized';
+    if (!byCat[cat]) byCat[cat] = [];
+    byCat[cat].push(d);
+  });
+
+  const keys = [...CATEGORY_ORDER, ...Object.keys(byCat).filter(k => !CATEGORY_ORDER.includes(k))];
+  const rows = keys.map(cat => {
+    const lines = byCat[cat] || [];
+    return {
+      rowId: 'cat-' + cat.replace(/[^a-zA-Z0-9]/g, '_'),
+      name: cat,
+      entered: lines.reduce((s, d) => s + parseFloat(d.amount || 0), 0),
+      received: lines.reduce((s, d) => s + parseFloat(d.received_amount || 0), 0),
+      lines
+    };
+  }).filter(r => r.name !== 'Uncategorized' || r.lines.length > 0);
+
+  renderExpandableSummaryTable('category-summary-container', '📂 Category-wise Summary (8 Khate)', rows, 'Category');
+}
+
+// ========== ITEM-WISE SUMMARY (every head/item in the Master List) ==========
+function buildMasterItemList() {
+  const items = [];
+
+  reportGeneralHeads.forEach(h => {
+    const parent = reportGeneralHeads.find(p => p.id === h.parent_id);
+    if (parent) return; // only leaf-most level shown as its own row to avoid duplicate parent+child totals
+    const children = reportGeneralHeads.filter(c => c.parent_id === h.id);
+    if (children.length === 0) {
+      items.push({ key: `gh_${h.id}`, name: h.name, match: d => d.head_type === 'general_head' && d.general_head_id === h.id });
+    } else {
+      children.forEach(c => items.push({ key: `gh_${c.id}`, name: `${h.name} → ${c.name}`, match: d => d.head_type === 'general_head' && d.general_head_id === c.id }));
+    }
+  });
+
+  reportSwapnaItems.forEach(item => {
+    const parent = reportSwapnaTree.find(s => s.id === item.swapna_id);
+    const grandParent = parent ? reportSwapnaTree.find(s => s.id === parent.parent_id) : null;
+    const name = grandParent ? `${grandParent.name} → ${parent.name} → ${item.name}` : parent ? `${parent.name} → ${item.name}` : item.name;
+    items.push({ key: `si_${item.id}`, name, match: d => d.head_type === 'swapna_item' && d.swapna_item_id === item.id });
+  });
+
+  // Swapna heads/children that take donations directly (no sub-items under them)
+  reportSwapnaTree.forEach(s => {
+    const hasChildren = reportSwapnaTree.some(c => c.parent_id === s.id);
+    const hasItems = reportSwapnaItems.some(i => i.swapna_id === s.id);
+    if (hasChildren || hasItems) return;
+    const parent = reportSwapnaTree.find(p => p.id === s.parent_id);
+    const name = parent ? `${parent.name} → ${s.name}` : s.name;
+    items.push({ key: `sw_${s.id}`, name, match: d => d.head_type === 'swapna' && d.swapna_id === s.id });
+  });
+
+  return items;
+}
+
+function renderItemWiseSummary() {
+  const masterItems = buildMasterItemList();
+  const rows = masterItems.map(mi => {
+    const lines = reportAllDonations.filter(mi.match);
+    return {
+      rowId: 'item-' + mi.key,
+      name: mi.name,
+      entered: lines.reduce((s, d) => s + parseFloat(d.amount || 0), 0),
+      received: lines.reduce((s, d) => s + parseFloat(d.received_amount || 0), 0),
+      lines
+    };
+  });
+
+  renderExpandableSummaryTable('item-summary-container', '📋 Item-wise Summary (Master List)', rows, 'Head / Item');
 }
 
 // ========== GET STATUS ==========
