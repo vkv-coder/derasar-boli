@@ -538,7 +538,7 @@ async function showTokenSlip(tokenId) {
   *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,sans-serif;}
   body{background:#eee;display:flex;flex-direction:column;align-items:center;padding:16px;gap:12px;}
   .page{background:#fff;width:396px;border:1px solid #ccc;}
-  .page.size-a6{width:280px;}
+  .page.size-a6{width:361px;}
   .slip{padding:16px;border-bottom:2px dashed #999;position:relative;}
   .slip:last-child{border-bottom:none;}
   .slip-label{font-size:10px;color:#888;text-align:right;margin-bottom:4px;}
@@ -547,11 +547,11 @@ async function showTokenSlip(tokenId) {
   .slip-row span:first-child{color:#555;}
   .slip-row span:last-child{font-weight:700;}
   .slip-stamp{margin-top:14px;height:40px;border:1px dashed #bbb;display:flex;align-items:center;justify-content:center;font-size:10px;color:#aaa;}
-  .page.size-a6 .slip{padding:8px 10px;}
-  .page.size-a6 .slip-title{font-size:12px;margin-bottom:5px;}
-  .page.size-a6 .slip-row{font-size:11px;padding:3px 0;}
-  .page.size-a6 .slip-label{font-size:8px;margin-bottom:2px;}
-  .page.size-a6 .slip-stamp{margin-top:6px;height:22px;font-size:8px;}
+  .page.size-a6 .slip{padding:13px;}
+  .page.size-a6 .slip-title{font-size:16px;margin-bottom:6px;}
+  .page.size-a6 .slip-row{font-size:14px;padding:4px 0;}
+  .page.size-a6 .slip-label{font-size:10px;margin-bottom:3px;}
+  .page.size-a6 .slip-stamp{margin-top:8px;height:28px;font-size:10px;}
   .cut-gap{height:0;}
   .page.size-a6 .slip{border-bottom:none;}
   .page.size-a6 .cut-gap{height:1in;display:flex;align-items:center;justify-content:center;}
