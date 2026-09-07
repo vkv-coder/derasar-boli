@@ -201,14 +201,14 @@ function downloadMasterListExcel() {
   }
 
   const rows = [
-    ['Sr No', 'ID', 'Table', 'Name', 'Type', 'Category', 'Unit']
+    ['Sr No', 'ID', 'Table', 'Full Path (as seen in app — reference only, do not edit)', 'Name (edit this one)', 'Type', 'Category', 'Unit']
   ];
   masterListRows.forEach((r, i) => {
-    rows.push([i + 1, r.id, r.table, r.bareName, r.type, r.category || '', r.unit_mode || '']);
+    rows.push([i + 1, r.id, r.table, r.name, r.bareName, r.type, r.category || '', r.unit_mode || '']);
   });
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 6 }, { wch: 38 }, { wch: 16 }, { wch: 48 }, { wch: 10 }, { wch: 24 }, { wch: 10 }];
+  ws['!cols'] = [{ wch: 6 }, { wch: 38 }, { wch: 16 }, { wch: 60 }, { wch: 48 }, { wch: 10 }, { wch: 24 }, { wch: 10 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Master List');
 
