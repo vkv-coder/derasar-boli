@@ -292,21 +292,23 @@ async function saveMasterRename(table, id) {
   await loadGeneralHeadsList();
 }
 
+// Deleting a row never touches its children — each row's delete is
+// independent. If it has sub-heads under it, you have to delete those
+// first (bottom-up); no automatic cascade, no way to accidentally wipe out
+// a whole branch in one click.
 async function deleteMasterRow(table, id, name) {
-  const hasChildren = table === 'dr_general_heads' || table === 'dr_swapna';
-  const warn = hasChildren
-    ? `Delete "${name}"? If it has sub-heads under it, those get deleted too. This cannot be undone.`
-    : `Delete "${name}"? This cannot be undone.`;
-  if (!confirm(warn)) return;
+  if (table === 'dr_general_heads' || table === 'dr_swapna') {
+    const { count, error: cErr } = await db.from(table).select('id', { count: 'exact', head: true }).eq('parent_id', id);
+    if (cErr) { showToast('Error: ' + cErr.message, 'error'); return; }
+    if (count > 0) {
+      showToast(`Can't delete "${name}" — it still has ${count} sub-item(s) under it. Delete those first.`, 'error');
+      return;
+    }
+  }
 
-  // Head/group rows can have children pointing back at them (parent_id is
-  // NOT ON DELETE CASCADE, deliberately, so a plain delete alone fails with
-  // an FK error) — this RPC deletes the whole descendant tree atomically in
-  // one go instead. It still correctly fails (and changes nothing) if any
-  // descendant has real donations recorded against it.
-  const { error } = hasChildren
-    ? await db.rpc('dr_delete_head_recursive', { p_table: table, p_id: id })
-    : await db.from(table).delete().eq('id', id);
+  if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+
+  const { error } = await db.from(table).delete().eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Deleted');
   await loadMasterHeadsList();
