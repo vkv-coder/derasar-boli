@@ -245,9 +245,6 @@ async function loadMasterHeadsList() {
   `;
 }
 
-// Excel export for offline sorting/renaming — keeps ID + Table so that
-// whatever comes back (reordered, names edited/appended) can be matched
-// back to the exact original row rather than guessed by name.
 function downloadMasterListExcel() {
   if (typeof XLSX === 'undefined') {
     showToast('Excel library not loaded. Check internet connection.', 'error');
@@ -255,14 +252,14 @@ function downloadMasterListExcel() {
   }
 
   const rows = [
-    ['Sr No', 'ID', 'Table', 'Full Path (as seen in app — reference only, do not edit)', 'Name (edit this one)', 'Type', 'Category', 'Unit']
+    ['Sr No', 'Name', 'Type', 'Category']
   ];
   masterListRows.forEach((r, i) => {
-    rows.push([i + 1, r.id, r.table, r.name, r.bareName, r.type, r.category || '', r.unit_mode || '']);
+    rows.push([i + 1, r.name, r.type, r.category || '']);
   });
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 6 }, { wch: 38 }, { wch: 16 }, { wch: 60 }, { wch: 48 }, { wch: 10 }, { wch: 24 }, { wch: 10 }];
+  ws['!cols'] = [{ wch: 6 }, { wch: 60 }, { wch: 10 }, { wch: 24 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Master List');
 
