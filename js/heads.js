@@ -292,21 +292,27 @@ async function saveMasterRename(table, id) {
   await loadGeneralHeadsList();
 }
 
-// Deleting a row never touches its children — each row's delete is
-// independent. If it has sub-heads under it, you have to delete those
-// first (bottom-up); no automatic cascade, no way to accidentally wipe out
-// a whole branch in one click.
+// Deleting a row never deletes its children — if it has sub-heads under it,
+// those get disconnected (promoted to independent top-level items) first,
+// then just the one row you asked for is removed. No cascade, no need to
+// manually clear children out first.
 async function deleteMasterRow(table, id, name) {
+  let childCount = 0;
   if (table === 'dr_general_heads' || table === 'dr_swapna') {
     const { count, error: cErr } = await db.from(table).select('id', { count: 'exact', head: true }).eq('parent_id', id);
     if (cErr) { showToast('Error: ' + cErr.message, 'error'); return; }
-    if (count > 0) {
-      showToast(`Can't delete "${name}" — it still has ${count} sub-item(s) under it. Delete those first.`, 'error');
-      return;
-    }
+    childCount = count || 0;
   }
 
-  if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  const warn = childCount > 0
+    ? `Delete "${name}"? It has ${childCount} sub-item(s) — they'll be kept as independent items, not deleted. This cannot be undone.`
+    : `Delete "${name}"? This cannot be undone.`;
+  if (!confirm(warn)) return;
+
+  if (childCount > 0) {
+    const { error: disconnectErr } = await db.from(table).update({ parent_id: null }).eq('parent_id', id);
+    if (disconnectErr) { showToast('Error: ' + disconnectErr.message, 'error'); return; }
+  }
 
   const { error } = await db.from(table).delete().eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
