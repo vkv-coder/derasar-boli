@@ -197,10 +197,8 @@ async function loadMasterHeadsList() {
 function printMasterList() {
   const mainHeads = masterListGeneralHeads
     .filter(h => !h.parent_id && DR_CATEGORIES.includes(h.name))
-    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-    .map(h => ({ name: h.name, type: 'Main Head', category: h.category, unit_mode: h.unit_mode }));
+    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 
-  const allRows = [...mainHeads, ...masterListRows];
   const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const html = `<!DOCTYPE html>
@@ -212,12 +210,13 @@ function printMasterList() {
   *{box-sizing:border-box;font-family:Arial,sans-serif;}
   body{margin:0;padding:20px;}
   h1{font-size:18px;margin:0 0 4px;}
-  .sub{font-size:12px;color:#666;margin-bottom:16px;}
+  h2{font-size:14px;margin:20px 0 6px;padding-top:10px;border-top:2px solid #333;}
+  h2:first-of-type{border-top:none;padding-top:0;margin-top:10px;}
+  .sub{font-size:12px;color:#666;margin-bottom:6px;}
   table{width:100%;border-collapse:collapse;font-size:12px;}
   th,td{border:1px solid #ccc;padding:5px 8px;text-align:left;}
   th{background:#f0f0f0;}
   td:first-child,th:first-child{text-align:center;width:36px;}
-  .main-row{background:#FFF3E0;font-weight:700;}
   @media print{
     @page{size:A4;margin:14mm;}
     body{padding:0;}
@@ -227,16 +226,33 @@ function printMasterList() {
 <body>
   <h1>Master List — Category &amp; Unit</h1>
   <div class="sub">Printed ${dateStr}</div>
+
+  <h2>Main Donation Heads (8)</h2>
+  <table>
+    <thead><tr><th>#</th><th>Name</th><th>Category</th><th>Unit</th></tr></thead>
+    <tbody>
+      ${mainHeads.map((h, i) => `
+        <tr>
+          <td>${i + 1}</td>
+          <td>${h.name}</td>
+          <td>${h.category || '—'}</td>
+          <td>${h.unit_mode || 'rupees'}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <h2>Master List</h2>
   <table>
     <thead><tr><th>#</th><th>Name</th><th>Type</th><th>Category</th><th>Unit</th></tr></thead>
     <tbody>
-      ${allRows.map((r, i) => `
-        <tr class="${r.type === 'Main Head' ? 'main-row' : ''}">
+      ${masterListRows.map((r, i) => `
+        <tr>
           <td>${i + 1}</td>
           <td>${r.name}</td>
           <td>${r.type}</td>
           <td>${r.category || '—'}</td>
-          <td>${r.unit_mode ? r.unit_mode : (r.type === 'Main Head' ? 'rupees' : 'Inherit')}</td>
+          <td>${r.unit_mode || 'Inherit'}</td>
         </tr>
       `).join('')}
     </tbody>
