@@ -250,8 +250,8 @@ function showMasterAddModal() {
       </select>
     </div>
     <div class="form-group">
-      <label>Parent (optional — leave as Top Level for a new main group)</label>
-      <select id="madd-parent"><option value="">-- Top Level --</option></select>
+      <label id="madd-parent-label">Main Head (required)</label>
+      <select id="madd-parent"></select>
     </div>
     <div class="form-group">
       <label>Name</label>
@@ -274,13 +274,20 @@ function onMasterAddTypeChange() {
 function renderMasterAddParentOptions() {
   const type = document.getElementById('madd-type').value;
   const parentSelect = document.getElementById('madd-parent');
-  let options = '<option value="">-- Top Level --</option>';
+  const parentLabel = document.getElementById('madd-parent-label');
+  let options = '';
 
   if (type === 'general') {
-    masterListGeneralHeads.filter(h => !h.parent_id).forEach(h => {
+    // General heads are always a sub-head of one of the 8 fixed main heads —
+    // no "Top Level" option, so a new general item can't accidentally become
+    // a 9th untracked main head the way આંગી/Ashtmangal items ended up.
+    if (parentLabel) parentLabel.textContent = 'Main Head (required)';
+    masterListGeneralHeads.filter(h => !h.parent_id && DR_CATEGORIES.includes(h.name)).forEach(h => {
       options += `<option value="${h.id}">${h.name}</option>`;
     });
   } else {
+    if (parentLabel) parentLabel.textContent = 'Parent (optional — leave as Top Level for a new main group)';
+    options = '<option value="">-- Top Level --</option>';
     const eventId = document.getElementById('madd-event')?.value;
     if (eventId) {
       const nodes = masterListSwapnaHeads.filter(s => s.event_id === eventId);
@@ -302,6 +309,7 @@ async function saveMasterAdd() {
   if (!name) { showToast('Enter a name', 'error'); return; }
 
   if (type === 'general') {
+    if (!parentId) { showToast('Select which of the 8 main heads this belongs under', 'error'); return; }
     const { error } = await db.from('dr_general_heads').insert({
       org_id: currentOrgId, name, parent_id: parentId, unit_mode: 'rupees'
     });
