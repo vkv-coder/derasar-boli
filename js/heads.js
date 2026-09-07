@@ -209,11 +209,20 @@ async function saveMasterRename(table, id) {
 }
 
 async function deleteMasterRow(table, id, name) {
-  const warn = table === 'dr_swapna'
-    ? `Delete "${name}"? If it has sub-heads or items under it, those get deleted too. This cannot be undone.`
+  const hasChildren = table === 'dr_general_heads' || table === 'dr_swapna';
+  const warn = hasChildren
+    ? `Delete "${name}"? If it has sub-heads under it, those get deleted too. This cannot be undone.`
     : `Delete "${name}"? This cannot be undone.`;
   if (!confirm(warn)) return;
-  const { error } = await db.from(table).delete().eq('id', id);
+
+  // Head/group rows can have children pointing back at them (parent_id is
+  // NOT ON DELETE CASCADE, deliberately, so a plain delete alone fails with
+  // an FK error) — this RPC deletes the whole descendant tree atomically in
+  // one go instead. It still correctly fails (and changes nothing) if any
+  // descendant has real donations recorded against it.
+  const { error } = hasChildren
+    ? await db.rpc('dr_delete_head_recursive', { p_table: table, p_id: id })
+    : await db.from(table).delete().eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Deleted');
   await loadMasterHeadsList();
