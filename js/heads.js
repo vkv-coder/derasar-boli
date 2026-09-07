@@ -348,19 +348,35 @@ async function saveMasterRename(table, id) {
 // then just the one row you asked for is removed. No cascade, no need to
 // manually clear children out first.
 async function deleteMasterRow(table, id, name) {
-  let childCount = 0;
+  let childHeadCount = 0;
+  let childItemCount = 0;
   if (table === 'dr_general_heads' || table === 'dr_swapna') {
     const { count, error: cErr } = await db.from(table).select('id', { count: 'exact', head: true }).eq('parent_id', id);
     if (cErr) { showToast('Error: ' + cErr.message, 'error'); return; }
-    childCount = count || 0;
+    childHeadCount = count || 0;
+  }
+  // A dr_swapna row (e.g. "1st Swapna") can also have dr_swapna_items
+  // attached via swapna_id — a completely different link than parent_id,
+  // and one the DB itself cascade-deletes when the parent goes. Those
+  // items have no safe "independent" display today, so unlike sub-heads
+  // (which get auto-disconnected below), items block the delete outright.
+  if (table === 'dr_swapna') {
+    const { count, error: iErr } = await db.from('dr_swapna_items').select('id', { count: 'exact', head: true }).eq('swapna_id', id);
+    if (iErr) { showToast('Error: ' + iErr.message, 'error'); return; }
+    childItemCount = count || 0;
   }
 
-  const warn = childCount > 0
-    ? `Delete "${name}"? It has ${childCount} sub-item(s) — they'll be kept as independent items, not deleted. This cannot be undone.`
+  if (childItemCount > 0) {
+    showToast(`Can't delete "${name}" — it still has ${childItemCount} item(s) (like Sona Mala/Ful Mala) attached. Delete or reassign those first.`, 'error');
+    return;
+  }
+
+  const warn = childHeadCount > 0
+    ? `Delete "${name}"? It has ${childHeadCount} sub-item(s) — they'll be kept as independent items, not deleted. This cannot be undone.`
     : `Delete "${name}"? This cannot be undone.`;
   if (!confirm(warn)) return;
 
-  if (childCount > 0) {
+  if (childHeadCount > 0) {
     const { error: disconnectErr } = await db.from(table).update({ parent_id: null }).eq('parent_id', id);
     if (disconnectErr) { showToast('Error: ' + disconnectErr.message, 'error'); return; }
   }
