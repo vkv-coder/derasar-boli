@@ -108,18 +108,24 @@ async function loadMasterHeadsList() {
 
   const rows = [];
 
+  // Category-grouped ordering across BOTH tables together (not general-heads-
+  // block-then-swapna-block) — otherwise an item like "આંગી" ends up sandwiched
+  // between two separate same-category blocks (general's સાધારણ ખાતે items,
+  // then swapna's own સાધારણ ખાતે items) instead of one clean group. Ashtamangal
+  // items always come first regardless of their category's normal rank.
+  const catRank = {};
+  DR_CATEGORIES.forEach((c, i) => { catRank[c] = i; });
+  function topSortKey(category, name) {
+    const isAstamangal = name.includes('(અષ્ટમંગલ)');
+    const rank = catRank.hasOwnProperty(category) ? catRank[category] : DR_CATEGORIES.length;
+    return (isAstamangal ? -1 : rank);
+  }
+
+  const topEntries = [];
+
   (generalHeads || []).forEach(h => {
     if (!h.parent_id && DR_CATEGORIES.includes(h.name)) return; // one of the 8 main heads — already shown in Main Donation Heads above, no need to repeat here
-    // No "Main Head → " prefix here — every remaining general row is a
-    // sub-head of exactly one of the 8 mains now, so the Category column
-    // already says which; the name itself stays just its own bare name
-    // (matching what the rename box shows).
-    rows.push({
-      table: 'dr_general_heads', id: h.id, bareName: h.name,
-      name: h.name,
-      type: 'General',
-      category: h.category, unit_mode: h.unit_mode, pricing_type: h.pricing_type
-    });
+    topEntries.push({ kind: 'general', head: h, key: topSortKey(h.category, h.name) });
   });
 
   // Depth-first: a head is immediately followed by its own items, then its
@@ -168,7 +174,31 @@ async function loadMasterHeadsList() {
     (swapnaChildrenByParent[h.id] || []).forEach(child => walkSwapna(child));
   }
 
-  (swapnaChildrenByParent['__root__'] || []).forEach(h => walkSwapna(h));
+  (swapnaChildrenByParent['__root__'] || []).forEach(h => {
+    topEntries.push({ kind: 'swapna', head: h, key: topSortKey(h.category, h.name) });
+  });
+
+  // Stable sort keeps each entry's original relative order (which already
+  // reflects display_order / sort_order) whenever two entries land on the
+  // same category — only the category grouping itself changes.
+  topEntries.sort((a, b) => a.key - b.key);
+  topEntries.forEach(entry => {
+    if (entry.kind === 'general') {
+      const h = entry.head;
+      // No "Main Head → " prefix here — every remaining general row is a
+      // sub-head of exactly one of the 8 mains now, so the Category column
+      // already says which; the name itself stays just its own bare name
+      // (matching what the rename box shows).
+      rows.push({
+        table: 'dr_general_heads', id: h.id, bareName: h.name,
+        name: h.name,
+        type: 'General',
+        category: h.category, unit_mode: h.unit_mode, pricing_type: h.pricing_type
+      });
+    } else {
+      walkSwapna(entry.head);
+    }
+  });
 
   masterListRows = rows; // cached for the print-out
 
