@@ -122,29 +122,53 @@ async function loadMasterHeadsList() {
     });
   });
 
+  // Depth-first: a head is immediately followed by its own items, then its
+  // sub-heads (each followed by their items, and so on) — so e.g. "1st
+  // Swapna" is followed right away by its Sona Mala / Ful Mala offerings
+  // before "2nd Swapna" starts, instead of every head first and every item
+  // afterward in two separate blocks (which scrambled the natural grouping
+  // whenever items shared the same sort_order across different heads).
+  const swapnaChildrenByParent = {};
   (swapnaHeads || []).forEach(h => {
+    const key = h.parent_id || '__root__';
+    if (!swapnaChildrenByParent[key]) swapnaChildrenByParent[key] = [];
+    swapnaChildrenByParent[key].push(h);
+  });
+  Object.values(swapnaChildrenByParent).forEach(list => list.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
+
+  const swapnaItemsByHead = {};
+  (swapnaItems || []).forEach(item => {
+    if (!swapnaItemsByHead[item.swapna_id]) swapnaItemsByHead[item.swapna_id] = [];
+    swapnaItemsByHead[item.swapna_id].push(item);
+  });
+  Object.values(swapnaItemsByHead).forEach(list => list.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
+
+  function swapnaPath(h) {
     const parent = h.parent_id ? swById[h.parent_id] : null;
     const grandParent = parent && parent.parent_id ? swById[parent.parent_id] : null;
-    const path = [grandParent?.name, parent?.name, h.name].filter(Boolean).join(' → ');
+    return [grandParent?.name, parent?.name, h.name].filter(Boolean).join(' → ');
+  }
+
+  function walkSwapna(h) {
+    const path = swapnaPath(h);
     rows.push({
       table: 'dr_swapna', id: h.id, bareName: h.name,
       name: path + (eventById[h.event_id] ? ` (${eventById[h.event_id]})` : ''),
       type: 'Paryushan',
       category: h.category, unit_mode: h.unit_mode, pricing_type: h.pricing_type
     });
-  });
-
-  (swapnaItems || []).forEach(item => {
-    const sw = item.swapna_id ? swById[item.swapna_id] : null;
-    const parent = sw?.parent_id ? swById[sw.parent_id] : null;
-    const path = [parent?.name, sw?.name, item.name].filter(Boolean).join(' → ');
-    rows.push({
-      table: 'dr_swapna_items', id: item.id, bareName: item.name,
-      name: path + (sw && eventById[sw.event_id] ? ` (${eventById[sw.event_id]})` : ''),
-      type: 'Paryushan',
-      category: item.category, unit_mode: item.unit_mode, pricing_type: item.pricing_type
+    (swapnaItemsByHead[h.id] || []).forEach(item => {
+      rows.push({
+        table: 'dr_swapna_items', id: item.id, bareName: item.name,
+        name: (path ? path + ' → ' : '') + item.name + (eventById[h.event_id] ? ` (${eventById[h.event_id]})` : ''),
+        type: 'Paryushan',
+        category: item.category, unit_mode: item.unit_mode, pricing_type: item.pricing_type
+      });
     });
-  });
+    (swapnaChildrenByParent[h.id] || []).forEach(child => walkSwapna(child));
+  }
+
+  (swapnaChildrenByParent['__root__'] || []).forEach(h => walkSwapna(h));
 
   masterListRows = rows; // cached for the print-out
 
