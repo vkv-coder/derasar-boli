@@ -88,7 +88,7 @@ async function renderHeads() {
     </div>
     <div class="card">
       <div class="section-header">
-        <h3>🔷 General Donation Heads</h3>
+        <h3>🔷 Main Donation Heads</h3>
         <div style="display:flex;gap:8px;">
           <button class="btn-sm btn-secondary" onclick="loadDefaultHeads()">Load Defaults</button>
           <button class="btn-accent btn-sm" onclick="showAddGeneralHeadModal()">+ Add Main Head</button>
@@ -122,7 +122,7 @@ async function loadMasterHeadsList() {
   const rows = [];
 
   (generalHeads || []).forEach(h => {
-    if (h.name === 'અષ્ટમંગલ') return; // its own 8 items are already listed individually below — the parent wrapper row is redundant
+    if (!h.parent_id && DR_CATEGORIES.includes(h.name)) return; // one of the 8 main heads — already shown in Main Donation Heads above, no need to repeat here
     const parent = h.parent_id ? ghById[h.parent_id] : null;
     rows.push({
       table: 'dr_general_heads', id: h.id,
@@ -163,11 +163,12 @@ async function loadMasterHeadsList() {
 
   el.innerHTML = `
     <div style="overflow-x:auto;">
-      <table class="data-table" style="min-width:640px;">
-        <thead><tr><th>Name</th><th>Type</th><th>Category</th><th>Unit</th><th>Pricing</th></tr></thead>
+      <table class="data-table" style="min-width:560px;">
+        <thead><tr><th>#</th><th>Name</th><th>Type</th><th>Category</th><th>Unit</th></tr></thead>
         <tbody>
-          ${rows.map(r => `
+          ${rows.map((r, i) => `
             <tr>
+              <td style="font-size:11px;color:var(--text-muted);">${i + 1}</td>
               <td style="font-size:12px;max-width:260px;word-break:break-word;">${r.name}</td>
               <td style="font-size:11px;color:var(--text-muted);">${r.type}</td>
               <td>
@@ -182,12 +183,6 @@ async function loadMasterHeadsList() {
                   <option value="rupees" ${r.unit_mode === 'rupees' ? 'selected' : ''}>₹ Rupees</option>
                   <option value="mun" ${r.unit_mode === 'mun' ? 'selected' : ''}>Mun</option>
                   <option value="aani" ${r.unit_mode === 'aani' ? 'selected' : ''}>Aani</option>
-                </select>
-              </td>
-              <td>
-                <select onchange="saveMasterField('${r.table}','${r.id}','pricing_type',this.value)">
-                  <option value="fixed" ${r.pricing_type === 'fixed' ? 'selected' : ''}>Fixed</option>
-                  <option value="auction" ${r.pricing_type === 'auction' ? 'selected' : ''}>Auction (Bid)</option>
                 </select>
               </td>
             </tr>
@@ -401,9 +396,8 @@ function categoryBadge(category) {
   return ` <span style="font-size:10px;font-weight:600;background:#FFF3E0;color:#E65100;padding:2px 6px;border-radius:8px;">${category}</span>`;
 }
 
-function pricingBadge(pricingType) {
-  if (pricingType === 'auction') return ' <span style="font-size:10px;font-weight:600;background:#E8EAF6;color:#3949AB;padding:2px 6px;border-radius:8px;">BID</span>';
-  return ' <span style="font-size:10px;font-weight:600;background:#E0F2F1;color:#00695C;padding:2px 6px;border-radius:8px;">FIXED</span>';
+function pricingBadge() {
+  return ''; // Fixed/Auction distinction was dropped — no longer shown
 }
 
 function showHeadPropertiesModal(table, id, name, ownMode, inheritedFrom, category, pricingType) {
@@ -427,13 +421,6 @@ function showHeadPropertiesModal(table, id, name, ownMode, inheritedFrom, catego
         ${DR_CATEGORIES.map(c => `<option value="${c}" ${category === c ? 'selected' : ''}>${c}</option>`).join('')}
       </select>
     </div>
-    <div class="form-group">
-      <label>Pricing</label>
-      <select id="head-pricing-select">
-        <option value="fixed" ${pricingType === 'fixed' ? 'selected' : ''}>Fixed</option>
-        <option value="auction" ${pricingType === 'auction' ? 'selected' : ''}>Auction (Bid)</option>
-      </select>
-    </div>
     <div class="modal-actions">
       <button class="btn-primary" onclick="saveHeadProperties('${table}','${id}')">Save</button>
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>
@@ -444,10 +431,9 @@ function showHeadPropertiesModal(table, id, name, ownMode, inheritedFrom, catego
 async function saveHeadProperties(table, id) {
   const unit_mode = document.getElementById('head-unit-mode-select').value || null;
   const category = document.getElementById('head-category-select').value || null;
-  const pricing_type = document.getElementById('head-pricing-select').value;
 
   const { error } = await db.from(table)
-    .update({ unit_mode, category, pricing_type })
+    .update({ unit_mode, category })
     .eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
@@ -566,8 +552,10 @@ async function loadGeneralHeadsList() {
     return;
   }
 
-  // Separate main heads (parent_id IS NULL) from sub-heads
-  const mainHeads = data.filter(h => !h.parent_id);
+  // Main Donation Heads shows only the 8 fixed khate — other top-level heads
+  // (e.g. આંગી, or the promoted Ashtmangal items) still exist and are still
+  // pickable in donation entry, just managed via Master List instead of here.
+  const mainHeads = data.filter(h => !h.parent_id && DR_CATEGORIES.includes(h.name));
   const subHeads = data.filter(h => h.parent_id);
 
   el.innerHTML = mainHeads.map((head, i) => renderGeneralMainHead(head, i + 1, subHeads)).join('');
