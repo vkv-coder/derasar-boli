@@ -93,8 +93,6 @@ async function loadMasterHeadsList() {
 
   const eventById = {};
   (events || []).forEach(e => { eventById[e.id] = e.name; });
-  const ghById = {};
-  (generalHeads || []).forEach(h => { ghById[h.id] = h; });
   const swById = {};
   (swapnaHeads || []).forEach(h => { swById[h.id] = h; });
 
@@ -107,10 +105,13 @@ async function loadMasterHeadsList() {
 
   (generalHeads || []).forEach(h => {
     if (!h.parent_id && DR_CATEGORIES.includes(h.name)) return; // one of the 8 main heads — already shown in Main Donation Heads above, no need to repeat here
-    const parent = h.parent_id ? ghById[h.parent_id] : null;
+    // No "Main Head → " prefix here — every remaining general row is a
+    // sub-head of exactly one of the 8 mains now, so the Category column
+    // already says which; the name itself stays just its own bare name
+    // (matching what the rename box shows).
     rows.push({
       table: 'dr_general_heads', id: h.id, bareName: h.name,
-      name: (parent ? parent.name + ' → ' : '') + h.name,
+      name: h.name,
       type: 'General',
       category: h.category, unit_mode: h.unit_mode, pricing_type: h.pricing_type
     });
