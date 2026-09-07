@@ -58,6 +58,7 @@ async function renderHeads() {
       <div class="section-header">
         <h3>📋 Master List — Category &amp; Unit</h3>
         <div style="display:flex;gap:8px;">
+          <button class="btn-sm btn-secondary" onclick="downloadMasterListExcel()">⬇ Excel</button>
           <button class="btn-sm btn-secondary" onclick="printMasterList()">🖨 Print</button>
           <button class="btn-accent btn-sm" onclick="showMasterAddModal()">+ Add</button>
         </div>
@@ -188,6 +189,32 @@ async function loadMasterHeadsList() {
       </table>
     </div>
   `;
+}
+
+// Excel export for offline sorting/renaming — keeps ID + Table so that
+// whatever comes back (reordered, names edited/appended) can be matched
+// back to the exact original row rather than guessed by name.
+function downloadMasterListExcel() {
+  if (typeof XLSX === 'undefined') {
+    showToast('Excel library not loaded. Check internet connection.', 'error');
+    return;
+  }
+
+  const rows = [
+    ['Sr No', 'ID', 'Table', 'Name', 'Type', 'Category', 'Unit']
+  ];
+  masterListRows.forEach((r, i) => {
+    rows.push([i + 1, r.id, r.table, r.bareName, r.type, r.category || '', r.unit_mode || '']);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{ wch: 6 }, { wch: 38 }, { wch: 16 }, { wch: 48 }, { wch: 10 }, { wch: 24 }, { wch: 10 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Master List');
+
+  const dateStr = new Date().toLocaleDateString('en-IN').replace(/\//g, '-');
+  XLSX.writeFile(wb, `Master_List_${dateStr}.xlsx`);
+  showToast('✅ Excel downloaded!', 'success');
 }
 
 // Clean tabular printout for physical record-keeping — includes the 8 Main
