@@ -58,7 +58,7 @@ async function renderHeads() {
         <h3>📋 Master List — Category &amp; Unit</h3>
         <button class="btn-accent btn-sm" onclick="showMasterAddModal()">+ Add</button>
       </div>
-      <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Every donation head/item (General &amp; Swapna, across all events) in one place. Admin-only. Changing a dropdown saves immediately.</p>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Every donation head/item (General &amp; Paryushan, across all events) in one place. Admin-only. Changing a dropdown saves immediately.</p>
       <div id="master-heads-list">Loading...</div>
     </div>
     <div class="card">
@@ -124,7 +124,7 @@ async function loadMasterHeadsList() {
     rows.push({
       table: 'dr_swapna', id: h.id, bareName: h.name,
       name: path + (eventById[h.event_id] ? ` (${eventById[h.event_id]})` : ''),
-      type: 'Swapna',
+      type: 'Paryushan',
       category: h.category, unit_mode: h.unit_mode, pricing_type: h.pricing_type
     });
   });
@@ -136,7 +136,7 @@ async function loadMasterHeadsList() {
     rows.push({
       table: 'dr_swapna_items', id: item.id, bareName: item.name,
       name: path + (sw && eventById[sw.event_id] ? ` (${eventById[sw.event_id]})` : ''),
-      type: 'Swapna',
+      type: 'Paryushan',
       category: item.category, unit_mode: item.unit_mode, pricing_type: item.pricing_type
     });
   });
@@ -249,7 +249,7 @@ function showMasterAddModal() {
       <label>Type</label>
       <select id="madd-type" onchange="onMasterAddTypeChange()">
         <option value="general">General Head</option>
-        <option value="swapna">Swapna (Auction) Head</option>
+        <option value="swapna">Paryushan (Auction) Head</option>
       </select>
     </div>
     <div class="form-group" id="madd-event-group" style="display:none;">

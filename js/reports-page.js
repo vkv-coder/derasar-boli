@@ -768,7 +768,7 @@ async function downloadExcelReport() {
       d.donor_name || '',
       d.phone || '',
       d.family_no || '',
-      d.head_type === 'swapna_item' || d.head_type === 'swapna' ? 'Swapna' : 'General',
+      d.head_type === 'swapna_item' || d.head_type === 'swapna' ? 'Paryushan' : 'General',
       getDonationHeadName(d),
       parseFloat(d.amount || 0),
       parseFloat(d.received_amount || 0),
