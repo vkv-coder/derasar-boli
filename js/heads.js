@@ -10,6 +10,7 @@ let orgSplitThreshold = 20000;
 let masterListGeneralHeads = [];  // cached for the Master List "+ Add" modal
 let masterListSwapnaHeads = [];
 let masterListEvents = [];
+let masterListRows = [];  // cached for the print-out
 
 const DR_CATEGORIES = [
   'સાધારણ ખાતે', 'જ્ઞાન ખાતે', 'જીવદયા ખાતે', 'દેવદ્રવ્ય ખાતે',
@@ -56,7 +57,10 @@ async function renderHeads() {
     <div class="card">
       <div class="section-header">
         <h3>📋 Master List — Category &amp; Unit</h3>
-        <button class="btn-accent btn-sm" onclick="showMasterAddModal()">+ Add</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-sm btn-secondary" onclick="printMasterList()">🖨 Print</button>
+          <button class="btn-accent btn-sm" onclick="showMasterAddModal()">+ Add</button>
+        </div>
       </div>
       <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Every donation head/item (General &amp; Paryushan, across all events) in one place. Admin-only. Changing a dropdown saves immediately.</p>
       <div id="master-heads-list">Loading...</div>
@@ -141,6 +145,8 @@ async function loadMasterHeadsList() {
     });
   });
 
+  masterListRows = rows; // cached for the print-out
+
   if (rows.length === 0) {
     el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No items yet — add heads below first.</p>`;
     return;
@@ -182,6 +188,67 @@ async function loadMasterHeadsList() {
       </table>
     </div>
   `;
+}
+
+// Clean tabular printout for physical record-keeping — includes the 8 Main
+// Donation Heads too (excluded from the on-screen list to avoid repeating
+// what's already shown in that section) so this is a complete category
+// audit sheet, not just the sub-items.
+function printMasterList() {
+  const mainHeads = masterListGeneralHeads
+    .filter(h => !h.parent_id && DR_CATEGORIES.includes(h.name))
+    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+    .map(h => ({ name: h.name, type: 'Main Head', category: h.category, unit_mode: h.unit_mode }));
+
+  const allRows = [...mainHeads, ...masterListRows];
+  const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>Master List — ${dateStr}</title>
+<style>
+  *{box-sizing:border-box;font-family:Arial,sans-serif;}
+  body{margin:0;padding:20px;}
+  h1{font-size:18px;margin:0 0 4px;}
+  .sub{font-size:12px;color:#666;margin-bottom:16px;}
+  table{width:100%;border-collapse:collapse;font-size:12px;}
+  th,td{border:1px solid #ccc;padding:5px 8px;text-align:left;}
+  th{background:#f0f0f0;}
+  td:first-child,th:first-child{text-align:center;width:36px;}
+  .main-row{background:#FFF3E0;font-weight:700;}
+  @media print{
+    @page{size:A4;margin:14mm;}
+    body{padding:0;}
+  }
+</style>
+</head>
+<body>
+  <h1>Master List — Category &amp; Unit</h1>
+  <div class="sub">Printed ${dateStr}</div>
+  <table>
+    <thead><tr><th>#</th><th>Name</th><th>Type</th><th>Category</th><th>Unit</th></tr></thead>
+    <tbody>
+      ${allRows.map((r, i) => `
+        <tr class="${r.type === 'Main Head' ? 'main-row' : ''}">
+          <td>${i + 1}</td>
+          <td>${r.name}</td>
+          <td>${r.type}</td>
+          <td>${r.category || '—'}</td>
+          <td>${r.unit_mode ? r.unit_mode : (r.type === 'Main Head' ? 'rupees' : 'Inherit')}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  <script>window.onload = () => window.print();</script>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  if (!win) { showToast('Allow pop-ups to print', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
 }
 
 function showMasterRenameModal(table, id, name) {
