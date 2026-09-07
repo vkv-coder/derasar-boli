@@ -2,13 +2,14 @@
 // DERASAR BOLI - Heads Setup
 // ==========================================
 
-let selectedEventForHeads = null;
-let expandedHeads = {};  // track which heads are expanded
 let expandedGeneralHeads = {};  // track which general heads are expanded
 let orgBoliUnitMode = 'rupees';
 let orgRatePerMun = null;
 let orgRatePerAani = 1800;
 let orgSplitThreshold = 20000;
+let masterListGeneralHeads = [];  // cached for the Master List "+ Add" modal
+let masterListSwapnaHeads = [];
+let masterListEvents = [];
 
 const DR_CATEGORIES = [
   'સાધારણ ખાતે', 'જ્ઞાન ખાતે', 'જીવદયા ખાતે', 'દેવદ્રવ્ય ખાતે',
@@ -16,19 +17,9 @@ const DR_CATEGORIES = [
   'સાધારણ કાયમી ફંડ ખાતે'
 ];
 
-const DEFAULT_GENERAL_HEADS = [
-  'sadharan', 'gyan khate', 'jivdaya khate', 'Angi khate',
-  'devdravya khate', 'veyavcch khate', 'sadharmik bhakti',
-  'swamivatsalya', 'ayambil', 'pathshala', 'prabhavna',
-  'bahuman', 'anukampa daan', 'derasar nibhavani', 'sabhya anudan'
-];
-
 async function renderHeads() {
   const content = document.getElementById('page-content');
-  const [{ data: events }, { data: orgData }] = await Promise.all([
-    db.from('dr_events').select('*').eq('org_id', currentOrgId).order('created_at', { ascending: false }),
-    db.from('dr_organizations').select('boli_unit_mode, rate_per_mun, rate_per_aani, split_receipt_threshold').eq('id', currentOrgId).single()
-  ]);
+  const { data: orgData } = await db.from('dr_organizations').select('boli_unit_mode, rate_per_mun, rate_per_aani, split_receipt_threshold').eq('id', currentOrgId).single();
 
   orgBoliUnitMode = orgData?.boli_unit_mode || 'rupees';
   orgRatePerMun = orgData?.rate_per_mun ?? null;
@@ -60,24 +51,16 @@ async function renderHeads() {
         <input type="number" id="split-threshold-input" value="${orgSplitThreshold ?? 20000}" placeholder="e.g. 20000" min="0" />
       </div>
       <button class="btn-primary btn-sm" onclick="saveBoliUnitMode()">Save</button>
-      ${orgBoliUnitMode === 'mixed' ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Use the ⚙ button on any head or sub-head below to set its Unit (Rupees/Mun/Aani), Category, and Fixed/Auction — everything beneath a head follows its unit, unless you override a lower level too. Applies to both Swapna heads (select an event below to see them) and General Donation Heads.</p>` : ''}
+      ${orgBoliUnitMode === 'mixed' ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Set a head's Unit (Rupees/Mun/Aani) from the Master List below — everything beneath a head follows its unit, unless you override a lower level too.</p>` : ''}
     </div>
     <div class="card">
-      <div class="card-title">📋 Master List — Category, Unit &amp; Pricing</div>
+      <div class="section-header">
+        <h3>📋 Master List — Category &amp; Unit</h3>
+        <button class="btn-accent btn-sm" onclick="showMasterAddModal()">+ Add</button>
+      </div>
       <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Every donation head/item (General &amp; Swapna, across all events) in one place. Admin-only. Changing a dropdown saves immediately.</p>
       <div id="master-heads-list">Loading...</div>
     </div>
-    <div class="card">
-      <div class="card-title">Heads Setup</div>
-      <div class="form-group">
-        <label>Select Event (for Swapna / Auction Groups)</label>
-        <select id="heads-event-select" onchange="onHeadsEventChange()">
-          <option value="">-- Select Event --</option>
-          ${(events || []).map(ev => `<option value="${ev.id}">${ev.name}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-    <div id="swapna-section"></div>
     <div class="card">
       <div class="section-header">
         <h3>🎟 Functions / Event Entry</h3>
@@ -89,10 +72,6 @@ async function renderHeads() {
     <div class="card">
       <div class="section-header">
         <h3>🔷 Main Donation Heads</h3>
-        <div style="display:flex;gap:8px;">
-          <button class="btn-sm btn-secondary" onclick="loadDefaultHeads()">Load Defaults</button>
-          <button class="btn-accent btn-sm" onclick="showAddGeneralHeadModal()">+ Add Main Head</button>
-        </div>
       </div>
       <div id="general-heads-list">Loading...</div>
     </div>
@@ -119,13 +98,18 @@ async function loadMasterHeadsList() {
   const swById = {};
   (swapnaHeads || []).forEach(h => { swById[h.id] = h; });
 
+  // Cached for the "+ Add" modal so it doesn't need to refetch.
+  masterListGeneralHeads = generalHeads || [];
+  masterListSwapnaHeads = swapnaHeads || [];
+  masterListEvents = events || [];
+
   const rows = [];
 
   (generalHeads || []).forEach(h => {
     if (!h.parent_id && DR_CATEGORIES.includes(h.name)) return; // one of the 8 main heads — already shown in Main Donation Heads above, no need to repeat here
     const parent = h.parent_id ? ghById[h.parent_id] : null;
     rows.push({
-      table: 'dr_general_heads', id: h.id,
+      table: 'dr_general_heads', id: h.id, bareName: h.name,
       name: (parent ? parent.name + ' → ' : '') + h.name,
       type: 'General',
       category: h.category, unit_mode: h.unit_mode, pricing_type: h.pricing_type
@@ -137,7 +121,7 @@ async function loadMasterHeadsList() {
     const grandParent = parent && parent.parent_id ? swById[parent.parent_id] : null;
     const path = [grandParent?.name, parent?.name, h.name].filter(Boolean).join(' → ');
     rows.push({
-      table: 'dr_swapna', id: h.id,
+      table: 'dr_swapna', id: h.id, bareName: h.name,
       name: path + (eventById[h.event_id] ? ` (${eventById[h.event_id]})` : ''),
       type: 'Swapna',
       category: h.category, unit_mode: h.unit_mode, pricing_type: h.pricing_type
@@ -149,7 +133,7 @@ async function loadMasterHeadsList() {
     const parent = sw?.parent_id ? swById[sw.parent_id] : null;
     const path = [parent?.name, sw?.name, item.name].filter(Boolean).join(' → ');
     rows.push({
-      table: 'dr_swapna_items', id: item.id,
+      table: 'dr_swapna_items', id: item.id, bareName: item.name,
       name: path + (sw && eventById[sw.event_id] ? ` (${eventById[sw.event_id]})` : ''),
       type: 'Swapna',
       category: item.category, unit_mode: item.unit_mode, pricing_type: item.pricing_type
@@ -163,8 +147,8 @@ async function loadMasterHeadsList() {
 
   el.innerHTML = `
     <div style="overflow-x:auto;">
-      <table class="data-table" style="min-width:560px;">
-        <thead><tr><th>#</th><th>Name</th><th>Type</th><th>Category</th><th>Unit</th></tr></thead>
+      <table class="data-table" style="min-width:640px;">
+        <thead><tr><th>#</th><th>Name</th><th>Type</th><th>Category</th><th>Unit</th><th></th></tr></thead>
         <tbody>
           ${rows.map((r, i) => `
             <tr>
@@ -185,6 +169,12 @@ async function loadMasterHeadsList() {
                   <option value="aani" ${r.unit_mode === 'aani' ? 'selected' : ''}>Aani</option>
                 </select>
               </td>
+              <td>
+                <div style="display:flex;gap:4px;">
+                  <button class="btn-sm btn-secondary" onclick="showMasterRenameModal('${r.table}','${r.id}','${r.bareName.replace(/'/g,"\\'")}')">✎</button>
+                  <button class="btn-sm btn-danger" onclick="deleteMasterRow('${r.table}','${r.id}','${r.bareName.replace(/'/g,"\\'")}')">🗑</button>
+                </div>
+              </td>
             </tr>
           `).join('')}
         </tbody>
@@ -193,11 +183,142 @@ async function loadMasterHeadsList() {
   `;
 }
 
+function showMasterRenameModal(table, id, name) {
+  showModal(`
+    <div class="modal-title">Rename</div>
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="mren-name" value="${name}" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="saveMasterRename('${table}','${id}')">Save</button>
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+    </div>
+  `);
+}
+
+async function saveMasterRename(table, id) {
+  const name = document.getElementById('mren-name').value.trim();
+  if (!name) { showToast('Enter a name', 'error'); return; }
+  const { error } = await db.from(table).update({ name }).eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  closeModal();
+  showToast('Renamed!', 'success');
+  await loadMasterHeadsList();
+  await loadGeneralHeadsList();
+}
+
+async function deleteMasterRow(table, id, name) {
+  const warn = table === 'dr_swapna'
+    ? `Delete "${name}"? If it has sub-heads or items under it, those get deleted too. This cannot be undone.`
+    : `Delete "${name}"? This cannot be undone.`;
+  if (!confirm(warn)) return;
+  const { error } = await db.from(table).delete().eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  showToast('Deleted');
+  await loadMasterHeadsList();
+  await loadGeneralHeadsList();
+}
+
 async function saveMasterField(table, id, field, value) {
   const update = { [field]: value || null };
   const { error } = await db.from(table).update(update).eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Saved!', 'success');
+}
+
+// One "+ Add" for the whole Master List, replacing the old separate Swapna
+// tree's own add buttons — for Swapna, the Parent dropdown lists every
+// existing node in the chosen event at its real depth, so picking a deep
+// node as parent adds another level, same as the old nested "+" buttons
+// could, just without needing to browse the tree to find them.
+function showMasterAddModal() {
+  showModal(`
+    <div class="modal-title">+ Add Head / Item</div>
+    <div class="form-group">
+      <label>Type</label>
+      <select id="madd-type" onchange="onMasterAddTypeChange()">
+        <option value="general">General Head</option>
+        <option value="swapna">Swapna (Auction) Head</option>
+      </select>
+    </div>
+    <div class="form-group" id="madd-event-group" style="display:none;">
+      <label>Event</label>
+      <select id="madd-event" onchange="renderMasterAddParentOptions()">
+        <option value="">-- Select Event --</option>
+        ${masterListEvents.map(e => `<option value="${e.id}">${e.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Parent (optional — leave as Top Level for a new main group)</label>
+      <select id="madd-parent"><option value="">-- Top Level --</option></select>
+    </div>
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="madd-name" placeholder="Head / item name" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="saveMasterAdd()">Save</button>
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+    </div>
+  `);
+  renderMasterAddParentOptions();
+}
+
+function onMasterAddTypeChange() {
+  const type = document.getElementById('madd-type').value;
+  document.getElementById('madd-event-group').style.display = type === 'swapna' ? 'block' : 'none';
+  renderMasterAddParentOptions();
+}
+
+function renderMasterAddParentOptions() {
+  const type = document.getElementById('madd-type').value;
+  const parentSelect = document.getElementById('madd-parent');
+  let options = '<option value="">-- Top Level --</option>';
+
+  if (type === 'general') {
+    masterListGeneralHeads.filter(h => !h.parent_id).forEach(h => {
+      options += `<option value="${h.id}">${h.name}</option>`;
+    });
+  } else {
+    const eventId = document.getElementById('madd-event')?.value;
+    if (eventId) {
+      const nodes = masterListSwapnaHeads.filter(s => s.event_id === eventId);
+      const byId = {};
+      nodes.forEach(n => { byId[n.id] = n; });
+      const depthOf = n => (n.parent_id && byId[n.parent_id]) ? depthOf(byId[n.parent_id]) + 1 : 0;
+      nodes.forEach(n => {
+        options += `<option value="${n.id}">${'— '.repeat(depthOf(n))}${n.name}</option>`;
+      });
+    }
+  }
+  parentSelect.innerHTML = options;
+}
+
+async function saveMasterAdd() {
+  const type = document.getElementById('madd-type').value;
+  const parentId = document.getElementById('madd-parent').value || null;
+  const name = document.getElementById('madd-name').value.trim();
+  if (!name) { showToast('Enter a name', 'error'); return; }
+
+  if (type === 'general') {
+    const { error } = await db.from('dr_general_heads').insert({
+      org_id: currentOrgId, name, parent_id: parentId, unit_mode: 'rupees'
+    });
+    if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  } else {
+    const eventId = document.getElementById('madd-event').value;
+    if (!eventId) { showToast('Select an event', 'error'); return; }
+    const { error } = await db.from('dr_swapna').insert({
+      org_id: currentOrgId, event_id: eventId, name, parent_id: parentId, unit_mode: 'rupees'
+    });
+    if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  }
+
+  closeModal();
+  showToast('Added!', 'success');
+  await loadMasterHeadsList();
+  await loadGeneralHeadsList();
 }
 
 function onBoliUnitModeChange() {
@@ -237,59 +358,6 @@ async function saveBoliUnitMode() {
   orgSplitThreshold = threshold;
   showToast('Boli unit setup saved!', 'success');
   await renderHeads();
-  if (selectedEventForHeads) {
-    document.getElementById('heads-event-select').value = selectedEventForHeads;
-    await loadSwapnaSection();
-  }
-}
-
-async function onHeadsEventChange() {
-  selectedEventForHeads = document.getElementById('heads-event-select').value;
-  expandedHeads = {};
-  if (!selectedEventForHeads) {
-    document.getElementById('swapna-section').innerHTML = '';
-    return;
-  }
-  await loadSwapnaSection();
-}
-
-async function loadSwapnaSection() {
-  const el = document.getElementById('swapna-section');
-  el.innerHTML = `
-    <div class="card">
-      <div class="section-header">
-        <h3>🔶 સ્વપ્ન (Swapna / Auction Groups)</h3>
-        <button class="btn-accent btn-sm" onclick="showAddSwapnaModal()">+ Add</button>
-      </div>
-      <div id="swapna-list">Loading...</div>
-    </div>
-  `;
-  await loadSwapnaList();
-}
-
-// ========== SWAPNA - 3 LEVEL COLLAPSIBLE ==========
-async function loadSwapnaList() {
-  // Fetch all swapna for this event with their swapna_items
-  const { data, error } = await db
-    .from('dr_swapna')
-    .select('*, dr_swapna_items(*)')
-    .eq('event_id', selectedEventForHeads)
-    .eq('org_id', currentOrgId)
-    .order('sort_order');
-
-  const el = document.getElementById('swapna-list');
-  if (!el) return;
-
-  if (error || !data || data.length === 0) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🔶</div><p>No heads added yet.</p></div>`;
-    return;
-  }
-
-  // Separate: top-level heads (parent_id IS NULL) and children
-  const topLevel = data.filter(s => !s.parent_id);
-  const children = data.filter(s => s.parent_id);
-
-  el.innerHTML = topLevel.map(head => renderMainHead(head, children, data)).join('');
 }
 
 // Rupees/Mun cascades down the tree: a head's own unit_mode wins if set,
@@ -297,92 +365,6 @@ async function loadSwapnaList() {
 // "not set here, inherit".
 function effectiveUnit(ownUnitMode, inheritedUnit) {
   return (ownUnitMode === 'mun' || ownUnitMode === 'rupees' || ownUnitMode === 'aani') ? ownUnitMode : inheritedUnit;
-}
-
-function renderMainHead(head, children, allData) {
-  const isExpanded = expandedHeads[head.id];
-  const myChildren = children.filter(c => c.parent_id === head.id);
-  const hasChildren = myChildren.length > 0;
-  const hasItems = (head.dr_swapna_items || []).length > 0;
-  const myUnit = effectiveUnit(head.unit_mode, orgBoliUnitMode === 'mun' ? 'mun' : 'rupees');
-
-  return `
-    <div style="border:2px solid var(--primary);border-radius:10px;margin-bottom:12px;overflow:hidden;">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#ffffff;cursor:pointer;"
-           onclick="toggleHead('${head.id}')">
-        <strong style="color:var(--primary);font-size:15px;">
-          ${isExpanded ? '▼' : '▶'} ${head.name}${unitBadge(myUnit)}${categoryBadge(head.category)}${pricingBadge(head.pricing_type)}
-        </strong>
-        <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
-          <button class="btn-sm btn-secondary" onclick="showHeadPropertiesModal('dr_swapna','${head.id}','${head.name.replace(/'/g,"\\'")}','${head.unit_mode || ''}','rupees','${head.category || ''}','${head.pricing_type || 'auction'}')">⚙</button>
-          <button class="btn-sm btn-danger" onclick="deleteSwapna('${head.id}')">Delete</button>
-        </div>
-      </div>
-      ${isExpanded ? `
-        <div style="padding:8px 16px 12px 24px;">
-          ${hasChildren ? myChildren.sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)).map(child => renderChildHead(child, allData, myUnit)).join('') : ''}
-          ${hasItems ? renderSwapnaItems(head, myUnit) : ''}
-          ${!hasChildren && !hasItems ? `<p style="color:var(--text-muted);font-size:13px;">No sub-heads yet.</p>` : ''}
-        </div>
-      ` : ''}
-    </div>
-  `;
-}
-
-function renderChildHead(child, allData, inheritedUnit) {
-  const isExpanded = expandedHeads[child.id];
-  const grandChildren = allData.filter(s => s.parent_id === child.id);
-  const hasGrandChildren = grandChildren.length > 0;
-  const hasItems = (child.dr_swapna_items || []).length > 0;
-  const myUnit = effectiveUnit(child.unit_mode, inheritedUnit);
-
-  return `
-    <div style="border:1.5px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#fff;cursor:pointer;"
-           onclick="toggleHead('${child.id}')">
-        <span style="color:var(--primary-dark, #7a4a00);font-size:14px;">
-          ${isExpanded ? '▼' : '▶'} ${child.name}${unitBadge(myUnit)}${categoryBadge(child.category)}${pricingBadge(child.pricing_type)}
-        </span>
-        <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
-          <button class="btn-sm btn-secondary" onclick="showHeadPropertiesModal('dr_swapna','${child.id}','${child.name.replace(/'/g,"\\'")}','${child.unit_mode || ''}','${inheritedUnit}','${child.category || ''}','${child.pricing_type || 'auction'}')">⚙</button>
-          <button class="btn-sm btn-secondary" onclick="showAddSwapnaItemModal('${child.id}','${child.name.replace(/'/g,"\\'")}')">+ Item</button>
-          <button class="btn-sm btn-danger" onclick="deleteSwapna('${child.id}')">✕</button>
-        </div>
-      </div>
-      ${isExpanded ? `
-        <div style="padding:6px 12px 10px 24px;">
-          ${hasGrandChildren ? grandChildren.sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)).map(gc => {
-            const gcHasItems = (gc.dr_swapna_items || []).length > 0;
-            const gcUnit = effectiveUnit(gc.unit_mode, myUnit);
-            return `
-            <div style="padding:4px 0;font-size:13px;color:var(--text);">• ${gc.name}${unitBadge(gcUnit)}${categoryBadge(gc.category)}${pricingBadge(gc.pricing_type)}
-              <button class="btn-sm btn-secondary" style="margin-left:8px;" onclick="showHeadPropertiesModal('dr_swapna','${gc.id}','${gc.name.replace(/'/g,"\\'")}','${gc.unit_mode || ''}','${myUnit}','${gc.category || ''}','${gc.pricing_type || 'auction'}')">⚙</button>
-              <button class="btn-sm btn-danger" style="margin-left:8px;" onclick="deleteSwapna('${gc.id}')">✕</button>
-            </div>
-          `; }).join('') : ''}
-          ${hasItems ? renderSwapnaItems(child, myUnit) : ''}
-          ${!hasGrandChildren && !hasItems ? `<p style="color:var(--text-muted);font-size:12px;">No items yet.</p>` : ''}
-        </div>
-      ` : ''}
-    </div>
-  `;
-}
-
-function renderSwapnaItems(swapna, inheritedUnit) {
-  const items = (swapna.dr_swapna_items || []).sort((a,b) => (a.sort_order||0) - (b.sort_order||0));
-  if (items.length === 0) return '';
-  return items.map(item => {
-    const myUnit = effectiveUnit(item.unit_mode, inheritedUnit);
-    return `
-    <div class="list-item" style="padding:5px 0;">
-      <span style="font-size:13px;">• ${item.name}${unitBadge(myUnit)}${categoryBadge(item.category)}${pricingBadge(item.pricing_type)}</span>
-      <div class="list-item-actions">
-        <button class="btn-sm btn-secondary" onclick="showHeadPropertiesModal('dr_swapna_items','${item.id}','${item.name.replace(/'/g,"\\'")}','${item.unit_mode || ''}','${inheritedUnit}','${item.category || ''}','${item.pricing_type || 'auction'}')">⚙</button>
-        <button class="btn-sm btn-secondary" onclick="showEditSwapnaItemModal('${item.id}','${item.name.replace(/'/g,"\\'")}')">Edit</button>
-        <button class="btn-sm btn-danger" onclick="deleteSwapnaItem('${item.id}')">✕</button>
-      </div>
-    </div>
-  `; }).join('');
 }
 
 function unitBadge(resolvedUnit) {
@@ -439,101 +421,8 @@ async function saveHeadProperties(table, id) {
 
   closeModal();
   showToast('Saved!', 'success');
-  if (table === 'dr_general_heads') await loadGeneralHeadsList();
-  else await loadSwapnaList();
-}
-
-function toggleHead(id) {
-  expandedHeads[id] = !expandedHeads[id];
-  loadSwapnaList();
-}
-
-function showAddSwapnaModal() {
-  showModal(`
-    <div class="modal-title">Add Main Head</div>
-    <div class="form-group">
-      <label>Head Name</label>
-      <input type="text" id="sw-name" placeholder="e.g. ચૌદ સ્વપ્ન ના ચઢાવા" />
-    </div>
-    <div class="modal-actions">
-      <button class="btn-primary" onclick="addSwapna()">Save</button>
-      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
-    </div>
-  `);
-}
-
-async function addSwapna() {
-  const name = document.getElementById('sw-name').value.trim();
-  if (!name) { showToast('Enter head name', 'error'); return; }
-  const { error } = await db.from('dr_swapna').insert({ event_id: selectedEventForHeads, name, org_id: currentOrgId });
-  if (error) { showToast('Error: ' + error.message, 'error'); return; }
-  closeModal();
-  showToast('Head added!', 'success');
-  await loadSwapnaList();
-}
-
-function showAddSwapnaItemModal(swapnaId, swapnaName) {
-  showModal(`
-    <div class="modal-title">Add Item to ${swapnaName}</div>
-    <div class="form-group">
-      <label>Item Name</label>
-      <input type="text" id="sw-item-name" placeholder="e.g. પ્રથમ સ્વપ્ન" />
-    </div>
-    <div class="modal-actions">
-      <button class="btn-primary" onclick="addSwapnaItem('${swapnaId}')">Save</button>
-      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
-    </div>
-  `);
-}
-
-async function addSwapnaItem(swapnaId) {
-  const name = document.getElementById('sw-item-name').value.trim();
-  if (!name) { showToast('Enter item name', 'error'); return; }
-  const { error } = await db.from('dr_swapna_items').insert({ swapna_id: swapnaId, name, org_id: currentOrgId });
-  if (error) { showToast('Error: ' + error.message, 'error'); return; }
-  closeModal();
-  showToast('Item added!', 'success');
-  await loadSwapnaList();
-}
-
-function showEditSwapnaItemModal(id, name) {
-  showModal(`
-    <div class="modal-title">Edit Item</div>
-    <div class="form-group">
-      <label>Item Name</label>
-      <input type="text" id="sw-item-edit" value="${name}" />
-    </div>
-    <div class="modal-actions">
-      <button class="btn-primary" onclick="updateSwapnaItem('${id}')">Update</button>
-      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
-    </div>
-  `);
-}
-
-async function updateSwapnaItem(id) {
-  const name = document.getElementById('sw-item-edit').value.trim();
-  if (!name) return;
-  const { error } = await db.from('dr_swapna_items').update({ name }).eq('id', id);
-  if (error) { showToast('Error: ' + error.message, 'error'); return; }
-  closeModal();
-  showToast('Updated!', 'success');
-  await loadSwapnaList();
-}
-
-async function deleteSwapna(id) {
-  if (!confirm('Delete this head and all its items?')) return;
-  const { error } = await db.from('dr_swapna').delete().eq('id', id);
-  if (error) { showToast('Error: ' + error.message, 'error'); return; }
-  showToast('Deleted');
-  await loadSwapnaList();
-}
-
-async function deleteSwapnaItem(id) {
-  if (!confirm('Delete this item?')) return;
-  const { error } = await db.from('dr_swapna_items').delete().eq('id', id);
-  if (error) { showToast('Error: ' + error.message, 'error'); return; }
-  showToast('Item deleted');
-  await loadSwapnaList();
+  await loadGeneralHeadsList();
+  await loadMasterHeadsList();
 }
 
 // ========== GENERAL HEADS (independent of event) - NESTED DISPLAY ==========
@@ -548,7 +437,7 @@ async function loadGeneralHeadsList() {
   if (!el) return;
 
   if (error || !data || data.length === 0) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🔷</div><p>No heads yet. Use "Load Defaults" or add manually.</p></div>`;
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🔷</div><p>No heads yet. Use "+ Add" in the Master List above.</p></div>`;
     return;
   }
 
@@ -605,39 +494,6 @@ function renderGeneralMainHead(head, num, subHeads) {
 function toggleGeneralHead(id) {
   expandedGeneralHeads[id] = !expandedGeneralHeads[id];
   loadGeneralHeadsList();
-}
-
-async function loadDefaultHeads() {
-  if (!confirm('This will add all default heads. Continue?')) return;
-  const inserts = DEFAULT_GENERAL_HEADS.map((name, i) => ({ name, display_order: i + 1, org_id: currentOrgId }));
-  const { error } = await db.from('dr_general_heads').insert(inserts);
-  if (error) { showToast('Error: ' + error.message, 'error'); return; }
-  showToast('Default heads loaded!', 'success');
-  await loadGeneralHeadsList();
-}
-
-function showAddGeneralHeadModal() {
-  showModal(`
-    <div class="modal-title">Add Main Head</div>
-    <div class="form-group">
-      <label>Head Name</label>
-      <input type="text" id="gh-name" placeholder="e.g. જ્ઞાન ખાતે" />
-    </div>
-    <div class="modal-actions">
-      <button class="btn-primary" onclick="addGeneralHead()">Save</button>
-      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
-    </div>
-  `);
-}
-
-async function addGeneralHead() {
-  const name = document.getElementById('gh-name').value.trim();
-  if (!name) { showToast('Enter head name', 'error'); return; }
-  const { error } = await db.from('dr_general_heads').insert({ name, org_id: currentOrgId });
-  if (error) { showToast('Error: ' + error.message, 'error'); return; }
-  closeModal();
-  showToast('Head added!', 'success');
-  await loadGeneralHeadsList();
 }
 
 function showAddGeneralSubHeadModal(parentId, parentName) {
