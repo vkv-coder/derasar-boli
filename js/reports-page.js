@@ -903,21 +903,21 @@ async function loadReceiptRegister() {
   const toTs = new Date(toDate + 'T23:59:59.999').toISOString();
 
   const [{ data: tokens }, { data: splits }, { data: donations }] = await Promise.all([
-    db.from('dr_receipt_tokens').select('id, receipt_no, receipt_no_assigned_at, payer_name, total_amount')
+    db.from('dr_receipt_tokens').select('id, receipt_no, receipt_no_assigned_at, payer_name, total_amount, payment_mode')
       .eq('org_id', currentOrgId).not('receipt_no', 'is', null)
       .gte('receipt_no_assigned_at', fromTs).lte('receipt_no_assigned_at', toTs),
-    db.from('dr_token_splits').select('id, receipt_no, receipt_no_assigned_at, name, amount')
+    db.from('dr_token_splits').select('id, receipt_no, receipt_no_assigned_at, name, amount, payment_mode')
       .eq('org_id', currentOrgId).not('receipt_no', 'is', null)
       .gte('receipt_no_assigned_at', fromTs).lte('receipt_no_assigned_at', toTs),
-    db.from('dr_donations').select('id, receipt_no, receipt_no_assigned_at, donor_name, receipt_name, amount')
+    db.from('dr_donations').select('id, receipt_no, receipt_no_assigned_at, donor_name, receipt_name, amount, payment_mode')
       .eq('org_id', currentOrgId).not('receipt_no', 'is', null)
       .gte('receipt_no_assigned_at', fromTs).lte('receipt_no_assigned_at', toTs)
   ]);
 
   registerRows = [
-    ...(tokens || []).map(t => ({ receiptNo: t.receipt_no, date: t.receipt_no_assigned_at, name: t.payer_name, amount: parseFloat(t.total_amount), source: 'Token', sourceId: t.id })),
-    ...(splits || []).map(s => ({ receiptNo: s.receipt_no, date: s.receipt_no_assigned_at, name: s.name, amount: parseFloat(s.amount), source: 'Split', sourceId: s.id })),
-    ...(donations || []).map(d => ({ receiptNo: d.receipt_no, date: d.receipt_no_assigned_at, name: d.receipt_name || d.donor_name, amount: parseFloat(d.amount), source: 'Donation', sourceId: d.id }))
+    ...(tokens || []).map(t => ({ receiptNo: t.receipt_no, date: t.receipt_no_assigned_at, name: t.payer_name, amount: parseFloat(t.total_amount), source: 'Token', sourceId: t.id, mode: t.payment_mode || 'cash' })),
+    ...(splits || []).map(s => ({ receiptNo: s.receipt_no, date: s.receipt_no_assigned_at, name: s.name, amount: parseFloat(s.amount), source: 'Split', sourceId: s.id, mode: s.payment_mode || 'cash' })),
+    ...(donations || []).map(d => ({ receiptNo: d.receipt_no, date: d.receipt_no_assigned_at, name: d.receipt_name || d.donor_name, amount: parseFloat(d.amount), source: 'Donation', sourceId: d.id, mode: d.payment_mode || 'cash' }))
   ].sort((a, b) => a.receiptNo - b.receiptNo);
 
   renderReceiptRegisterTable();
@@ -941,12 +941,24 @@ function renderReceiptRegisterTable() {
   }
 
   const total = registerRows.reduce((s, r) => s + r.amount, 0);
+  const cashTotal = registerRows.filter(r => r.mode !== 'online').reduce((s, r) => s + r.amount, 0);
+  const onlineTotal = registerRows.filter(r => r.mode === 'online').reduce((s, r) => s + r.amount, 0);
 
   el.innerHTML = `
     ${gapWarning}
+    <div class="total-grid" style="margin-bottom:12px;">
+      <div class="total-card">
+        <div class="head-name">💵 Cash — to match cash box</div>
+        <div class="total-amount">${formatAmount(cashTotal)}</div>
+      </div>
+      <div class="total-card">
+        <div class="head-name">📱 Online</div>
+        <div class="total-amount">${formatAmount(onlineTotal)}</div>
+      </div>
+    </div>
     <div style="overflow-x:auto;">
       <table class="data-table">
-        <thead><tr><th>Receipt No.</th><th>Date</th><th>Name</th><th>Amount</th><th>Source</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Receipt No.</th><th>Date</th><th>Name</th><th>Amount</th><th>Mode</th><th>Source</th><th>Actions</th></tr></thead>
         <tbody>
           ${registerRows.map(r => `
             <tr>
@@ -954,12 +966,13 @@ function renderReceiptRegisterTable() {
               <td style="font-size:12px;">${new Date(r.date).toLocaleDateString('en-IN')}</td>
               <td>${r.name}</td>
               <td>${formatAmount(r.amount)}</td>
+              <td style="font-size:12px;">${r.mode === 'online' ? '📱 Online' : '💵 Cash'}</td>
               <td style="font-size:11px;color:var(--text-muted);">${r.source}</td>
               <td><button class="btn-sm btn-secondary" onclick="reprintRegisterRow('${r.source}','${r.sourceId}')">🖨</button></td>
             </tr>
           `).join('')}
         </tbody>
-        <tfoot><tr style="font-weight:700;"><td colspan="3">${registerRows.length} receipts</td><td>${formatAmount(total)}</td><td colspan="2"></td></tr></tfoot>
+        <tfoot><tr style="font-weight:700;"><td colspan="3">${registerRows.length} receipts</td><td>${formatAmount(total)}</td><td colspan="3"></td></tr></tfoot>
       </table>
     </div>
   `;
@@ -975,13 +988,15 @@ function downloadReceiptRegisterExcel() {
   if (registerRows.length === 0) { showToast('Load the register first', 'error'); return; }
   if (typeof XLSX === 'undefined') { showToast('Excel library not loaded. Check internet connection.', 'error'); return; }
 
-  const rows = [['Receipt No.', 'Date', 'Name', 'Amount (₹)', 'Source']];
-  registerRows.forEach(r => rows.push([r.receiptNo, new Date(r.date).toLocaleDateString('en-IN'), r.name, r.amount, r.source]));
+  const rows = [['Receipt No.', 'Date', 'Name', 'Amount (₹)', 'Mode', 'Source']];
+  registerRows.forEach(r => rows.push([r.receiptNo, new Date(r.date).toLocaleDateString('en-IN'), r.name, r.amount, r.mode === 'online' ? 'Online' : 'Cash', r.source]));
   rows.push([]);
-  rows.push(['', 'TOTAL', '', registerRows.reduce((s, r) => s + r.amount, 0), '']);
+  rows.push(['', 'CASH TOTAL', '', registerRows.filter(r => r.mode !== 'online').reduce((s, r) => s + r.amount, 0), '', '']);
+  rows.push(['', 'ONLINE TOTAL', '', registerRows.filter(r => r.mode === 'online').reduce((s, r) => s + r.amount, 0), '', '']);
+  rows.push(['', 'GRAND TOTAL', '', registerRows.reduce((s, r) => s + r.amount, 0), '', '']);
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 10 }];
+  ws['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 10 }, { wch: 10 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Receipt Register');
 
@@ -1000,6 +1015,8 @@ function printReceiptRegister() {
   const fromDate = document.getElementById('register-from')?.value || '';
   const toDate = document.getElementById('register-to')?.value || '';
   const total = registerRows.reduce((s, r) => s + r.amount, 0);
+  const cashTotal = registerRows.filter(r => r.mode !== 'online').reduce((s, r) => s + r.amount, 0);
+  const onlineTotal = registerRows.filter(r => r.mode === 'online').reduce((s, r) => s + r.amount, 0);
 
   const rowsHtml = registerRows.map(r => `
     <tr>
@@ -1007,6 +1024,7 @@ function printReceiptRegister() {
       <td>${new Date(r.date).toLocaleDateString('en-IN')}</td>
       <td>${r.name}</td>
       <td style="text-align:right;">₹${r.amount.toLocaleString('en-IN')}</td>
+      <td>${r.mode === 'online' ? 'Online' : 'Cash'}</td>
       <td>${r.source}</td>
     </tr>`).join('');
 
@@ -1029,10 +1047,15 @@ function printReceiptRegister() {
 <body>
   <h2>Receipt Register</h2>
   <div style="font-size:12px;color:#555;">${fromDate} to ${toDate} — ${registerRows.length} receipts</div>
+  <div style="font-size:13px;margin-top:8px;">
+    <strong>Cash (to match cash box): ₹${cashTotal.toLocaleString('en-IN')}</strong>
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    Online: ₹${onlineTotal.toLocaleString('en-IN')}
+  </div>
   <table>
-    <thead><tr><th>Receipt No.</th><th>Date</th><th>Name</th><th>Amount</th><th>Source</th></tr></thead>
+    <thead><tr><th>Receipt No.</th><th>Date</th><th>Name</th><th>Amount</th><th>Mode</th><th>Source</th></tr></thead>
     <tbody>${rowsHtml}</tbody>
-    <tfoot><tr><td colspan="3">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td><td></td></tr></tfoot>
+    <tfoot><tr><td colspan="3">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td><td colspan="2"></td></tr></tfoot>
   </table>
   <button class="btn" onclick="window.print()">🖨 Print</button>
 </body>

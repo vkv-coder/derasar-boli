@@ -125,6 +125,10 @@ async function renderEntry() {
           <a href="javascript:void(0)" style="font-size:12px;color:var(--text-muted);" onclick="toggleManualReceiptEntry()">📝 Back-entry for an already-issued paper receipt no.</a>
           <div id="cart-manual-receipt-row" style="display:none;margin-top:6px;gap:6px;align-items:center;">
             <input type="number" id="cart-manual-receipt-no" placeholder="Receipt No." min="1" style="width:100px;display:inline-block;" />
+            <select id="cart-manual-payment-mode" style="display:inline-block;">
+              <option value="cash" selected>💵 Cash</option>
+              <option value="online">📱 Online</option>
+            </select>
             <button class="btn-secondary btn-sm" onclick="generateManualReceiptFromCart(this)">Save as Already-Paid</button>
           </div>
         </div>
@@ -755,6 +759,7 @@ async function generateManualReceiptFromCart(btn) {
   const noInput = document.getElementById('cart-manual-receipt-no');
   const manualNo = parseInt(noInput?.value, 10);
   if (!manualNo || manualNo <= 0) { showToast('Enter a valid receipt number', 'error'); return; }
+  const paymentMode = document.getElementById('cart-manual-payment-mode')?.value || 'cash';
 
   if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = 'Saving…'; }
   const receiptName = getCartReceiptName();
@@ -788,7 +793,8 @@ async function generateManualReceiptFromCart(btn) {
       status: 'paid',
       paid_at: nowIso,
       receipt_no: manualNo,
-      receipt_no_assigned_at: nowIso
+      receipt_no_assigned_at: nowIso,
+      payment_mode: paymentMode
     }).select().single();
     if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
 

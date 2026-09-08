@@ -97,8 +97,12 @@ async function loadTokensList() {
               <td>
                 ${t.status === 'pending' ? `
                   <input type="number" id="token-recd-${t.id}" placeholder="0" min="0" step="0.01"
-                    style="width:100px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:600;" />
-                ` : '—'}
+                    style="width:90px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:600;" />
+                  <select id="token-mode-${t.id}" style="width:90px;padding:4px 2px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;margin-top:3px;">
+                    <option value="cash" selected>💵 Cash</option>
+                    <option value="online">📱 Online</option>
+                  </select>
+                ` : (t.payment_mode === 'online' ? '📱 Online' : '💵 Cash')}
               </td>
               <td>${
                 t.status === 'pending' ? '<span style="color:#ff9800;">Pending</span>' :
@@ -143,6 +147,7 @@ async function confirmTokenReceived(tokenId, splitLater, btn) {
   const input = document.getElementById(`token-recd-${tokenId}`);
   const enteredAmount = input ? parseFloat(input.value) : NaN;
   if (!enteredAmount || enteredAmount <= 0) { showToast('Enter a valid received amount', 'error'); return; }
+  const paymentMode = document.getElementById(`token-mode-${tokenId}`)?.value || 'cash';
 
   // The row still reads "Pending" until loadTokensList() re-renders at the
   // end of this — several sequential DB round-trips away — so without an
@@ -171,7 +176,7 @@ async function confirmTokenReceived(tokenId, splitLater, btn) {
 
     const newStatus = splitLater ? 'paid_awaiting_split' : 'paid';
     const { error: tErr } = await db.from('dr_receipt_tokens')
-      .update({ status: newStatus, paid_at: new Date().toISOString() })
+      .update({ status: newStatus, paid_at: new Date().toISOString(), payment_mode: paymentMode })
       .eq('id', tokenId);
     if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
 
@@ -214,13 +219,19 @@ async function saveTokenAllocation(tokenId) {
   const rows = readSplitRows('token-alloc-rows');
   if (!rows) return;
 
+  // Carry the parent token's Cash/Online mode onto each split receipt, so
+  // the Receipt Register can read it straight off the split row without a
+  // join back to the token.
+  const { data: parentToken } = await db.from('dr_receipt_tokens').select('payment_mode').eq('id', tokenId).single();
+
   const records = rows.map(r => ({
     token_id: tokenId,
     org_id: currentOrgId,
     name: r.name,
     amount: r.amount,
     member_id: r.memberId,
-    family_no: r.familyNo || null
+    family_no: r.familyNo || null,
+    payment_mode: parentToken?.payment_mode || 'cash'
   }));
 
   const { data: saved, error: insErr } = await db.from('dr_token_splits').insert(records).select();
