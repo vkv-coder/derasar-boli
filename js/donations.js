@@ -771,6 +771,12 @@ async function generateManualReceiptFromCart(btn) {
       return;
     }
 
+    // receipt_no_assigned_at is what the Receipt Register filters/searches
+    // by (it's normally stamped by the auto-assign RPC, which we're
+    // bypassing here) — set it directly so this back-entry shows up in the
+    // Register and is reprintable from any admin's device, exactly like a
+    // normal receipt.
+    const nowIso = new Date().toISOString();
     const { data: token, error: tErr } = await db.from('dr_receipt_tokens').insert({
       org_id: currentOrgId,
       member_id: payer.memberId,
@@ -780,8 +786,9 @@ async function generateManualReceiptFromCart(btn) {
       total_amount: total,
       created_by: currentUser?.id || null,
       status: 'paid',
-      paid_at: new Date().toISOString(),
-      receipt_no: manualNo
+      paid_at: nowIso,
+      receipt_no: manualNo,
+      receipt_no_assigned_at: nowIso
     }).select().single();
     if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
 
