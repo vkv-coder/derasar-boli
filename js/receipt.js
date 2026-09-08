@@ -13,6 +13,21 @@ function buildTempleHeader(org) {
   </div>`;
 }
 
+// Cash/Online + Chq/UPI No. line, printed on every receipt (user request
+// 2026-09-08). Online always shows the "Chq/UPI No." label — filled with
+// the captured reference if we have one, otherwise a blank line for the
+// counter clerk to write in by hand (some Online payments come in without
+// the cashier having a ref number handy at confirm time).
+function paymentInfoHTML(mode, ref) {
+  const isOnline = mode === 'online';
+  const label = isOnline ? 'ઓનલાઇન (Online)' : 'રોકડ (Cash)';
+  return `
+    <div class="pay-info">
+      <strong>ચૂકવણી :</strong> ${label}
+      ${isOnline ? `<br><strong>Chq/UPI No. :</strong> ${ref ? ref : '________________'}` : ''}
+    </div>`;
+}
+
 const RECEIPT_CSS = `
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Hind Vadodara','Noto Sans Gujarati',Arial,sans-serif;background:#f0ece4;display:flex;flex-direction:column;align-items:center;padding:24px;gap:16px;min-height:100vh}
@@ -317,6 +332,14 @@ async function showDonationReceipt(donationId) {
   const receiptNo = formatReceiptNo(org?.receipt_prefix, assignedNo);
   const total = parseFloat(d.amount);
 
+  // Older/edge-case rows may not have payment_mode/payment_ref copied onto
+  // the donation itself — fall back to the parent token, which always has it.
+  let payMode = d.payment_mode, payRef = d.payment_ref;
+  if (!payMode && d.token_id) {
+    const { data: pt } = await db.from('dr_receipt_tokens').select('payment_mode, payment_ref').eq('id', d.token_id).single();
+    payMode = pt?.payment_mode; payRef = pt?.payment_ref;
+  }
+
   const html = `<!DOCTYPE html>
 <html lang="gu">
 <head>
@@ -340,6 +363,7 @@ async function showDonationReceipt(donationId) {
     </table>
     <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
     <div class="words-row">અંકે ${numToGujaratiWords(total)} રૂપિયા</div>
+    ${paymentInfoHTML(payMode, payRef)}
     <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
     <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
   </div>
@@ -425,6 +449,7 @@ async function showCombinedTokenReceipt(tokenId) {
     </table>
     <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
     <div class="words-row">અંકે ${numToGujaratiWords(total)} રૂપિયા</div>
+    ${paymentInfoHTML(t.payment_mode, t.payment_ref)}
     <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
     <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
   </div>
@@ -477,6 +502,7 @@ async function showSplitReceipt(splitId) {
     <div class="row"><span class="row-label">નામ :</span><span class="row-value">${s.name}</span></div>
     <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
     <div class="words-row">અંકે ${numToGujaratiWords(total)} રૂપિયા</div>
+    ${paymentInfoHTML(s.payment_mode, s.payment_ref)}
     <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
     <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
   </div>

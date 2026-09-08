@@ -125,10 +125,11 @@ async function renderEntry() {
           <a href="javascript:void(0)" style="font-size:12px;color:var(--text-muted);" onclick="toggleManualReceiptEntry()">📝 Back-entry for an already-issued paper receipt no.</a>
           <div id="cart-manual-receipt-row" style="display:none;margin-top:6px;gap:6px;align-items:center;">
             <input type="number" id="cart-manual-receipt-no" placeholder="Receipt No." min="1" style="width:100px;display:inline-block;" />
-            <select id="cart-manual-payment-mode" style="display:inline-block;">
+            <select id="cart-manual-payment-mode" onchange="toggleManualRefInput()" style="display:inline-block;">
               <option value="cash" selected>💵 Cash</option>
               <option value="online">📱 Online</option>
             </select>
+            <input type="text" id="cart-manual-payment-ref" placeholder="Chq/UPI No." style="display:none;width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" />
             <button class="btn-secondary btn-sm" onclick="generateManualReceiptFromCart(this)">Save as Already-Paid</button>
           </div>
         </div>
@@ -752,6 +753,12 @@ function toggleManualReceiptEntry() {
 // already fully paid on paper, and takes the exact receipt number instead
 // of the next one off the counter, so the app's numbering doesn't collide
 // with numbers already handed out.
+function toggleManualRefInput() {
+  const mode = document.getElementById('cart-manual-payment-mode')?.value;
+  const refInput = document.getElementById('cart-manual-payment-ref');
+  if (refInput) refInput.style.display = mode === 'online' ? 'inline-block' : 'none';
+}
+
 async function generateManualReceiptFromCart(btn) {
   if (currentCart.length === 0) { showToast('Add at least one item first', 'error'); return; }
   const payer = getCartPayer();
@@ -760,6 +767,9 @@ async function generateManualReceiptFromCart(btn) {
   const manualNo = parseInt(noInput?.value, 10);
   if (!manualNo || manualNo <= 0) { showToast('Enter a valid receipt number', 'error'); return; }
   const paymentMode = document.getElementById('cart-manual-payment-mode')?.value || 'cash';
+  const paymentRef = paymentMode === 'online'
+    ? (document.getElementById('cart-manual-payment-ref')?.value || '').trim() || null
+    : null;
 
   if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = 'Saving…'; }
   const receiptName = getCartReceiptName();
@@ -794,11 +804,12 @@ async function generateManualReceiptFromCart(btn) {
       paid_at: nowIso,
       receipt_no: manualNo,
       receipt_no_assigned_at: nowIso,
-      payment_mode: paymentMode
+      payment_mode: paymentMode,
+      payment_ref: paymentRef
     }).select().single();
     if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
 
-    const records = buildCartRecords(payer, receiptName).map(r => ({ ...r, token_id: token.id, received_amount: r.amount }));
+    const records = buildCartRecords(payer, receiptName).map(r => ({ ...r, token_id: token.id, received_amount: r.amount, payment_mode: paymentMode, payment_ref: paymentRef }));
     const { data: saved, error: dErr } = await db.from('dr_donations').insert(records).select();
     if (dErr) { showToast('Error: ' + dErr.message, 'error'); return; }
 
@@ -813,6 +824,8 @@ async function generateManualReceiptFromCart(btn) {
     currentCart = [];
     renderCartList();
     if (noInput) noInput.value = '';
+    const refInput = document.getElementById('cart-manual-payment-ref');
+    if (refInput) { refInput.value = ''; refInput.style.display = 'none'; }
     await loadGeneralHeadsEntry();
     if (entryEventId) await loadEventHeadsEntry();
   } finally {
