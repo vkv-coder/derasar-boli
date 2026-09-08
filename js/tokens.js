@@ -108,8 +108,8 @@ async function loadTokensList() {
               <td>
                 <div style="display:flex;gap:4px;flex-wrap:wrap;">
                   ${t.status === 'pending' ? `
-                    <button class="btn-sm btn-primary" onclick="confirmTokenReceived('${t.id}', false)">✅ Print</button>
-                    <button class="btn-sm btn-secondary" onclick="confirmTokenReceived('${t.id}', true)">✅ Split Later</button>
+                    <button class="btn-sm btn-primary" onclick="confirmTokenReceived('${t.id}', false, this)">✅ Print</button>
+                    <button class="btn-sm btn-secondary" onclick="confirmTokenReceived('${t.id}', true, this)">✅ Split Later</button>
                     <button class="btn-sm btn-danger" onclick="cancelToken('${t.id}')">Cancel</button>
                   ` : t._printStatus ? `
                     <button class="btn-sm btn-primary" onclick="showTokenSplitsModal('${t.id}')">View &amp; Print Remaining</button>
@@ -139,32 +139,50 @@ async function showTokenSplitsModal(tokenId) {
 // to every item under it, scaled proportionally, so nobody has to type an
 // amount per line. Entering the full total (the normal case) means every
 // item is marked fully received exactly as listed.
-async function confirmTokenReceived(tokenId, splitLater) {
+async function confirmTokenReceived(tokenId, splitLater, btn) {
   const input = document.getElementById(`token-recd-${tokenId}`);
   const enteredAmount = input ? parseFloat(input.value) : NaN;
   if (!enteredAmount || enteredAmount <= 0) { showToast('Enter a valid received amount', 'error'); return; }
 
-  const { data: lines, error: lErr } = await db.from('dr_donations').select('id, amount').eq('token_id', tokenId);
-  if (lErr || !lines || lines.length === 0) { showToast('Could not load token items', 'error'); return; }
-
-  const lineTotal = lines.reduce((s, l) => s + parseFloat(l.amount), 0);
-  const ratio = enteredAmount / lineTotal;
-
-  for (const line of lines) {
-    const recd = Math.round(parseFloat(line.amount) * ratio * 100) / 100;
-    const { error } = await db.from('dr_donations').update({ received_amount: recd }).eq('id', line.id);
-    if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  // The row still reads "Pending" until loadTokensList() re-renders at the
+  // end of this — several sequential DB round-trips away — so without an
+  // immediate visual change here a cashier assumes the click didn't
+  // register and clicks Print again, which is exactly how a token can end
+  // up printed/received twice.
+  const row = btn ? btn.closest('tr') : null;
+  const rowButtons = row ? row.querySelectorAll('button') : [];
+  if (row) {
+    rowButtons.forEach(b => { b.disabled = true; });
+    if (btn) btn.textContent = 'Saving…';
   }
 
-  const newStatus = splitLater ? 'paid_awaiting_split' : 'paid';
-  const { error: tErr } = await db.from('dr_receipt_tokens')
-    .update({ status: newStatus, paid_at: new Date().toISOString() })
-    .eq('id', tokenId);
-  if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
+  try {
+    const { data: lines, error: lErr } = await db.from('dr_donations').select('id, amount').eq('token_id', tokenId);
+    if (lErr || !lines || lines.length === 0) { showToast('Could not load token items', 'error'); return; }
 
-  showToast(splitLater ? '✅ Marked received — split & print whenever ready' : '✅ Received — opening receipt', 'success');
-  await loadTokensList();
-  if (!splitLater) showCombinedTokenReceipt(tokenId);
+    const lineTotal = lines.reduce((s, l) => s + parseFloat(l.amount), 0);
+    const ratio = enteredAmount / lineTotal;
+
+    for (const line of lines) {
+      const recd = Math.round(parseFloat(line.amount) * ratio * 100) / 100;
+      const { error } = await db.from('dr_donations').update({ received_amount: recd }).eq('id', line.id);
+      if (error) { showToast('Error: ' + error.message, 'error'); return; }
+    }
+
+    const newStatus = splitLater ? 'paid_awaiting_split' : 'paid';
+    const { error: tErr } = await db.from('dr_receipt_tokens')
+      .update({ status: newStatus, paid_at: new Date().toISOString() })
+      .eq('id', tokenId);
+    if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
+
+    showToast(splitLater ? '✅ Marked received — split & print whenever ready' : '✅ Received — opening receipt', 'success');
+    await loadTokensList();
+    if (!splitLater) showCombinedTokenReceipt(tokenId);
+  } finally {
+    // On success loadTokensList() has already replaced this row entirely;
+    // on an error path above the row is still there, so unlock it.
+    if (row && document.body.contains(row)) rowButtons.forEach(b => { b.disabled = false; });
+  }
 }
 
 async function cancelToken(tokenId) {

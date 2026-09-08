@@ -120,7 +120,7 @@ async function renderEntry() {
       <div id="cart-list"><p style="color:var(--text-muted);font-size:13px;">No items added yet — browse heads below and click "+ Add".</p></div>
       <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Every donation needs a token, regardless of amount — this is what the donor takes to the cash counter to pay.</p>
       <div id="cart-actions" style="display:none;margin-top:6px;">
-        <button class="btn-primary btn-sm" style="background:#7B1E3B;" onclick="generateTokenFromCart()">🎫 Generate Token</button>
+        <button class="btn-primary btn-sm" style="background:#7B1E3B;" onclick="generateTokenFromCart(this)">🎫 Generate Token</button>
       </div>
     </div>
 
@@ -678,41 +678,53 @@ function buildCartRecords(payer, receiptName) {
   }));
 }
 
-async function generateTokenFromCart() {
+async function generateTokenFromCart(btn) {
   if (currentCart.length === 0) { showToast('Add at least one item first', 'error'); return; }
   const payer = getCartPayer();
   if (!payer) return;
+  // Guard against a double-click/double-tap creating two separate tokens for
+  // the same cart before the first request finishes and the cart clears —
+  // the button gives no other feedback that anything is happening, so a
+  // cashier used to instant response taps again and both requests go through.
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = 'Saving…'; }
   const receiptName = getCartReceiptName();
   const total = currentCart.reduce((s, c) => s + c.amount, 0);
 
-  const { data: token, error: tErr } = await db.from('dr_receipt_tokens').insert({
-    org_id: currentOrgId,
-    member_id: payer.memberId,
-    payer_name: payer.name,
-    phone: payer.phone,
-    family_no: payer.familyNo,
-    total_amount: total,
-    created_by: currentUser?.id || null,
-    status: 'pending'
-  }).select().single();
-  if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
+  try {
+    const { data: token, error: tErr } = await db.from('dr_receipt_tokens').insert({
+      org_id: currentOrgId,
+      member_id: payer.memberId,
+      payer_name: payer.name,
+      phone: payer.phone,
+      family_no: payer.familyNo,
+      total_amount: total,
+      created_by: currentUser?.id || null,
+      status: 'pending'
+    }).select().single();
+    if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
 
-  const records = buildCartRecords(payer, receiptName).map(r => ({ ...r, token_id: token.id }));
-  const { data: saved, error: dErr } = await db.from('dr_donations').insert(records).select();
-  if (dErr) { showToast('Error: ' + dErr.message, 'error'); return; }
+    const records = buildCartRecords(payer, receiptName).map(r => ({ ...r, token_id: token.id }));
+    const { data: saved, error: dErr } = await db.from('dr_donations').insert(records).select();
+    if (dErr) { showToast('Error: ' + dErr.message, 'error'); return; }
 
-  showToast(`✅ All entries saved successfully — 🎫 Token issued for ${formatAmount(total)}. Give the slip to the donor.`, 'success');
-  lastSavedDonationId = saved[saved.length - 1].id;
+    showToast(`✅ All entries saved successfully — 🎫 Token issued for ${formatAmount(total)}. Give the slip to the donor.`, 'success');
+    lastSavedDonationId = saved[saved.length - 1].id;
 
-  saved.forEach((s, i) => recentEntries.unshift({ id: s.id, donor: s.donor_name, family: s.family_no || '—', phone: s.phone || '—', head: currentCart[i]?.headName || '—', amount: s.amount, munQty: s.mun_qty }));
-  updateRecentEntries();
+    saved.forEach((s, i) => recentEntries.unshift({ id: s.id, donor: s.donor_name, family: s.family_no || '—', phone: s.phone || '—', head: currentCart[i]?.headName || '—', amount: s.amount, munQty: s.mun_qty }));
+    updateRecentEntries();
 
-  showTokenSlip(token.id);
+    showTokenSlip(token.id);
 
-  currentCart = [];
-  renderCartList();
-  await loadGeneralHeadsEntry();
-  if (entryEventId) await loadEventHeadsEntry();
+    currentCart = [];
+    renderCartList();
+    await loadGeneralHeadsEntry();
+    if (entryEventId) await loadEventHeadsEntry();
+  } finally {
+    // On success renderCartList() replaces this button (cart-actions hides
+    // since the cart is now empty); on an error path above it's still on
+    // screen, so re-enable it so the cashier isn't stuck.
+    if (btn && document.body.contains(btn)) { btn.disabled = false; btn.textContent = '🎫 Generate Token'; }
+  }
 }
 
 // ========== GENERATE TOKEN FROM ALREADY-SAVED DONATIONS ==========
