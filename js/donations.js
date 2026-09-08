@@ -121,6 +121,13 @@ async function renderEntry() {
       <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Every donation needs a token, regardless of amount — this is what the donor takes to the cash counter to pay.</p>
       <div id="cart-actions" style="display:none;margin-top:6px;">
         <button class="btn-primary btn-sm" style="background:#7B1E3B;" onclick="generateTokenFromCart(this)">🎫 Generate Token</button>
+        <div style="margin-top:8px;">
+          <a href="javascript:void(0)" style="font-size:12px;color:var(--text-muted);" onclick="toggleManualReceiptEntry()">📝 Back-entry for an already-issued paper receipt no.</a>
+          <div id="cart-manual-receipt-row" style="display:none;margin-top:6px;gap:6px;align-items:center;">
+            <input type="number" id="cart-manual-receipt-no" placeholder="Receipt No." min="1" style="width:100px;display:inline-block;" />
+            <button class="btn-secondary btn-sm" onclick="generateManualReceiptFromCart(this)">Save as Already-Paid</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -724,6 +731,79 @@ async function generateTokenFromCart(btn) {
     // since the cart is now empty); on an error path above it's still on
     // screen, so re-enable it so the cashier isn't stuck.
     if (btn && document.body.contains(btn)) { btn.disabled = false; btn.textContent = '🎫 Generate Token'; }
+  }
+}
+
+function toggleManualReceiptEntry() {
+  const row = document.getElementById('cart-manual-receipt-row');
+  if (!row) return;
+  const showing = row.style.display !== 'none';
+  row.style.display = showing ? 'none' : 'flex';
+  if (!showing) document.getElementById('cart-manual-receipt-no')?.focus();
+}
+
+// For back-entering paper receipts written by hand before this token existed
+// (e.g. receipts 1-37 from before the app was in use) — skips the
+// pending → Token Desk → receive-amount flow entirely since these are
+// already fully paid on paper, and takes the exact receipt number instead
+// of the next one off the counter, so the app's numbering doesn't collide
+// with numbers already handed out.
+async function generateManualReceiptFromCart(btn) {
+  if (currentCart.length === 0) { showToast('Add at least one item first', 'error'); return; }
+  const payer = getCartPayer();
+  if (!payer) return;
+  const noInput = document.getElementById('cart-manual-receipt-no');
+  const manualNo = parseInt(noInput?.value, 10);
+  if (!manualNo || manualNo <= 0) { showToast('Enter a valid receipt number', 'error'); return; }
+
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = 'Saving…'; }
+  const receiptName = getCartReceiptName();
+  const total = currentCart.reduce((s, c) => s + c.amount, 0);
+
+  try {
+    const [{ count: c1 }, { count: c2 }, { count: c3 }] = await Promise.all([
+      db.from('dr_receipt_tokens').select('id', { count: 'exact', head: true }).eq('org_id', currentOrgId).eq('receipt_no', manualNo),
+      db.from('dr_donations').select('id', { count: 'exact', head: true }).eq('org_id', currentOrgId).eq('receipt_no', manualNo),
+      db.from('dr_token_splits').select('id', { count: 'exact', head: true }).eq('org_id', currentOrgId).eq('receipt_no', manualNo)
+    ]);
+    if ((c1 || 0) + (c2 || 0) + (c3 || 0) > 0) {
+      showToast(`Receipt No. ${manualNo} is already used — check Receipt Register`, 'error');
+      return;
+    }
+
+    const { data: token, error: tErr } = await db.from('dr_receipt_tokens').insert({
+      org_id: currentOrgId,
+      member_id: payer.memberId,
+      payer_name: payer.name,
+      phone: payer.phone,
+      family_no: payer.familyNo,
+      total_amount: total,
+      created_by: currentUser?.id || null,
+      status: 'paid',
+      paid_at: new Date().toISOString(),
+      receipt_no: manualNo
+    }).select().single();
+    if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
+
+    const records = buildCartRecords(payer, receiptName).map(r => ({ ...r, token_id: token.id, received_amount: r.amount }));
+    const { data: saved, error: dErr } = await db.from('dr_donations').insert(records).select();
+    if (dErr) { showToast('Error: ' + dErr.message, 'error'); return; }
+
+    showToast(`✅ Saved as Receipt No. ${manualNo} — opening receipt`, 'success');
+    lastSavedDonationId = saved[saved.length - 1].id;
+
+    saved.forEach((s, i) => recentEntries.unshift({ id: s.id, donor: s.donor_name, family: s.family_no || '—', phone: s.phone || '—', head: currentCart[i]?.headName || '—', amount: s.amount, munQty: s.mun_qty }));
+    updateRecentEntries();
+
+    showCombinedTokenReceipt(token.id);
+
+    currentCart = [];
+    renderCartList();
+    if (noInput) noInput.value = '';
+    await loadGeneralHeadsEntry();
+    if (entryEventId) await loadEventHeadsEntry();
+  } finally {
+    if (btn && document.body.contains(btn)) { btn.disabled = false; btn.textContent = 'Save as Already-Paid'; }
   }
 }
 
