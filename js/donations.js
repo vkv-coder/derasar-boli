@@ -1085,8 +1085,51 @@ async function updateDonation(id, refreshFn) {
   else if (refreshFn === 'reports') loadReport();
 }
 
+// Guards against silently orphaning an already-paid/printed receipt.
+// The plain per-line ✕ delete used to have no awareness of the parent
+// dr_receipt_tokens row at all — deleting the last (or only) line under a
+// token that had already been marked paid/receipted left that token stuck
+// showing a receipt number with zero items behind it, unprintable
+// (showCombinedTokenReceipt bails when it finds no lines). Real incident:
+// 2026-09-08, receipt #7 (Gurupujan, Paryushan) went unprintable this way.
 async function deleteDonation(id, refreshFn) {
-  if (!confirm('Delete this donation entry? This cannot be undone.')) return;
+  const { data: d, error: dErr } = await db.from('dr_donations')
+    .select('id, token_id, receipt_no, received_amount')
+    .eq('id', id).eq('org_id', currentOrgId).single();
+  if (dErr || !d) { showToast('Could not load donation', 'error'); return; }
+
+  let token = null;
+  let siblingCount = 0;
+  if (d.token_id) {
+    const { data: t } = await db.from('dr_receipt_tokens')
+      .select('status, receipt_no, token_no').eq('id', d.token_id).single();
+    token = t || null;
+    const { count } = await db.from('dr_donations')
+      .select('id', { count: 'exact', head: true }).eq('token_id', d.token_id);
+    siblingCount = count || 0;
+  }
+
+  const tokenAlreadyPaid = token && ['paid', 'paid_awaiting_split', 'allocated'].includes(token.status);
+  const standaloneAlreadyReceipted = !d.token_id && (d.receipt_no || parseFloat(d.received_amount || 0) > 0);
+
+  // Deleting the only remaining line under an already-paid token leaves the
+  // token orphaned (receipt number assigned, zero items, unprintable) —
+  // block outright rather than warn, since there's no way to recover the
+  // line's original amount/head from the token row alone once it's gone.
+  if (tokenAlreadyPaid && siblingCount <= 1) {
+    showToast(
+      `⚠️ This is the only item on Token #${token.token_no}${token.receipt_no ? ' / Receipt #' + token.receipt_no : ''}, which is already paid. Deleting it would make the receipt unprintable with no way to recover it. Cancel the whole token from the Tokens tab instead if this payment needs to be voided.`,
+      'error'
+    );
+    return;
+  }
+
+  const warning = (tokenAlreadyPaid || standaloneAlreadyReceipted)
+    ? `⚠️ This donation was already ${token ? `paid on Token #${token.token_no}` : 'received'}${(token?.receipt_no || d.receipt_no) ? ' and Receipt #' + (token?.receipt_no || d.receipt_no) + ' was already printed' : ''}. Deleting it now will NOT update that receipt — the receipt will still show it, but the record will be gone. This cannot be undone. Delete anyway?`
+    : 'Delete this donation entry? This cannot be undone.';
+
+  if (!confirm(warning)) return;
+
   const { error } = await db.from('dr_donations').delete().eq('id', id).eq('org_id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Donation deleted');
