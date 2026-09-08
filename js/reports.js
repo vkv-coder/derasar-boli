@@ -59,14 +59,16 @@ async function onLiveEventChange() {
 
   await loadLiveData();
 
-  // Subscribe to real-time changes
+  // Subscribe to real-time changes — filtered by org, not event_id, since
+  // general-head donations always carry event_id=NULL (see below) and would
+  // never trigger an event_id-filtered subscription.
   liveSubscription = db
     .channel('live-donations-' + liveEventId)
     .on('postgres_changes', {
       event: '*',
       schema: 'public',
       table: 'dr_donations',
-      filter: `event_id=eq.${liveEventId}`
+      filter: `org_id=eq.${currentOrgId}`
     }, () => {
       loadLiveData();
     })
@@ -76,12 +78,16 @@ async function onLiveEventChange() {
 async function loadLiveData() {
   const el = document.getElementById('live-content');
 
-  // Load all donations for event
+  // General heads/donations are org-wide, not tied to any one event
+  // (event_id is always NULL for them — only Swapna/Paryushan items carry
+  // an event_id) — so include both the selected event's donations AND
+  // every event_id-null (general) donation, instead of filtering everything
+  // down to just this event and silently dropping all general-head giving.
   const { data: donations } = await db
     .from('dr_donations')
     .select('*')
-    .eq('event_id', liveEventId)
     .eq('org_id', currentOrgId)
+    .or(`event_id.eq.${liveEventId},event_id.is.null`)
     .order('created_at', { ascending: false });
 
   // Load swapna items
@@ -91,11 +97,11 @@ async function loadLiveData() {
     .eq('event_id', liveEventId)
     .order('display_order');
 
-  // Load general heads
+  // General heads have no event_id of their own — fetch by org, not event.
   const { data: generalHeads } = await db
     .from('dr_general_heads')
     .select('*')
-    .eq('event_id', liveEventId)
+    .eq('org_id', currentOrgId)
     .order('display_order');
 
   if (!donations) return;
