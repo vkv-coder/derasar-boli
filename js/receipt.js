@@ -380,7 +380,7 @@ async function showDonationReceipt(donationId) {
   </div>
 </div>
 <div class="btns">
-  <button class="btn btn-print" onclick="window.print()">🖨 Print / PDF</button>
+  <button class="btn btn-print" onclick="window.print();this.disabled=true;this.textContent='✅ Printed';">🖨 Print / PDF</button>
   <button class="btn btn-close" onclick="window.close()">Close</button>
 </div>
 </body>
@@ -466,7 +466,7 @@ async function showCombinedTokenReceipt(tokenId) {
   </div>
 </div>
 <div class="btns">
-  <button class="btn btn-print" onclick="window.print()">🖨 Print / PDF</button>
+  <button class="btn btn-print" onclick="window.print();this.disabled=true;this.textContent='✅ Printed';">🖨 Print / PDF</button>
   <button class="btn btn-close" onclick="window.close()">Close</button>
 </div>
 </body>
@@ -519,7 +519,7 @@ async function showSplitReceipt(splitId) {
   </div>
 </div>
 <div class="btns">
-  <button class="btn btn-print" onclick="window.print()">🖨 Print / PDF</button>
+  <button class="btn btn-print" onclick="window.print();this.disabled=true;this.textContent='✅ Printed';">🖨 Print / PDF</button>
   <button class="btn btn-close" onclick="window.close()">Close</button>
 </div>
 </body>
