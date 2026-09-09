@@ -349,7 +349,7 @@ function toggleSummaryRow(rowId) {
 // Shared renderer for both the 8-category summary and the item-wise summary
 // — each row expands in place to list the donations that make up its total,
 // with the receipt no. each one was actually printed under.
-function renderExpandableSummaryTable(containerId, titleHTML, rows, colLabel, printFnName) {
+function renderExpandableSummaryTable(containerId, titleHTML, rows, colLabel, printFnName, printDetailedFnName) {
   const el = document.getElementById(containerId);
   if (!el) return;
   if (rows.length === 0) { el.innerHTML = ''; return; }
@@ -358,7 +358,10 @@ function renderExpandableSummaryTable(containerId, titleHTML, rows, colLabel, pr
     <div class="card">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
         <span>${titleHTML}</span>
-        ${printFnName ? `<button class="btn-sm btn-secondary" onclick="${printFnName}()">🖨 Print (non-zero only)</button>` : ''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${printFnName ? `<button class="btn-sm btn-secondary" onclick="${printFnName}()">🖨 Totals Only</button>` : ''}
+          ${printDetailedFnName ? `<button class="btn-sm btn-secondary" onclick="${printDetailedFnName}()">🖨 With Receipt Nos</button>` : ''}
+        </div>
       </div>
       <div style="overflow-x:auto;">
         <table class="data-table">
@@ -426,7 +429,7 @@ function renderCategorySummary() {
   }).filter(r => r.name !== 'Uncategorized' || r.lines.length > 0);
 
   categorySummaryRows = rows;
-  renderExpandableSummaryTable('category-summary-container', '📂 Category-wise Summary (8 Khate)', rows, 'Category', 'printCategorySummary');
+  renderExpandableSummaryTable('category-summary-container', '📂 Category-wise Summary (8 Khate)', rows, 'Category', 'printCategorySummary', 'printCategorySummaryDetailed');
 }
 
 // ========== ITEM-WISE SUMMARY (every head/item in the Master List) ==========
@@ -478,7 +481,7 @@ function renderItemWiseSummary() {
   });
 
   itemSummaryRows = rows;
-  renderExpandableSummaryTable('item-summary-container', '📋 Item-wise Summary (Master List)', rows, 'Head / Item', 'printItemWiseSummary');
+  renderExpandableSummaryTable('item-summary-container', '📋 Item-wise Summary (Master List)', rows, 'Head / Item', 'printItemWiseSummary', 'printItemWiseSummaryDetailed');
 }
 
 // ========== GET STATUS ==========
@@ -1109,6 +1112,73 @@ function printSummaryReport(title, colLabel, rows) {
 
 function printCategorySummary() { printSummaryReport('Category-wise Summary (8 Khate)', 'Category', categorySummaryRows); }
 function printItemWiseSummary() { printSummaryReport('Item-wise Summary (Master List)', 'Head / Item', itemSummaryRows); }
+
+// Detailed version: under each non-zero head, lists every donation line
+// that makes up its total — name, receipt no. (via the same resolution
+// getDonationReceiptInfo() uses, so it matches what's actually printed on
+// each physical receipt), and amount — so a head's total can be checked
+// back against the individual receipts it came from.
+function printSummaryReportDetailed(title, colLabel, rows) {
+  const nonZero = rows.filter(r => r.entered > 0);
+  if (nonZero.length === 0) { showToast('No heads with an entered amount to print', 'error'); return; }
+
+  const totalEntered = nonZero.reduce((s, r) => s + r.entered, 0);
+
+  const sectionsHtml = nonZero.map(r => {
+    const lineRows = r.lines.map(d => {
+      const rec = getDonationReceiptInfo(d);
+      return `
+        <tr>
+          <td style="padding-left:20px;">${d.receipt_name || d.donor_name || '—'}</td>
+          <td>${rec.label}</td>
+          <td style="text-align:right;">₹${parseFloat(d.amount || 0).toLocaleString('en-IN')}</td>
+        </tr>`;
+    }).join('');
+    return `
+      <tr style="background:#f5f0e8;font-weight:700;">
+        <td colspan="2">${r.name}</td>
+        <td style="text-align:right;">₹${r.entered.toLocaleString('en-IN')}</td>
+      </tr>
+      ${lineRows}
+    `;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>${title} — Detailed</title>
+<style>
+  body{font-family:Arial,sans-serif;padding:20px;color:#222;}
+  h2{margin-bottom:2px;}
+  table{width:100%;border-collapse:collapse;margin-top:14px;}
+  th,td{border:1px solid #999;padding:5px 8px;font-size:12px;text-align:left;}
+  th{background:#7B1E3B;color:#fff;}
+  tfoot td{font-weight:700;background:#f5f5f5;}
+  .btn{margin-top:20px;padding:10px 18px;border:none;border-radius:8px;background:#7B1E3B;color:#fff;font-size:13px;cursor:pointer;}
+  @media print{ @page{size:A4;margin:12mm;} .btn{display:none;} }
+</style>
+</head>
+<body>
+  <h2>${title} — Detailed</h2>
+  <div style="font-size:12px;color:#555;">${nonZero.length} of ${rows.length} heads had an entry — empty heads omitted. Each head lists every receipt counted under it.</div>
+  <table>
+    <thead><tr><th>${colLabel} / Donor</th><th>Receipt No.</th><th style="text-align:right;">Amount</th></tr></thead>
+    <tbody>${sectionsHtml}</tbody>
+    <tfoot><tr><td colspan="2">Total</td><td style="text-align:right;">₹${totalEntered.toLocaleString('en-IN')}</td></tr></tfoot>
+  </table>
+  <button class="btn" onclick="window.print()">🖨 Print</button>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=800,height=900,scrollbars=yes');
+  if (!win) { showToast('Allow pop-ups to view the report', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+}
+
+function printCategorySummaryDetailed() { printSummaryReportDetailed('Category-wise Summary (8 Khate)', 'Category', categorySummaryRows); }
+function printItemWiseSummaryDetailed() { printSummaryReportDetailed('Item-wise Summary (Master List)', 'Head / Item', itemSummaryRows); }
 
 // A clean tabular printout for the physical audit file — not each receipt
 // re-rendered in full branded format (that's already one click away per row
