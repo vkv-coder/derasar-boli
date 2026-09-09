@@ -103,7 +103,10 @@ async function loadTokensList() {
                     <option value="online">📱 Online</option>
                   </select>
                   <input type="text" id="token-ref-${t.id}" placeholder="Chq/UPI No." style="display:none;width:100px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;margin-top:3px;" />
-                ` : (t.payment_mode === 'online' ? `📱 Online${t.payment_ref ? `<div style="font-size:11px;color:var(--text-muted);">${t.payment_ref}</div>` : ''}` : '💵 Cash')}
+                ` : `
+                  <div>${t.payment_mode === 'online' ? `📱 Online${t.payment_ref ? `<div style="font-size:11px;color:var(--text-muted);">${t.payment_ref}</div>` : ''}` : '💵 Cash'}</div>
+                  <button class="btn-sm btn-secondary" style="font-size:11px;padding:2px 6px;margin-top:3px;" onclick="editPaymentModeModal('Token','${t.id}')">✏️ Edit</button>
+                `}
               </td>
               <td>${
                 t.status === 'pending' ? '<span style="color:#ff9800;">Pending</span>' :
@@ -292,4 +295,72 @@ async function showAllocationResultsModal(splits, tokenId) {
 async function printSplitAndRefresh(splitId, tokenId) {
   await showSplitReceipt(splitId);
   await showTokenSplitsModal(tokenId);
+}
+
+// ========== EDIT PAYMENT MODE (self-service correction) ==========
+// Cash/Online gets picked once at confirm time and is easy to get wrong in
+// a rush — this had to be fixed by hand via direct DB correction multiple
+// times in one day (2026-09-08/09) before this existed. Callable from both
+// the Tokens list (today's paid rows) and the Receipt Register (any date,
+// any source — Token/Split/Donation), since `source`/`sourceId` already
+// match the shape reprintRegisterRow() uses.
+const PAYMENT_MODE_TABLE = { Token: 'dr_receipt_tokens', Split: 'dr_token_splits', Donation: 'dr_donations' };
+
+async function editPaymentModeModal(source, id) {
+  const table = PAYMENT_MODE_TABLE[source];
+  if (!table) return;
+  const { data: row, error } = await db.from(table).select('*').eq('id', id).single();
+  if (error || !row) { showToast('Could not load receipt', 'error'); return; }
+
+  const label = row.payer_name || row.name || row.receipt_name || row.donor_name || '';
+  const mode = row.payment_mode || 'cash';
+  const ref = row.payment_ref || '';
+
+  showModal(`
+    <div class="modal-title">Edit Payment Method${row.receipt_no ? ' — Receipt #' + row.receipt_no : ''}</div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">${label}</div>
+    <div class="form-group">
+      <label>Payment Mode</label>
+      <select id="edit-pm-mode" onchange="toggleEditPmRef()">
+        <option value="cash" ${mode === 'cash' ? 'selected' : ''}>💵 Cash</option>
+        <option value="online" ${mode === 'online' ? 'selected' : ''}>📱 Online</option>
+      </select>
+    </div>
+    <div class="form-group" id="edit-pm-ref-row" style="display:${mode === 'online' ? 'block' : 'none'};">
+      <label>Chq/UPI No.</label>
+      <input type="text" id="edit-pm-ref" value="${ref}" placeholder="Chq/UPI No." />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="savePaymentModeEdit('${source}','${id}')">💾 Save</button>
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+    </div>
+  `);
+}
+
+function toggleEditPmRef() {
+  const mode = document.getElementById('edit-pm-mode')?.value;
+  const row = document.getElementById('edit-pm-ref-row');
+  if (row) row.style.display = mode === 'online' ? 'block' : 'none';
+}
+
+async function savePaymentModeEdit(source, id) {
+  const table = PAYMENT_MODE_TABLE[source];
+  const mode = document.getElementById('edit-pm-mode')?.value || 'cash';
+  const ref = mode === 'online' ? (document.getElementById('edit-pm-ref')?.value || '').trim() || null : null;
+
+  const { error } = await db.from(table).update({ payment_mode: mode, payment_ref: ref }).eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+
+  // A token's own donation lines carry their own copy of payment_mode/ref
+  // (used as the fallback in showDonationReceipt when a single line is
+  // reprinted directly) — keep them in sync so every reprint path shows
+  // the corrected method, not just the combined-token receipt.
+  if (source === 'Token') {
+    await db.from('dr_donations').update({ payment_mode: mode, payment_ref: ref }).eq('token_id', id);
+  }
+
+  closeModal();
+  showToast('✅ Payment method updated', 'success');
+  if (document.getElementById('register-table-container')) await loadReceiptRegister();
+  if (document.getElementById('tokens-list')) await loadTokensList();
 }

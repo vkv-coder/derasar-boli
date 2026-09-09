@@ -974,7 +974,10 @@ function renderReceiptRegisterTable() {
               <td>${formatAmount(r.amount)}</td>
               <td style="font-size:12px;">${r.mode === 'online' ? '📱 Online' : '💵 Cash'}</td>
               <td style="font-size:11px;color:var(--text-muted);">${r.source}</td>
-              <td><button class="btn-sm btn-secondary" onclick="reprintRegisterRow('${r.source}','${r.sourceId}')">🖨</button></td>
+              <td>
+                <button class="btn-sm btn-secondary" onclick="reprintRegisterRow('${r.source}','${r.sourceId}')">🖨</button>
+                <button class="btn-sm btn-secondary" onclick="editPaymentModeModal('${r.source}','${r.sourceId}')">✏️</button>
+              </td>
             </tr>
           `).join('')}
         </tbody>
