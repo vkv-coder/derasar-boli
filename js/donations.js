@@ -770,10 +770,16 @@ async function generateManualReceiptFromCart(btn) {
   const paymentRef = paymentMode === 'online'
     ? (document.getElementById('cart-manual-payment-ref')?.value || '').trim() || null
     : null;
-
-  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = 'Saving…'; }
   const receiptName = getCartReceiptName();
   const total = currentCart.reduce((s, c) => s + c.amount, 0);
+
+  // Same stop-and-check as the Token Desk flow — see js/tokens.js
+  // confirmTokenReceived() for why this matters (real repeated mistakes,
+  // caught only after the receipt was already printed and handed out).
+  const confirmMsg = `Confirm payment method before saving:\n\n₹${total.toLocaleString('en-IN')} for Receipt No. ${manualNo} via ${paymentMode === 'online' ? 'ONLINE' : 'CASH'}${paymentRef ? ' (Ref: ' + paymentRef + ')' : ''}\n\nIs this correct?`;
+  if (!confirm(confirmMsg)) return;
+
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = 'Saving…'; }
 
   try {
     const [{ count: c1 }, { count: c2 }, { count: c3 }] = await Promise.all([

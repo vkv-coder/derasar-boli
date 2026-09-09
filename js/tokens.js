@@ -159,6 +159,15 @@ async function confirmTokenReceived(tokenId, splitLater, btn) {
     ? (document.getElementById(`token-ref-${tokenId}`)?.value || '').trim() || null
     : null;
 
+  // Explicit stop-and-check before it's written and printed — the mode
+  // select silently defaults to Cash, so a cashier who doesn't notice/change
+  // it for an Online payment produces a receipt with the wrong method on it
+  // (real, repeated incidents 2026-09-08/09, corrected by hand afterward
+  // each time). This is the one point that's cheap to fix after the fact
+  // becomes expensive (already printed, already handed to the donor).
+  const confirmMsg = `Confirm payment method before saving:\n\n₹${enteredAmount.toLocaleString('en-IN')} received via ${paymentMode === 'online' ? 'ONLINE' : 'CASH'}${paymentRef ? ' (Ref: ' + paymentRef + ')' : ''}\n\nIs this correct?`;
+  if (!confirm(confirmMsg)) return;
+
   // The row still reads "Pending" until loadTokensList() re-renders at the
   // end of this — several sequential DB round-trips away — so without an
   // immediate visual change here a cashier assumes the click didn't
