@@ -13,6 +13,8 @@ let reportTokenMap = {};      // token_id -> dr_receipt_tokens row (for resolvin
 let reportSplitsByToken = {}; // token_id -> [dr_token_splits rows]
 let reportOrgPrefix = '';
 let expandedSummaryRows = {}; // rowId -> bool, shared by category + item-wise summary tables
+let categorySummaryRows = []; // latest computed rows, kept for the Print button (on-screen table always shows zero-amount rows too)
+let itemSummaryRows = [];
 
 // ========== RENDER REPORTS PAGE ==========
 async function renderReports() {
@@ -347,14 +349,17 @@ function toggleSummaryRow(rowId) {
 // Shared renderer for both the 8-category summary and the item-wise summary
 // — each row expands in place to list the donations that make up its total,
 // with the receipt no. each one was actually printed under.
-function renderExpandableSummaryTable(containerId, titleHTML, rows, colLabel) {
+function renderExpandableSummaryTable(containerId, titleHTML, rows, colLabel, printFnName) {
   const el = document.getElementById(containerId);
   if (!el) return;
   if (rows.length === 0) { el.innerHTML = ''; return; }
 
   el.innerHTML = `
     <div class="card">
-      <div class="card-title">${titleHTML}</div>
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span>${titleHTML}</span>
+        ${printFnName ? `<button class="btn-sm btn-secondary" onclick="${printFnName}()">🖨 Print (non-zero only)</button>` : ''}
+      </div>
       <div style="overflow-x:auto;">
         <table class="data-table">
           <thead><tr><th style="width:20px;"></th><th>${colLabel}</th><th style="text-align:right;">Entered</th><th style="text-align:right;">Received</th></tr></thead>
@@ -420,7 +425,8 @@ function renderCategorySummary() {
     };
   }).filter(r => r.name !== 'Uncategorized' || r.lines.length > 0);
 
-  renderExpandableSummaryTable('category-summary-container', '📂 Category-wise Summary (8 Khate)', rows, 'Category');
+  categorySummaryRows = rows;
+  renderExpandableSummaryTable('category-summary-container', '📂 Category-wise Summary (8 Khate)', rows, 'Category', 'printCategorySummary');
 }
 
 // ========== ITEM-WISE SUMMARY (every head/item in the Master List) ==========
@@ -471,7 +477,8 @@ function renderItemWiseSummary() {
     };
   });
 
-  renderExpandableSummaryTable('item-summary-container', '📋 Item-wise Summary (Master List)', rows, 'Head / Item');
+  itemSummaryRows = rows;
+  renderExpandableSummaryTable('item-summary-container', '📋 Item-wise Summary (Master List)', rows, 'Head / Item', 'printItemWiseSummary');
 }
 
 // ========== GET STATUS ==========
@@ -1014,6 +1021,64 @@ function downloadReceiptRegisterExcel() {
   XLSX.writeFile(wb, `Receipt_Register_${fromDate}_to_${toDate}.xlsx`);
   showToast('✅ Excel downloaded!', 'success');
 }
+
+// Printed Category-wise/Item-wise summaries only include heads that
+// actually received an entry (entered > 0) — the on-screen table
+// deliberately keeps every head visible, zero included, so staff can spot
+// which heads are still empty; printing all of them would bury the real
+// totals under dozens of blank rows. A head with a pending (unpaid) amount
+// still counts as non-zero here — "empty" means no entry was ever logged
+// against it at all, not that it's unpaid.
+function printSummaryReport(title, colLabel, rows) {
+  const nonZero = rows.filter(r => r.entered > 0);
+  if (nonZero.length === 0) { showToast('No heads with an entered amount to print', 'error'); return; }
+
+  const totalEntered = nonZero.reduce((s, r) => s + r.entered, 0);
+  const totalReceived = nonZero.reduce((s, r) => s + r.received, 0);
+
+  const rowsHtml = nonZero.map(r => `
+    <tr>
+      <td>${r.name}</td>
+      <td style="text-align:right;">₹${r.entered.toLocaleString('en-IN')}</td>
+      <td style="text-align:right;">₹${r.received.toLocaleString('en-IN')}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>${title}</title>
+<style>
+  body{font-family:Arial,sans-serif;padding:20px;color:#222;}
+  h2{margin-bottom:2px;}
+  table{width:100%;border-collapse:collapse;margin-top:14px;}
+  th,td{border:1px solid #999;padding:6px 8px;font-size:12px;text-align:left;}
+  th{background:#7B1E3B;color:#fff;}
+  tfoot td{font-weight:700;background:#f5f5f5;}
+  .btn{margin-top:20px;padding:10px 18px;border:none;border-radius:8px;background:#7B1E3B;color:#fff;font-size:13px;cursor:pointer;}
+  @media print{ @page{size:A4;margin:12mm;} .btn{display:none;} }
+</style>
+</head>
+<body>
+  <h2>${title}</h2>
+  <div style="font-size:12px;color:#555;">${nonZero.length} of ${rows.length} heads had an entry — empty heads omitted from this printout.</div>
+  <table>
+    <thead><tr><th>${colLabel}</th><th style="text-align:right;">Entered</th><th style="text-align:right;">Received</th></tr></thead>
+    <tbody>${rowsHtml}</tbody>
+    <tfoot><tr><td>Total</td><td style="text-align:right;">₹${totalEntered.toLocaleString('en-IN')}</td><td style="text-align:right;">₹${totalReceived.toLocaleString('en-IN')}</td></tr></tfoot>
+  </table>
+  <button class="btn" onclick="window.print()">🖨 Print</button>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=800,height=900,scrollbars=yes');
+  if (!win) { showToast('Allow pop-ups to view the report', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+}
+
+function printCategorySummary() { printSummaryReport('Category-wise Summary (8 Khate)', 'Category', categorySummaryRows); }
+function printItemWiseSummary() { printSummaryReport('Item-wise Summary (Master List)', 'Head / Item', itemSummaryRows); }
 
 // A clean tabular printout for the physical audit file — not each receipt
 // re-rendered in full branded format (that's already one click away per row
