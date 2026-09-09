@@ -315,10 +315,15 @@ async function editPaymentModeModal(source, id) {
   const label = row.payer_name || row.name || row.receipt_name || row.donor_name || '';
   const mode = row.payment_mode || 'cash';
   const ref = row.payment_ref || '';
+  // Local calendar date the receipt currently shows — this is what prints
+  // on the paper receipt (created_at) and what the Register's date column/
+  // filter reads (receipt_no_assigned_at), kept in sync with each other.
+  const currentDate = row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : '';
 
   showModal(`
-    <div class="modal-title">Edit Payment Method${row.receipt_no ? ' — Receipt #' + row.receipt_no : ''}</div>
+    <div class="modal-title">Edit Receipt${row.receipt_no ? ' — #' + row.receipt_no : ''}</div>
     <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">${label}</div>
+    <input type="hidden" id="edit-pm-created-at" value="${row.created_at || ''}" />
     <div class="form-group">
       <label>Payment Mode</label>
       <select id="edit-pm-mode" onchange="toggleEditPmRef()">
@@ -329,6 +334,11 @@ async function editPaymentModeModal(source, id) {
     <div class="form-group" id="edit-pm-ref-row" style="display:${mode === 'online' ? 'block' : 'none'};">
       <label>Chq/UPI No.</label>
       <input type="text" id="edit-pm-ref" value="${ref}" placeholder="Chq/UPI No." />
+    </div>
+    <div class="form-group">
+      <label>Receipt Date</label>
+      <input type="date" id="edit-pm-date" value="${currentDate}" />
+      <p style="font-size:11px;color:var(--text-muted);margin-top:4px;">For fixing back-entries where the paper receipt's real date differs from when it was typed into the app (e.g. receipts #1–37).</p>
     </div>
     <div class="modal-actions">
       <button class="btn-primary" onclick="savePaymentModeEdit('${source}','${id}')">💾 Save</button>
@@ -348,19 +358,38 @@ async function savePaymentModeEdit(source, id) {
   const mode = document.getElementById('edit-pm-mode')?.value || 'cash';
   const ref = mode === 'online' ? (document.getElementById('edit-pm-ref')?.value || '').trim() || null : null;
 
-  const { error } = await db.from(table).update({ payment_mode: mode, payment_ref: ref }).eq('id', id);
+  const update = { payment_mode: mode, payment_ref: ref };
+
+  // Swap just the calendar date, keeping the original time-of-day, rather
+  // than resetting to midnight — this only matters for back-entries where
+  // the paper receipt's real date differs from when it was typed into the
+  // app (receipts #1-37, entered as a batch 2026-09-08 but individually
+  // dated earlier on paper). created_at is what prints on the receipt;
+  // receipt_no_assigned_at is what the Register's date column/filter
+  // reads — both updated together so they can't drift apart.
+  const dateVal = document.getElementById('edit-pm-date')?.value;
+  const oldCreatedAt = document.getElementById('edit-pm-created-at')?.value;
+  if (dateVal) {
+    const newDt = oldCreatedAt ? new Date(oldCreatedAt) : new Date();
+    const [y, m, d] = dateVal.split('-').map(Number);
+    newDt.setFullYear(y, m - 1, d);
+    update.created_at = newDt.toISOString();
+    update.receipt_no_assigned_at = newDt.toISOString();
+  }
+
+  const { error } = await db.from(table).update(update).eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
   // A token's own donation lines carry their own copy of payment_mode/ref
   // (used as the fallback in showDonationReceipt when a single line is
   // reprinted directly) — keep them in sync so every reprint path shows
-  // the corrected method, not just the combined-token receipt.
+  // the corrected method/date, not just the combined-token receipt.
   if (source === 'Token') {
-    await db.from('dr_donations').update({ payment_mode: mode, payment_ref: ref }).eq('token_id', id);
+    await db.from('dr_donations').update(update).eq('token_id', id);
   }
 
   closeModal();
-  showToast('✅ Payment method updated', 'success');
+  showToast('✅ Receipt updated', 'success');
   if (document.getElementById('register-table-container')) await loadReceiptRegister();
   if (document.getElementById('tokens-list')) await loadTokensList();
 }
