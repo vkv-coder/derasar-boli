@@ -902,22 +902,28 @@ async function loadReceiptRegister() {
   const fromTs = new Date(fromDate + 'T00:00:00').toISOString();
   const toTs = new Date(toDate + 'T23:59:59.999').toISOString();
 
+  // A row whose receipt_no_assigned_at is somehow null (e.g. an early
+  // back-entry from before that column was consistently set — real
+  // incident 2026-09-09, receipts #1/#2) would otherwise fail BOTH sides
+  // of a plain gte/lte range check and become permanently invisible in
+  // the Register no matter what dates are picked, with no error to
+  // explain why. Falls back to created_at for exactly those rows so a
+  // gap like that surfaces instead of silently hiding a real receipt.
+  const orFilter = `and(receipt_no_assigned_at.gte.${fromTs},receipt_no_assigned_at.lte.${toTs}),and(receipt_no_assigned_at.is.null,created_at.gte.${fromTs},created_at.lte.${toTs})`;
+
   const [{ data: tokens }, { data: splits }, { data: donations }] = await Promise.all([
-    db.from('dr_receipt_tokens').select('id, receipt_no, receipt_no_assigned_at, payer_name, total_amount, payment_mode')
-      .eq('org_id', currentOrgId).not('receipt_no', 'is', null)
-      .gte('receipt_no_assigned_at', fromTs).lte('receipt_no_assigned_at', toTs),
-    db.from('dr_token_splits').select('id, receipt_no, receipt_no_assigned_at, name, amount, payment_mode')
-      .eq('org_id', currentOrgId).not('receipt_no', 'is', null)
-      .gte('receipt_no_assigned_at', fromTs).lte('receipt_no_assigned_at', toTs),
-    db.from('dr_donations').select('id, receipt_no, receipt_no_assigned_at, donor_name, receipt_name, amount, payment_mode')
-      .eq('org_id', currentOrgId).not('receipt_no', 'is', null)
-      .gte('receipt_no_assigned_at', fromTs).lte('receipt_no_assigned_at', toTs)
+    db.from('dr_receipt_tokens').select('id, receipt_no, receipt_no_assigned_at, created_at, payer_name, total_amount, payment_mode')
+      .eq('org_id', currentOrgId).not('receipt_no', 'is', null).or(orFilter),
+    db.from('dr_token_splits').select('id, receipt_no, receipt_no_assigned_at, created_at, name, amount, payment_mode')
+      .eq('org_id', currentOrgId).not('receipt_no', 'is', null).or(orFilter),
+    db.from('dr_donations').select('id, receipt_no, receipt_no_assigned_at, created_at, donor_name, receipt_name, amount, payment_mode')
+      .eq('org_id', currentOrgId).not('receipt_no', 'is', null).or(orFilter)
   ]);
 
   registerRows = [
-    ...(tokens || []).map(t => ({ receiptNo: t.receipt_no, date: t.receipt_no_assigned_at, name: t.payer_name, amount: parseFloat(t.total_amount), source: 'Token', sourceId: t.id, mode: t.payment_mode || 'cash' })),
-    ...(splits || []).map(s => ({ receiptNo: s.receipt_no, date: s.receipt_no_assigned_at, name: s.name, amount: parseFloat(s.amount), source: 'Split', sourceId: s.id, mode: s.payment_mode || 'cash' })),
-    ...(donations || []).map(d => ({ receiptNo: d.receipt_no, date: d.receipt_no_assigned_at, name: d.receipt_name || d.donor_name, amount: parseFloat(d.amount), source: 'Donation', sourceId: d.id, mode: d.payment_mode || 'cash' }))
+    ...(tokens || []).map(t => ({ receiptNo: t.receipt_no, date: t.receipt_no_assigned_at || t.created_at, name: t.payer_name, amount: parseFloat(t.total_amount), source: 'Token', sourceId: t.id, mode: t.payment_mode || 'cash' })),
+    ...(splits || []).map(s => ({ receiptNo: s.receipt_no, date: s.receipt_no_assigned_at || s.created_at, name: s.name, amount: parseFloat(s.amount), source: 'Split', sourceId: s.id, mode: s.payment_mode || 'cash' })),
+    ...(donations || []).map(d => ({ receiptNo: d.receipt_no, date: d.receipt_no_assigned_at || d.created_at, name: d.receipt_name || d.donor_name, amount: parseFloat(d.amount), source: 'Donation', sourceId: d.id, mode: d.payment_mode || 'cash' }))
   ].sort((a, b) => a.receiptNo - b.receiptNo);
 
   renderReceiptRegisterTable();
