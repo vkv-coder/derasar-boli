@@ -630,6 +630,26 @@ function onCartReceiptNameSelectChange() {
   }
 }
 
+// Clears the donor name/phone/member-selection fields after a successful
+// save so the form is ready for the NEXT donor immediately — previously
+// only currentCart (the items) was cleared; the donor's name/phone/selected
+// member stayed on screen, so the cashier had to manually clear them (or
+// navigate away and back to Donation Entry) before starting the next
+// person. Deliberately leaves the Donor Type selector (Other/Member) as-is
+// — most donors at a stretch are the same type, so not resetting that saves
+// a click rather than costing one.
+function resetCartDonorFields() {
+  const nameEl = document.getElementById('cart-other-name');
+  if (nameEl) nameEl.value = '';
+  for (let i = 0; i < 10; i++) {
+    const box = document.getElementById('ph-' + i);
+    if (box) box.value = '';
+  }
+  const hiddenPhone = document.getElementById('cart-other-phone');
+  if (hiddenPhone) hiddenPhone.value = '';
+  clearCartMember();
+}
+
 function clearCartMember() {
   modalSelectedMember = null;
   document.getElementById('cart-selected-member').style.display = 'none';
@@ -729,6 +749,7 @@ async function generateTokenFromCart(btn) {
 
     currentCart = [];
     renderCartList();
+    resetCartDonorFields();
     await loadGeneralHeadsEntry();
     if (entryEventId) await loadEventHeadsEntry();
   } finally {
@@ -829,6 +850,7 @@ async function generateManualReceiptFromCart(btn) {
 
     currentCart = [];
     renderCartList();
+    resetCartDonorFields();
     if (noInput) noInput.value = '';
     const refInput = document.getElementById('cart-manual-payment-ref');
     if (refInput) { refInput.value = ''; refInput.style.display = 'none'; }
