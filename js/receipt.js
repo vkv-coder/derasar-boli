@@ -313,6 +313,17 @@ async function showDonationReceipt(donationId) {
   }
   if (d.receipt_id) { await showReceiptById(d.receipt_id, false); return; }
 
+  // A donation entered through the normal flow always belongs to a token
+  // (the app requires one regardless of amount) — that token is the real
+  // receipt, with its own receipt_no. Without this check, clicking 🧾 here
+  // on a token-bundled line stamped a SEPARATE standalone receipt_no
+  // directly onto this one donation row, alongside the token's real number
+  // — two receipt numbers for one payment. Real incident 2026-09-09:
+  // Jagdish C Shah's token was already receipt #52, but clicking this
+  // button also minted #56 on the same donation, unprintable/confusing
+  // since it duplicated money already receipted under #52.
+  if (d.token_id) { await showCombinedTokenReceipt(d.token_id); return; }
+
   const { data: org } = await db.from('dr_organizations').select('*').eq('id', d.org_id || currentOrgId).single();
   const templeHeader = buildTempleHeader(org);
 
