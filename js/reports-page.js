@@ -497,6 +497,22 @@ function getDonationStatus(d) {
   return { label: 'MISMATCH', color: '#f44336', bg: '#FFEBEE' };
 }
 
+// Raw receipt number (not the formatted "prefix+no" label) for sorting —
+// same resolution order getDonationReceiptInfo() uses for display: the
+// donation's own receipt_no, the legacy dr_receipts link, then its token's
+// receipt_no, then the lowest receipt_no among its token's splits.
+function resolveReportReceiptNo(d) {
+  if (d.receipt_no) return d.receipt_no;
+  if (d._receipt?.receipt_no) return d._receipt.receipt_no;
+  if (d.token_id) {
+    const t = reportTokenMap[d.token_id];
+    if (t?.receipt_no) return t.receipt_no;
+    const splits = (reportSplitsByToken[d.token_id] || []).filter(s => s.receipt_no);
+    if (splits.length) return Math.min(...splits.map(s => s.receipt_no));
+  }
+  return null;
+}
+
 // ========== RENDER TABLE ==========
 function renderReportTable(donations) {
   const el = document.getElementById('report-table-container');
@@ -507,6 +523,20 @@ function renderReportTable(donations) {
     </div>`;
     return;
   }
+
+  // Sorted by real receipt number so the # column matches what's written on
+  // paper — raw insertion order (the old behavior) has no relationship to
+  // receipt number once back-entries get typed out of paper-slip order, or
+  // dates get corrected later (both already happened here). Rows with no
+  // receipt number yet (still pending) sort last, by date.
+  donations = [...donations].sort((a, b) => {
+    const na = resolveReportReceiptNo(a);
+    const nb = resolveReportReceiptNo(b);
+    if (na === null && nb === null) return new Date(a.created_at) - new Date(b.created_at);
+    if (na === null) return 1;
+    if (nb === null) return -1;
+    return na - nb;
+  });
 
   el.innerHTML = `
     <table class="data-table" style="min-width:800px;">
@@ -528,7 +558,7 @@ function renderReportTable(donations) {
         ${donations.map((d, i) => {
           const status = getDonationStatus(d);
           const headName = getDonationHeadName(d);
-          const receiptNo = d._receipt ? d._receipt.receipt_no : (d.receipt_id ? '...' : '—');
+          const receiptInfo = getDonationReceiptInfo(d);
           return `
             <tr style="background:${status.bg};">
               <td style="color:var(--text-muted);font-size:11px;">${i + 1}</td>
@@ -555,11 +585,11 @@ function renderReportTable(donations) {
                   ${status.label}
                 </span>
               </td>
-              <td style="font-size:12px;font-weight:600;color:var(--primary);">${receiptNo}</td>
+              <td style="font-size:12px;font-weight:600;color:${receiptInfo.pending ? '#ff9800' : 'var(--primary)'};">${receiptInfo.label}</td>
               <td>
                 <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                  ${d._receipt ? `
-                    <button class="btn-sm btn-secondary" onclick="showReceiptById('${d.receipt_id}', false)" title="View Receipt">🧾</button>
+                  ${!receiptInfo.pending ? `
+                    <button class="btn-sm btn-secondary" onclick="showDonationReceipt('${d.id}')" title="View Receipt">🧾</button>
                   ` : `
                     <button class="btn-sm btn-primary" onclick="processReportRow('${d.id}')" title="Generate Receipt & WhatsApp">✅</button>
                   `}
