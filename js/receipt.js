@@ -304,25 +304,15 @@ function formatReceiptNo(prefix, no) {
   return (prefix || '') + no;
 }
 
-async function showDonationReceipt(donationId) {
+// Returns just the `.receipt` div markup for one standalone (non-token)
+// donation, plus its assigned number — shared by the single-popup viewer
+// below and the bulk range-printer, so the two never drift apart.
+async function buildDonationReceiptBlock(donationId) {
   const { data: d, error } = await db.from('dr_donations').select('*').eq('id', donationId).single();
-  if (error || !d) { showToast('Could not load donation', 'error'); return; }
-  if (!d.received_amount || parseFloat(d.received_amount) <= 0) {
-    showToast('Enter the received amount first — receipt is only generated once payment is confirmed', 'error');
-    return;
-  }
-  if (d.receipt_id) { await showReceiptById(d.receipt_id, false); return; }
-
-  // A donation entered through the normal flow always belongs to a token
-  // (the app requires one regardless of amount) — that token is the real
-  // receipt, with its own receipt_no. Without this check, clicking 🧾 here
-  // on a token-bundled line stamped a SEPARATE standalone receipt_no
-  // directly onto this one donation row, alongside the token's real number
-  // — two receipt numbers for one payment. Real incident 2026-09-09:
-  // Jagdish C Shah's token was already receipt #52, but clicking this
-  // button also minted #56 on the same donation, unprintable/confusing
-  // since it duplicated money already receipted under #52.
-  if (d.token_id) { await showCombinedTokenReceipt(d.token_id); return; }
+  if (error || !d) return null;
+  if (!d.received_amount || parseFloat(d.received_amount) <= 0) return { pendingPayment: true };
+  if (d.receipt_id) return { legacyReceiptId: d.receipt_id };
+  if (d.token_id) return { tokenId: d.token_id };
 
   const { data: org } = await db.from('dr_organizations').select('*').eq('id', d.org_id || currentOrgId).single();
   const templeHeader = buildTempleHeader(org);
@@ -343,24 +333,7 @@ async function showDonationReceipt(donationId) {
   const receiptNo = formatReceiptNo(org?.receipt_prefix, assignedNo);
   const total = parseFloat(d.amount);
 
-  // Older/edge-case rows may not have payment_mode/payment_ref copied onto
-  // the donation itself — fall back to the parent token, which always has it.
-  let payMode = d.payment_mode, payRef = d.payment_ref;
-  if (!payMode && d.token_id) {
-    const { data: pt } = await db.from('dr_receipt_tokens').select('payment_mode, payment_ref').eq('id', d.token_id).single();
-    payMode = pt?.payment_mode; payRef = pt?.payment_ref;
-  }
-
-  const html = `<!DOCTYPE html>
-<html lang="gu">
-<head>
-<meta charset="UTF-8"/>
-<title>Receipt – ${d.donor_name}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
-<style>${RECEIPT_CSS}</style>
-</head>
-<body>
+  const html = `
 <div class="receipt">
   ${templeHeader}
   <div class="receipt-body">
@@ -374,11 +347,45 @@ async function showDonationReceipt(donationId) {
     </table>
     <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
     <div class="words-row">અંકે ${numToGujaratiWords(total)} રૂપિયા</div>
-    ${paymentInfoHTML(payMode, payRef)}
+    ${paymentInfoHTML(d.payment_mode, d.payment_ref)}
     <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
     <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
   </div>
-</div>
+</div>`;
+
+  return { html, receiptNo: assignedNo };
+}
+
+async function showDonationReceipt(donationId) {
+  const block = await buildDonationReceiptBlock(donationId);
+  if (!block) { showToast('Could not load donation', 'error'); return; }
+  if (block.pendingPayment) {
+    showToast('Enter the received amount first — receipt is only generated once payment is confirmed', 'error');
+    return;
+  }
+  if (block.legacyReceiptId) { await showReceiptById(block.legacyReceiptId, false); return; }
+  // A donation entered through the normal flow always belongs to a token
+  // (the app requires one regardless of amount) — that token is the real
+  // receipt, with its own receipt_no. Without this check, clicking 🧾 here
+  // on a token-bundled line stamped a SEPARATE standalone receipt_no
+  // directly onto this one donation row, alongside the token's real number
+  // — two receipt numbers for one payment. Real incident 2026-09-09:
+  // Jagdish C Shah's token was already receipt #52, but clicking this
+  // button also minted #56 on the same donation, unprintable/confusing
+  // since it duplicated money already receipted under #52.
+  if (block.tokenId) { await showCombinedTokenReceipt(block.tokenId); return; }
+
+  const html = `<!DOCTYPE html>
+<html lang="gu">
+<head>
+<meta charset="UTF-8"/>
+<title>Receipt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
+<style>${RECEIPT_CSS}</style>
+</head>
+<body>
+${block.html}
 <div class="btns">
   <button class="btn btn-print" onclick="window.print();this.disabled=true;this.textContent='✅ Printed';">🖨 Print / PDF</button>
   <button class="btn btn-close" onclick="window.close()">Close</button>
@@ -392,15 +399,16 @@ async function showDonationReceipt(donationId) {
   win.document.close();
 }
 
-// Default single-name receipt for a token: every dr_donations line under
-// this token, itemized, one grand total — for the common case where the
-// donor doesn't need the amount split across other names.
-async function showCombinedTokenReceipt(tokenId) {
+// Returns just the `.receipt` div markup for a token's combined receipt
+// (every dr_donations line under it, itemized, one grand total), plus its
+// assigned number — shared by the single-popup viewer below and the bulk
+// range-printer, so the two never drift apart.
+async function buildTokenReceiptBlock(tokenId) {
   const { data: t, error: tErr } = await db.from('dr_receipt_tokens').select('*').eq('id', tokenId).single();
-  if (tErr || !t) { showToast('Could not load token', 'error'); return; }
+  if (tErr || !t) return null;
 
   const { data: lines, error: lErr } = await db.from('dr_donations').select('*').eq('token_id', tokenId).order('created_at');
-  if (lErr || !lines || lines.length === 0) { showToast('Could not load token items', 'error'); return; }
+  if (lErr || !lines || lines.length === 0) return null;
 
   const { data: org } = await db.from('dr_organizations').select('*').eq('id', t.org_id || currentOrgId).single();
   const templeHeader = buildTempleHeader(org);
@@ -437,16 +445,7 @@ async function showCombinedTokenReceipt(tokenId) {
       <td>₹ ${r.amount.toLocaleString('en-IN')}</td>
     </tr>`).join('');
 
-  const html = `<!DOCTYPE html>
-<html lang="gu">
-<head>
-<meta charset="UTF-8"/>
-<title>Receipt – ${receiptName}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
-<style>${RECEIPT_CSS}</style>
-</head>
-<body>
+  const html = `
 <div class="receipt">
   ${templeHeader}
   <div class="receipt-body">
@@ -464,7 +463,29 @@ async function showCombinedTokenReceipt(tokenId) {
     <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
     <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
   </div>
-</div>
+</div>`;
+
+  return { html, receiptNo: assignedNo };
+}
+
+// Default single-name receipt for a token: every dr_donations line under
+// this token, itemized, one grand total — for the common case where the
+// donor doesn't need the amount split across other names.
+async function showCombinedTokenReceipt(tokenId) {
+  const block = await buildTokenReceiptBlock(tokenId);
+  if (!block) { showToast('Could not load token', 'error'); return; }
+
+  const html = `<!DOCTYPE html>
+<html lang="gu">
+<head>
+<meta charset="UTF-8"/>
+<title>Receipt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
+<style>${RECEIPT_CSS}</style>
+</head>
+<body>
+${block.html}
 <div class="btns">
   <button class="btn btn-print" onclick="window.print();this.disabled=true;this.textContent='✅ Printed';">🖨 Print / PDF</button>
   <button class="btn btn-close" onclick="window.close()">Close</button>
@@ -478,13 +499,16 @@ async function showCombinedTokenReceipt(tokenId) {
   win.document.close();
 }
 
-// Split-name receipt: just Name + Amount, no item breakdown (a bundled
-// token can span several different heads, so a share divided by name can't
-// be cleanly attributed back to one head) and no family number (the
-// receipt-holder isn't necessarily on the payer's own family roster row).
-async function showSplitReceipt(splitId) {
+// Returns just the `.receipt` div markup for one split receipt (just
+// Name + Amount, no item breakdown — a bundled token can span several
+// different heads, so a share divided by name can't be cleanly attributed
+// back to one head — and no family number, since the receipt-holder isn't
+// necessarily on the payer's own family roster row), plus its assigned
+// number — shared by the single-popup viewer below and the bulk
+// range-printer, so the two never drift apart.
+async function buildSplitReceiptBlock(splitId) {
   const { data: s, error } = await db.from('dr_token_splits').select('*, dr_receipt_tokens(org_id)').eq('id', splitId).single();
-  if (error || !s) { showToast('Could not load receipt', 'error'); return; }
+  if (error || !s) return null;
 
   const { data: org } = await db.from('dr_organizations').select('*').eq('id', s.dr_receipt_tokens?.org_id || currentOrgId).single();
   const templeHeader = buildTempleHeader(org);
@@ -495,16 +519,7 @@ async function showSplitReceipt(splitId) {
   const receiptNo = formatReceiptNo(org?.receipt_prefix, assignedNo);
   const total = parseFloat(s.amount);
 
-  const html = `<!DOCTYPE html>
-<html lang="gu">
-<head>
-<meta charset="UTF-8"/>
-<title>Receipt – ${s.name}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
-<style>${RECEIPT_CSS}</style>
-</head>
-<body>
+  const html = `
 <div class="receipt">
   ${templeHeader}
   <div class="receipt-body">
@@ -517,7 +532,26 @@ async function showSplitReceipt(splitId) {
     <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
     <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
   </div>
-</div>
+</div>`;
+
+  return { html, receiptNo: assignedNo };
+}
+
+async function showSplitReceipt(splitId) {
+  const block = await buildSplitReceiptBlock(splitId);
+  if (!block) { showToast('Could not load receipt', 'error'); return; }
+
+  const html = `<!DOCTYPE html>
+<html lang="gu">
+<head>
+<meta charset="UTF-8"/>
+<title>Receipt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
+<style>${RECEIPT_CSS}</style>
+</head>
+<body>
+${block.html}
 <div class="btns">
   <button class="btn btn-print" onclick="window.print();this.disabled=true;this.textContent='✅ Printed';">🖨 Print / PDF</button>
   <button class="btn btn-close" onclick="window.close()">Close</button>
@@ -529,6 +563,87 @@ async function showSplitReceipt(splitId) {
   if (!win) { showToast('Allow pop-ups to view slip', 'error'); return; }
   win.document.write(html);
   win.document.close();
+}
+
+// Prints every receipt in a receipt-number range as ONE combined print job
+// — one popup, one print dialog — instead of opening each individually.
+// User request 2026-09-10: catching up on back-entered receipts (e.g.
+// #1-37) one popup at a time was too slow. A browser only allows one
+// popup per user click, so N separate windows was never an option for a
+// real batch — each receipt instead becomes its own `.receipt` block
+// (built via the exact same functions the single-print viewers use, so
+// there's only one place that ever renders a receipt's actual content)
+// inside one document, each forced onto its own printed page.
+async function printReceiptRangeByNo(fromNo, toNo) {
+  showToast(`Loading receipts #${fromNo}-${toNo}…`, 'success');
+
+  const [{ data: tokens }, { data: splits }, { data: donations }] = await Promise.all([
+    db.from('dr_receipt_tokens').select('id, receipt_no').eq('org_id', currentOrgId)
+      .not('receipt_no', 'is', null).gte('receipt_no', fromNo).lte('receipt_no', toNo),
+    db.from('dr_token_splits').select('id, receipt_no').eq('org_id', currentOrgId)
+      .not('receipt_no', 'is', null).gte('receipt_no', fromNo).lte('receipt_no', toNo),
+    db.from('dr_donations').select('id, receipt_no, token_id').eq('org_id', currentOrgId)
+      .not('receipt_no', 'is', null).gte('receipt_no', fromNo).lte('receipt_no', toNo)
+  ]);
+
+  // A token-bundled donation can carry its own copy of receipt_no too (see
+  // getDonationReceiptInfo's fallback chain) — only include genuinely
+  // standalone ones here so a token's receipt doesn't get printed twice.
+  const items = [
+    ...(tokens || []).map(t => ({ source: 'Token', id: t.id, no: t.receipt_no })),
+    ...(splits || []).map(s => ({ source: 'Split', id: s.id, no: s.receipt_no })),
+    ...(donations || []).filter(d => !d.token_id).map(d => ({ source: 'Donation', id: d.id, no: d.receipt_no }))
+  ].sort((a, b) => a.no - b.no);
+
+  if (items.length === 0) { showToast('No receipts found in that range', 'error'); return; }
+
+  const blocks = [];
+  for (const item of items) {
+    let block = null;
+    if (item.source === 'Token') block = await buildTokenReceiptBlock(item.id);
+    else if (item.source === 'Split') block = await buildSplitReceiptBlock(item.id);
+    else block = await buildDonationReceiptBlock(item.id);
+    if (block?.html) blocks.push(block.html);
+  }
+
+  if (blocks.length === 0) { showToast('Could not load any receipts in that range', 'error'); return; }
+
+  const html = `<!DOCTYPE html>
+<html lang="gu">
+<head>
+<meta charset="UTF-8"/>
+<title>Receipts #${fromNo}-${toNo}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+${RECEIPT_CSS}
+.receipt{page-break-after:always;margin:0 auto 16px;}
+.receipt:last-child{page-break-after:auto;}
+.btns{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:10;}
+@media print{ body{display:block;padding:0;} .receipt{box-shadow:none;margin:0;} }
+</style>
+</head>
+<body>
+${blocks.join('\n')}
+<div class="btns">
+  <button class="btn btn-print" onclick="window.print();this.disabled=true;this.textContent='✅ Printed';">🖨 Print All (${blocks.length})</button>
+  <button class="btn btn-close" onclick="window.close()">Close</button>
+</div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=460,height=900,scrollbars=yes');
+  if (!win) { showToast('Allow pop-ups to view receipts', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+  showToast(`✅ Loaded ${blocks.length} receipts — click Print All`, 'success');
+}
+
+function printReceiptRangeByNoClick() {
+  const from = parseInt(document.getElementById('bulk-print-from')?.value, 10);
+  const to = parseInt(document.getElementById('bulk-print-to')?.value, 10);
+  if (!from || !to || from > to) { showToast('Enter a valid From/To receipt number range', 'error'); return; }
+  printReceiptRangeByNo(from, to);
 }
 
 // Remembers the last paper size picked at the printer so the next token

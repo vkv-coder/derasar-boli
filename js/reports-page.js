@@ -922,6 +922,21 @@ function receiptRegisterSectionHTML() {
       </div>
       <div id="register-table-container"><p style="color:var(--text-muted);font-size:13px;">Pick a date range and click Load.</p></div>
     </div>
+    <div class="card">
+      <div class="card-title">🖨 Bulk Print Receipts by No.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label>From Receipt No.</label>
+          <input type="number" id="bulk-print-from" min="1" style="width:110px;" />
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>To Receipt No.</label>
+          <input type="number" id="bulk-print-to" min="1" style="width:110px;" />
+        </div>
+        <button class="btn-primary btn-sm" onclick="printReceiptRangeByNoClick()">🖨 Print All in Range</button>
+      </div>
+      <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">Opens every real receipt in this number range as ONE combined print job — one print dialog, instead of opening each one individually. Useful for catching up on a batch of back-entries (e.g. #1–37).</p>
+    </div>
   `;
 }
 
