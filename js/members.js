@@ -88,6 +88,7 @@ async function loadMembersList(query = '') {
                 <button class="btn-sm btn-secondary" onclick="showDonorHistory('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${(m.family_no||'').replace(/'/g,"\\'")}')">📜</button>
                 ${m.is_head && m.family_no ? `<button class="btn-sm" style="background:#7B3F00;color:white;" onclick="showMembershipCard('${m.family_no.replace(/'/g,"\\'")}')">🪪</button>` : ''}
                 ${m.is_head && m.family_no ? `<button class="btn-sm" style="background:#1450c9;color:white;" onclick="showFamilyPassModal('${m.family_no.replace(/'/g,"\\'")}','${m.person_name.replace(/'/g,"\\'")}')">🎟</button>` : ''}
+                ${m.is_head && m.family_no ? `<button class="btn-sm" style="background:#6A1B9A;color:white;" onclick="showFamilyIndividualsModal('${m.family_no.replace(/'/g,"\\'")}','${m.person_name.replace(/'/g,"\\'")}')" title="Family Members (for Receipt In Name Of)">👪</button>` : ''}
                 <button class="btn-sm" style="background:#4CAF50;color:white;" onclick="showEditMemberModal('${m.id}')">Edit</button>
                 <button class="btn-sm btn-danger" onclick="deleteMember('${m.id}')">Del</button>
               </div>
@@ -220,11 +221,79 @@ async function addMember(familyNo = null, personName = null) {
   if (error) { showToast('Error: ' + error.message, 'error'); return null; }
 
   if (!familyNo) {
+    // Also seed dr_family_individuals with the head — that table is the
+    // one the "Receipt In Name Of" dropdown actually reads from (separate
+    // from dr_members, which is just the head-only roster), and without
+    // this row the head themselves would never appear as a pickable name
+    // there, only "Same as Donor". Only for a genuinely NEW family (this
+    // branch) — adding a person to an existing family shouldn't re-seed it.
+    await db.from('dr_family_individuals')
+      .insert({ org_id: currentOrgId, family_no, person_name, is_head: true });
+
     closeModal();
     showToast('Member added!', 'success');
     await Promise.all([loadMembersStats(), loadMembersList()]);
+    showFamilyIndividualsModal(family_no, person_name);
   }
   return data;
+}
+
+// ========== FAMILY INDIVIDUALS (names for the "Receipt In Name Of" dropdown) ==========
+// dr_family_individuals is deliberately separate from dr_members — the
+// Members list stays one row per family (head only), while this holds
+// every individual name a receipt might need to be printed under. Add
+// Member seeds the head automatically; this modal is for the rest of the
+// family, added as a batch (paste/type names, one per line) rather than
+// one at a time — repeating a full add-member form per person was the
+// exact friction that made this feature impractical to use (user
+// feedback 2026-09-10).
+async function showFamilyIndividualsModal(familyNo, headName) {
+  const { data: existing } = await db.from('dr_family_individuals')
+    .select('id, person_name, is_head').eq('org_id', currentOrgId).eq('family_no', familyNo)
+    .order('is_head', { ascending: false });
+
+  const listHtml = (existing && existing.length)
+    ? existing.map(p => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">
+          <span>${p.person_name}${p.is_head ? ' <span style="font-size:11px;color:var(--text-muted);">(Head)</span>' : ''}</span>
+          <button class="btn-sm btn-danger" onclick="deleteFamilyIndividual('${p.id}','${familyNo.replace(/'/g, "\\'")}','${(headName || '').replace(/'/g, "\\'")}')">✕</button>
+        </div>`).join('')
+    : `<p style="font-size:12px;color:var(--text-muted);">No individual names yet — donation receipts for this family will only offer "Same as Donor".</p>`;
+
+  showModal(`
+    <div class="modal-title">Family Members — ${familyNo}</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">These names appear in the "Receipt In Name Of" dropdown when recording a donation for this family.</div>
+    <div style="max-height:180px;overflow-y:auto;margin-bottom:12px;">${listHtml}</div>
+    <div class="form-group">
+      <label>Add Names (one per line)</label>
+      <textarea id="family-indiv-names" rows="4" placeholder="e.g.&#10;Rameshbhai Shah&#10;Kokilaben Shah&#10;Jinal Shah"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="saveFamilyIndividuals('${familyNo.replace(/'/g, "\\'")}')">💾 Add</button>
+      <button class="btn-secondary" onclick="closeModal()">Close</button>
+    </div>
+  `);
+}
+
+async function saveFamilyIndividuals(familyNo) {
+  const raw = document.getElementById('family-indiv-names')?.value || '';
+  const names = raw.split('\n').map(n => n.trim()).filter(Boolean);
+  if (names.length === 0) { showToast('Type at least one name', 'error'); return; }
+
+  const records = names.map(person_name => ({ org_id: currentOrgId, family_no: familyNo, person_name, is_head: false }));
+  const { error } = await db.from('dr_family_individuals').insert(records);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+
+  showToast(`✅ Added ${names.length} name${names.length > 1 ? 's' : ''}`, 'success');
+  showFamilyIndividualsModal(familyNo);
+}
+
+async function deleteFamilyIndividual(id, familyNo, headName) {
+  if (!confirm('Remove this name from the family list?')) return;
+  const { error } = await db.from('dr_family_individuals').delete().eq('id', id).eq('org_id', currentOrgId);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  showToast('Removed');
+  showFamilyIndividualsModal(familyNo, headName);
 }
 
 async function showEditMemberModal(id) {
