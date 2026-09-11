@@ -300,6 +300,24 @@ async function showEditMemberModal(id) {
   const { data: m, error } = await db.from('dr_members').select('*').eq('id', id).single();
   if (error || !m) { showToast('Could not load member', 'error'); return; }
 
+  // Family Members shown right here (not just via the separate 👪 button)
+  // so editing a family doesn't mean hunting for names in two different
+  // places — user feedback 2026-09-11: Edit only ever touched the head,
+  // the rest of the family was invisible from this screen.
+  const { data: individuals } = await db.from('dr_family_individuals')
+    .select('id, person_name, is_head').eq('org_id', currentOrgId).eq('family_no', m.family_no || '')
+    .order('is_head', { ascending: false });
+
+  const individualsHtml = (individuals && individuals.length)
+    ? individuals.map(p => `
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+          <input type="text" id="fam-indiv-${p.id}" value="${(p.person_name || '').replace(/"/g, '&quot;')}" style="flex:1;" />
+          ${p.is_head ? '<span style="font-size:10px;color:var(--text-muted);">Head</span>' : ''}
+          <button class="btn-sm btn-secondary" onclick="updateFamilyIndividualName('${p.id}')" title="Save name">💾</button>
+          ${!p.is_head ? `<button class="btn-sm btn-danger" onclick="deleteFamilyIndividualInline('${p.id}','${id}')">✕</button>` : ''}
+        </div>`).join('')
+    : `<p style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">No individual names yet.</p>`;
+
   showModal(`
     <div class="modal-title">Edit Member</div>
     <div style="display:flex;gap:8px;">
@@ -313,7 +331,7 @@ async function showEditMemberModal(id) {
       </div>
     </div>
     <div class="form-group">
-      <label>Person Name <span style="color:#c00;">*</span></label>
+      <label>Person Name (Head) <span style="color:#c00;">*</span></label>
       <input type="text" id="mem-name-edit" value="${m.person_name || ''}" />
     </div>
     <div class="form-group">
@@ -328,6 +346,13 @@ async function showEditMemberModal(id) {
       <button class="btn-primary" onclick="updateMember('${id}')">Update</button>
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>
     </div>
+    <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);" />
+    <div class="form-group">
+      <label>Family Members <span style="font-weight:400;color:var(--text-muted);">(for "Receipt In Name Of")</span></label>
+      <div id="fam-indiv-list">${individualsHtml}</div>
+      <textarea id="mem-edit-new-names" rows="2" placeholder="Add more names, one per line"></textarea>
+      <button class="btn-sm btn-secondary" style="margin-top:6px;" onclick="addFamilyIndividualsFromEdit('${(m.family_no || '').replace(/'/g, "\\'")}','${id}')">+ Add</button>
+    </div>
   `);
 }
 
@@ -339,13 +364,54 @@ async function updateMember(id) {
   const family_member_count = parseInt(document.getElementById('mem-count-edit').value) || null;
 
   if (!family_no || !person_name) { showToast('Fill required fields', 'error'); return; }
+
+  const { data: before } = await db.from('dr_members').select('family_no').eq('id', id).single();
+
   const { error } = await db.from('dr_members')
     .update({ family_no, person_name, phone_no, address, family_member_count })
     .eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
+
+  // Keep the head's own row in dr_family_individuals (seeded when this
+  // family was first added) in sync, so the "Receipt In Name Of" dropdown
+  // doesn't keep showing a stale name (or the old family_no) after an edit.
+  if (before?.family_no) {
+    await db.from('dr_family_individuals')
+      .update({ person_name, family_no })
+      .eq('org_id', currentOrgId).eq('family_no', before.family_no).eq('is_head', true);
+  }
+
   closeModal();
   showToast('Member updated!', 'success');
   await Promise.all([loadMembersStats(), loadMembersList()]);
+}
+
+async function updateFamilyIndividualName(individualId) {
+  const val = document.getElementById(`fam-indiv-${individualId}`)?.value.trim();
+  if (!val) { showToast('Name cannot be blank', 'error'); return; }
+  const { error } = await db.from('dr_family_individuals')
+    .update({ person_name: val }).eq('id', individualId).eq('org_id', currentOrgId);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  showToast('✅ Name updated', 'success');
+}
+
+async function deleteFamilyIndividualInline(individualId, memberId) {
+  if (!confirm('Remove this name?')) return;
+  const { error } = await db.from('dr_family_individuals').delete().eq('id', individualId).eq('org_id', currentOrgId);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  showToast('Removed');
+  showEditMemberModal(memberId);
+}
+
+async function addFamilyIndividualsFromEdit(familyNo, memberId) {
+  const raw = document.getElementById('mem-edit-new-names')?.value || '';
+  const names = raw.split('\n').map(n => n.trim()).filter(Boolean);
+  if (names.length === 0) { showToast('Type at least one name', 'error'); return; }
+  const records = names.map(person_name => ({ org_id: currentOrgId, family_no: familyNo, person_name, is_head: false }));
+  const { error } = await db.from('dr_family_individuals').insert(records);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  showToast(`✅ Added ${names.length} name${names.length > 1 ? 's' : ''}`, 'success');
+  showEditMemberModal(memberId);
 }
 
 async function deleteMember(id) {
