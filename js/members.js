@@ -227,11 +227,17 @@ async function addMember(familyNo = null, personName = null) {
     // this row the head themselves would never appear as a pickable name
     // there, only "Same as Donor". Only for a genuinely NEW family (this
     // branch) — adding a person to an existing family shouldn't re-seed it.
-    await db.from('dr_family_individuals')
+    const { error: individualError } = await db.from('dr_family_individuals')
       .insert({ org_id: currentOrgId, family_no, person_name, is_head: true });
 
     closeModal();
     showToast('Member added!', 'success');
+    if (individualError) {
+      // dr_members insert above already succeeded — the member exists — but
+      // the head won't show up in the "Receipt In Name Of" dropdown until
+      // this is retried, so surface it rather than silently dropping it.
+      showToast('Note: could not add "' + person_name + '" to Receipt In Name Of list — ' + individualError.message, 'error');
+    }
     await Promise.all([loadMembersStats(), loadMembersList()]);
     showFamilyIndividualsModal(family_no, person_name);
   }
