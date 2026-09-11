@@ -192,6 +192,39 @@ async function loadReport() {
       </div>
     </div>
 
+    <!-- Find Donations by Amount (multiples-of / above-but-not-multiple) -->
+    <div class="card">
+      <div class="card-title">🔍 Find Donations by Amount</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+        <div class="form-group" style="margin-bottom:0;flex:1;min-width:160px;">
+          <label>Head</label>
+          <select id="multi-finder-head">
+            <option value="">-- All Heads --</option>
+            <optgroup label="🔶 Swapna Heads">
+              ${mainSwapnaHeads.map(h => `<option value="swapna_${h.id}">${h.name}</option>`).join('')}
+            </optgroup>
+            <optgroup label="🔷 General Heads">
+              ${mainGeneralHeads.map(h => `<option value="general_${h.id}">${h.name}</option>`).join('')}
+            </optgroup>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Amount</label>
+          <input type="number" id="multi-finder-amount" value="1800" min="1" style="width:100px;" />
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Match</label>
+          <select id="multi-finder-mode">
+            <option value="multiple">Exact multiples</option>
+            <option value="above-not-multiple">Above, not a multiple</option>
+          </select>
+        </div>
+        <button class="btn-primary btn-sm" onclick="runMultipleFinder()">🔎 Find</button>
+      </div>
+      <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">Runs on today's loaded event/data — pick the event above, then Find. Re-run any day for a fresh list.</p>
+      <div id="multi-finder-results" style="margin-top:10px;"></div>
+    </div>
+
     <!-- Donations Table -->
     <div class="card" style="padding:0;">
       <div id="report-table-container" style="overflow-x:auto;"></div>
@@ -203,36 +236,39 @@ async function loadReport() {
   renderItemWiseSummary();
 }
 
+// Matches the '<type>_<id>' value from the head-filter dropdowns against
+// reportAllDonations, including sub-heads/descendants — shared by the main
+// table filter and the multiple-amount finder so the two can't drift apart
+// on what "belongs to this head" means.
+function filterDonationsByHeadValue(val) {
+  if (!val) return reportAllDonations;
+  const [type, id] = val.split('_');
+
+  if (type === 'swapna') {
+    const descendantSwapnaIds = getSwapnaDescendants(id);
+    const descendantItemIds = reportSwapnaItems
+      .filter(item => descendantSwapnaIds.includes(item.swapna_id))
+      .map(item => item.id);
+    return reportAllDonations.filter(d =>
+      (d.swapna_id && descendantSwapnaIds.includes(d.swapna_id)) ||
+      (d.swapna_item_id && descendantItemIds.includes(d.swapna_item_id))
+    );
+  } else if (type === 'general') {
+    // Get all sub-heads under this general head
+    const subIds = reportGeneralHeads
+      .filter(h => h.parent_id === id || h.id === id)
+      .map(h => h.id);
+    return reportAllDonations.filter(d =>
+      d.general_head_id && subIds.includes(d.general_head_id)
+    );
+  }
+  return reportAllDonations;
+}
+
 // ========== FILTER ==========
 async function applyReportFilter() {
   const val = document.getElementById('report-head-filter').value;
-
-  let filtered = reportAllDonations;
-
-  if (val) {
-    const [type, id] = val.split('_');
-
-    if (type === 'swapna') {
-      const descendantSwapnaIds = getSwapnaDescendants(id);
-      const descendantItemIds = reportSwapnaItems
-        .filter(item => descendantSwapnaIds.includes(item.swapna_id))
-        .map(item => item.id);
-      filtered = reportAllDonations.filter(d =>
-        (d.swapna_id && descendantSwapnaIds.includes(d.swapna_id)) ||
-        (d.swapna_item_id && descendantItemIds.includes(d.swapna_item_id))
-      );
-    } else if (type === 'general') {
-      // Get all sub-heads under this general head
-      const subIds = reportGeneralHeads
-        .filter(h => h.parent_id === id || h.id === id)
-        .map(h => h.id);
-      filtered = reportAllDonations.filter(d =>
-        d.general_head_id && subIds.includes(d.general_head_id)
-      );
-    }
-  }
-
-  renderReportTable(filtered);
+  renderReportTable(filterDonationsByHeadValue(val));
 }
 
 function getSwapnaDescendants(parentId) {
@@ -242,6 +278,135 @@ function getSwapnaDescendants(parentId) {
     ids.push(...getSwapnaDescendants(c.id));
   });
   return ids;
+}
+
+// ========== FIND DONATIONS BY AMOUNT (multiples-of / above-but-not-multiple) ==========
+// Recurring need during Paryushan (user request 2026-09-11/12): a daily
+// cross-check list of who gave exact multiples of a set amount (e.g.
+// Rs.1800 lots for Sadharan), and separately who gave ABOVE that amount
+// but NOT a clean multiple (worth a second look — could be a genuine odd
+// amount, or a mis-typed one). Runs entirely on the already-loaded
+// reportAllDonations for whichever event is selected, so it's always
+// current for that day - no separate data load needed.
+let multiFinderRows = [];
+
+function runMultipleFinder() {
+  const headVal = document.getElementById('multi-finder-head')?.value || '';
+  const amount = parseFloat(document.getElementById('multi-finder-amount')?.value);
+  const mode = document.getElementById('multi-finder-mode')?.value || 'multiple';
+
+  if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+
+  const headFiltered = filterDonationsByHeadValue(headVal);
+  const matched = headFiltered.filter(d => {
+    const amt = parseFloat(d.amount || 0);
+    if (amt <= 0) return false;
+    const isMultiple = Math.abs(amt % amount) < 0.005; // float-safe modulo
+    return mode === 'multiple' ? isMultiple : (amt > amount && !isMultiple);
+  });
+
+  matched.sort((a, b) => {
+    const na = resolveReportReceiptNo(a);
+    const nb = resolveReportReceiptNo(b);
+    if (na === null && nb === null) return new Date(a.created_at) - new Date(b.created_at);
+    if (na === null) return 1;
+    if (nb === null) return -1;
+    return na - nb;
+  });
+
+  multiFinderRows = matched.map(d => ({
+    name: d.receipt_name || d.donor_name || '—',
+    receiptInfo: getDonationReceiptInfo(d),
+    date: d.created_at,
+    amount: parseFloat(d.amount || 0)
+  }));
+
+  renderMultiFinderResults();
+}
+
+function renderMultiFinderResults() {
+  const el = document.getElementById('multi-finder-results');
+  if (!el) return;
+  if (multiFinderRows.length === 0) {
+    el.innerHTML = `<p style="font-size:13px;color:var(--text-muted);">No matching donations.</p>`;
+    return;
+  }
+  const total = multiFinderRows.reduce((s, r) => s + r.amount, 0);
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+      <div style="font-size:13px;color:var(--text-muted);">${multiFinderRows.length} donation(s) — Total ${formatAmount(total)}</div>
+      <button class="btn-sm btn-secondary" onclick="printMultiFinderResults()">🖨 Print</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="data-table">
+        <thead><tr><th>#</th><th>Name</th><th>Receipt No.</th><th>Date</th><th style="text-align:right;">Amount</th></tr></thead>
+        <tbody>
+          ${multiFinderRows.map((r, i) => `
+            <tr>
+              <td style="color:var(--text-muted);font-size:11px;">${i + 1}</td>
+              <td>${r.name}</td>
+              <td style="font-weight:600;color:${r.receiptInfo.pending ? '#ff9800' : 'var(--primary)'};">${r.receiptInfo.label}</td>
+              <td style="font-size:12px;">${new Date(r.date).toLocaleDateString('en-IN')}</td>
+              <td style="text-align:right;font-weight:600;">₹${r.amount.toLocaleString('en-IN')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+        <tfoot><tr style="font-weight:700;"><td colspan="4">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td></tr></tfoot>
+      </table>
+    </div>
+  `;
+}
+
+function printMultiFinderResults() {
+  if (multiFinderRows.length === 0) { showToast('Nothing to print — run Find first', 'error'); return; }
+
+  const headLabel = document.getElementById('multi-finder-head')?.selectedOptions?.[0]?.textContent || 'All Heads';
+  const amount = document.getElementById('multi-finder-amount')?.value;
+  const mode = document.getElementById('multi-finder-mode')?.value;
+  const modeLabel = mode === 'multiple' ? `Exact multiples of ₹${amount}` : `Above ₹${amount}, not a multiple`;
+  const total = multiFinderRows.reduce((s, r) => s + r.amount, 0);
+
+  const rowsHtml = multiFinderRows.map((r, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td>${r.name}</td>
+      <td>${r.receiptInfo.label}</td>
+      <td>${new Date(r.date).toLocaleDateString('en-IN')}</td>
+      <td style="text-align:right;">₹${r.amount.toLocaleString('en-IN')}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>${headLabel} — ${modeLabel}</title>
+<style>
+  body{font-family:Arial,sans-serif;padding:20px;color:#222;}
+  h2{margin-bottom:2px;}
+  table{width:100%;border-collapse:collapse;margin-top:14px;}
+  th,td{border:1px solid #999;padding:6px 8px;font-size:12px;text-align:left;}
+  th{background:#7B1E3B;color:#fff;}
+  tfoot td{font-weight:700;background:#f5f5f5;}
+  .btn{margin-top:20px;padding:10px 18px;border:none;border-radius:8px;background:#7B1E3B;color:#fff;font-size:13px;cursor:pointer;}
+  @media print{ @page{size:A4;margin:12mm;} .btn{display:none;} }
+</style>
+</head>
+<body>
+  <h2>${headLabel}</h2>
+  <div style="font-size:12px;color:#555;">${modeLabel} — ${multiFinderRows.length} receipts</div>
+  <table>
+    <thead><tr><th>#</th><th>Name</th><th>Receipt No.</th><th>Date</th><th style="text-align:right;">Amount</th></tr></thead>
+    <tbody>${rowsHtml}</tbody>
+    <tfoot><tr><td colspan="4">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td></tr></tfoot>
+  </table>
+  <button class="btn" onclick="window.print()">🖨 Print</button>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=800,height=900,scrollbars=yes');
+  if (!win) { showToast('Allow pop-ups to view the report', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
 }
 
 // ========== GET HEAD NAME FOR DONATION ==========
