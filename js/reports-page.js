@@ -2,7 +2,6 @@
 // DERASAR BOLI - Reports Page
 // ==========================================
 
-let reportEventId = null;
 let reportAllDonations = [];
 let reportSwapnaTree = [];
 let reportSwapnaItems = [];
@@ -29,12 +28,6 @@ async function renderReports() {
 
   const content = document.getElementById('page-content');
 
-  const { data: events } = await db
-    .from('dr_events')
-    .select('*')
-    .eq('org_id', currentOrgId)
-    .order('created_at', { ascending: false });
-
   content.innerHTML = `
     ${tokenDeskSectionHTML()}
     <div class="card">
@@ -45,16 +38,6 @@ async function renderReports() {
       </div>
     </div>
     <div id="report-view-item" style="display:${reportView === 'item' ? 'block' : 'none'};">
-      <div class="card">
-        <div class="card-title">📊 Reports</div>
-        <div class="form-group">
-          <label>Select Event</label>
-          <select id="report-event-select" onchange="onReportEventChange()">
-            <option value="">-- Select Event --</option>
-            ${(events || []).map(ev => `<option value="${ev.id}">${ev.name}</option>`).join('')}
-          </select>
-        </div>
-      </div>
       <div id="report-content"></div>
     </div>
     <div id="report-view-donor" style="display:${reportView === 'donor' ? 'block' : 'none'};">
@@ -71,9 +54,8 @@ async function renderReports() {
     await loadDonorsList();
   } else if (reportView === 'register') {
     initReceiptRegisterDates();
-  } else if (events && events.length === 1) {
-    document.getElementById('report-event-select').value = events[0].id;
-    onReportEventChange();
+  } else if (reportView === 'item') {
+    await loadReport();
   }
 }
 
@@ -82,13 +64,13 @@ function switchReportView(view) {
   renderReports();
 }
 
-async function onReportEventChange() {
-  reportEventId = document.getElementById('report-event-select').value;
-  if (!reportEventId) return;
-  await loadReport();
-}
-
 // ========== LOAD FULL REPORT ==========
+// No event picker anymore — every head is reachable via Donation Entry's
+// Day 1/3/5/7/8 tabs now, so Reports just shows everything for the org
+// unconditionally instead of requiring an event to be selected first. If a
+// genuinely separate future event is ever added in Heads Setup, this will
+// keep including it automatically (all-org, not event-scoped) rather than
+// needing a picker reintroduced.
 async function loadReport() {
   const el = document.getElementById('report-content');
   el.innerHTML = `<div class="card" style="text-align:center;padding:30px;color:var(--text-muted);">Loading...</div>`;
@@ -103,11 +85,11 @@ async function loadReport() {
     { data: splits },
     { data: orgRow }
   ] = await Promise.all([
-    db.from('dr_donations').select('*').eq('org_id', currentOrgId).or(`event_id.eq.${reportEventId},event_id.is.null`).order('created_at', { ascending: true }),
-    db.from('dr_swapna').select('*').eq('org_id', currentOrgId).eq('event_id', reportEventId).order('sort_order'),
+    db.from('dr_donations').select('*').eq('org_id', currentOrgId).order('created_at', { ascending: true }),
+    db.from('dr_swapna').select('*').eq('org_id', currentOrgId).order('sort_order'),
     db.from('dr_swapna_items').select('*').eq('org_id', currentOrgId),
     db.from('dr_general_heads').select('*').eq('org_id', currentOrgId).order('display_order'),
-    db.from('dr_receipts').select('*').eq('org_id', currentOrgId).or(`event_id.eq.${reportEventId},event_id.is.null`),
+    db.from('dr_receipts').select('*').eq('org_id', currentOrgId),
     db.from('dr_receipt_tokens').select('id, receipt_no, status').eq('org_id', currentOrgId),
     db.from('dr_token_splits').select('token_id, receipt_no').eq('org_id', currentOrgId),
     db.from('dr_organizations').select('receipt_prefix').eq('id', currentOrgId).single()
@@ -1008,8 +990,7 @@ async function downloadExcelReport() {
   const totalVerified = reportAllDonations.filter(d => d.received_amount && parseFloat(d.received_amount) === parseFloat(d.amount) && d.receipt_id).length;
   const totalMismatch = reportAllDonations.filter(d => d.received_amount && parseFloat(d.received_amount) !== parseFloat(d.amount)).length;
 
-  const eventSelect = document.getElementById('report-event-select');
-  const eventName = eventSelect ? eventSelect.options[eventSelect.selectedIndex]?.text || 'Paryushan 2026' : 'Paryushan 2026';
+  const eventName = 'All Donations';
 
   const idxData = [
     ['🛕 Derasar Boli - ' + eventName],

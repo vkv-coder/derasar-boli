@@ -3,7 +3,6 @@
 // ==========================================
 
 let liveSubscription = null;
-let liveEventId = null;
 
 async function renderLive() {
   const content = document.getElementById('page-content');
@@ -17,53 +16,27 @@ async function renderLive() {
     return;
   }
 
-  const { data: events } = await db
-    .from('dr_events')
-    .select('*')
-    .eq('is_live', true)
-    .eq('org_id', currentOrgId)
-    .order('created_at', { ascending: false });
-
   content.innerHTML = `
     <div class="card">
       <div class="section-header">
         <h3><span class="live-dot"></span> Live View</h3>
       </div>
-      <div class="form-group">
-        <label>Select Live Event</label>
-        <select id="live-event-select" onchange="onLiveEventChange()">
-          <option value="">-- Select Event --</option>
-          ${(events || []).map(ev => `<option value="${ev.id}">${ev.name}</option>`).join('')}
-        </select>
-      </div>
     </div>
     <div id="live-content"></div>
   `;
 
-  // Auto-select if only one event
-  if (events && events.length === 1) {
-    document.getElementById('live-event-select').value = events[0].id;
-    onLiveEventChange();
-  }
-}
+  // No event picker anymore — every head is reachable via Donation Entry's
+  // Day 1/3/5/7/8 tabs now, so Live View just shows everything for the org
+  // unconditionally instead of requiring an event to be selected first.
+  await loadLiveData();
 
-async function onLiveEventChange() {
-  liveEventId = document.getElementById('live-event-select').value;
-  if (!liveEventId) return;
-
-  // Unsubscribe previous
+  // Subscribe to real-time changes, org-wide.
   if (liveSubscription) {
     db.removeChannel(liveSubscription);
     liveSubscription = null;
   }
-
-  await loadLiveData();
-
-  // Subscribe to real-time changes — filtered by org, not event_id, since
-  // general-head donations always carry event_id=NULL (see below) and would
-  // never trigger an event_id-filtered subscription.
   liveSubscription = db
-    .channel('live-donations-' + liveEventId)
+    .channel('live-donations-' + currentOrgId)
     .on('postgres_changes', {
       event: '*',
       schema: 'public',
@@ -78,23 +51,17 @@ async function onLiveEventChange() {
 async function loadLiveData() {
   const el = document.getElementById('live-content');
 
-  // General heads/donations are org-wide, not tied to any one event
-  // (event_id is always NULL for them — only Swapna/Paryushan items carry
-  // an event_id) — so include both the selected event's donations AND
-  // every event_id-null (general) donation, instead of filtering everything
-  // down to just this event and silently dropping all general-head giving.
   const { data: donations } = await db
     .from('dr_donations')
     .select('*')
     .eq('org_id', currentOrgId)
-    .or(`event_id.eq.${liveEventId},event_id.is.null`)
     .order('created_at', { ascending: false });
 
-  // Load swapna items
+  // Load swapna items — org-wide, not tied to any one event.
   const { data: swapnas } = await db
     .from('dr_swapna')
     .select('*, dr_swapna_items(*)')
-    .eq('event_id', liveEventId)
+    .eq('org_id', currentOrgId)
     .order('display_order');
 
   // General heads have no event_id of their own — fetch by org, not event.
