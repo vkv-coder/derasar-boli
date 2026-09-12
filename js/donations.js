@@ -149,26 +149,37 @@ async function renderEntry() {
           <option value="">-- Select Live Event --</option>
           ${(events || []).map(ev => `<option value="${ev.id}">${ev.name}</option>`).join('')}
         </select>
-        ${(!events || events.length === 0) ? '<p style="color:var(--danger);font-size:12px;margin-top:4px;">No live events. Admin needs to make an event live.</p>' : ''}
+        ${(!events || events.length === 0) ? '<p style="color:var(--danger);font-size:12px;margin-top:4px;">No live events. Admin needs to make an event live.</p>' : '<p style="font-size:11px;color:var(--text-muted);margin-top:4px;">Auto-selected — change only if more than one event is live.</p>'}
       </div>
     </div>
 
-    <!-- Event Donation Heads -->
-    <div id="event-heads-section" style="display:none;">
-      <div class="card">
-        <div class="section-header">
-          <h3>🔶 Event Donation Heads</h3>
-        </div>
-        <div id="event-heads-list">Loading...</div>
-      </div>
-    </div>
-
-    <!-- General Donation Heads -->
+    <!-- Day 1 heads — always shown directly, per the printed Paryushan day-wise
+         head-display sheet (2026-09-12): Day 1 items are the evergreen general
+         heads relevant every day of collection, so they stay on-screen without
+         needing a tap. Days 3/5/7/8 are only relevant on their specific festival
+         day, so they're tucked behind the dropdown below instead of cluttering
+         the page with ~90 mostly-irrelevant-today items. -->
     <div class="card">
       <div class="section-header">
-        <h3>🔷 General Donation Heads</h3>
+        <h3>🔷 Day 1</h3>
       </div>
-      <div id="general-heads-entry">Loading...</div>
+      <div id="day1-heads-entry">Loading...</div>
+    </div>
+
+    <!-- Days 3/5/7/8 — tucked behind a dropdown per the same sheet; combines
+         general + event(swapna) heads tagged for whichever day is picked. -->
+    <div class="card">
+      <div class="form-group">
+        <label>📅 More Days</label>
+        <select id="entry-day-tab" onchange="onEntryDayTabChange()">
+          <option value="">-- Select a Day --</option>
+          <option value="3">Day 3</option>
+          <option value="5">Day 5</option>
+          <option value="7">Day 7</option>
+          <option value="8">Day 8</option>
+        </select>
+      </div>
+      <div id="day-tab-heads-entry"></div>
     </div>
 
     <!-- Recent entries -->
@@ -178,21 +189,90 @@ async function renderEntry() {
     </div>
   `;
 
-  entryEventId = null;
+  // Exactly one live event is the normal case during Paryushan — auto-select
+  // it so day-tab items (which need entryEventId for their event_id) work
+  // without an extra manual step. Still changeable if more than one is live.
+  entryEventId = (events && events.length === 1) ? events[0].id : null;
+  if (entryEventId) document.getElementById('entry-event').value = entryEventId;
   expandedEntryHeads = {};
-  await loadGeneralHeadsEntry();
+  await loadDay1HeadsEntry();
 }
 
 // ========== EVENT CHANGE ==========
 async function onEntryEventChange() {
   entryEventId = document.getElementById('entry-event').value;
-  expandedEntryHeads = {};
-  if (!entryEventId) {
-    document.getElementById('event-heads-section').style.display = 'none';
+  const dayTab = document.getElementById('entry-day-tab');
+  if (dayTab && dayTab.value) await onEntryDayTabChange();
+}
+
+// ========== DAY 1 HEADS (always visible) ==========
+async function loadDay1HeadsEntry() {
+  const el = document.getElementById('day1-heads-entry');
+  if (!el) return;
+
+  const { data, error } = await db
+    .from('dr_general_heads')
+    .select('*')
+    .eq('org_id', currentOrgId)
+    .eq('paryushan_day', 1)
+    .order('display_order');
+
+  if (error || !data || data.length === 0) {
+    el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No Day 1 heads found.</p>`;
     return;
   }
-  document.getElementById('event-heads-section').style.display = 'block';
-  await loadEventHeadsEntry();
+
+  const rootUnit = entryBoliMode === 'mun' ? 'mun' : entryBoliMode === 'aani' ? 'aani' : 'rupees';
+  const byId = {};
+  data.forEach(h => { byId[h.id] = h; });
+  const resolveGeneralUnit = h => {
+    if (h.unit_mode === 'mun' || h.unit_mode === 'rupees' || h.unit_mode === 'aani') return h.unit_mode;
+    const parent = h.parent_id ? byId[h.parent_id] : null;
+    return parent ? resolveGeneralUnit(parent) : rootUnit;
+  };
+
+  el.innerHTML = data.map(h => {
+    const myUnit = resolveGeneralUnit(h);
+    return `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
+      <span style="font-size:14px;color:var(--text);">${h.name}${entryUnitBadge(myUnit)}</span>
+      <button class="btn-accent btn-sm" onclick="showAddToCartModal('${h.id}','${h.name.replace(/'/g,"\\'")}','general','${myUnit}')">+ Add</button>
+    </div>
+  `; }).join('');
+}
+
+// ========== DAY 3/5/7/8 TAB (dropdown-selected, combines general + swapna) ==========
+async function onEntryDayTabChange() {
+  const day = document.getElementById('entry-day-tab')?.value;
+  const el = document.getElementById('day-tab-heads-entry');
+  if (!el) return;
+  if (!day) { el.innerHTML = ''; return; }
+  el.innerHTML = 'Loading...';
+
+  const [{ data: genHeads }, { data: swHeads }] = await Promise.all([
+    db.from('dr_general_heads').select('*').eq('org_id', currentOrgId).eq('paryushan_day', day).order('display_order'),
+    db.from('dr_swapna').select('*').eq('org_id', currentOrgId).eq('paryushan_day', day).order('sort_order')
+  ]);
+
+  const items = [
+    ...(genHeads || []).map(h => ({ id: h.id, name: h.name, headType: 'general', unitMode: h.unit_mode })),
+    ...(swHeads || []).map(h => ({ id: h.id, name: h.name, headType: 'swapna', unitMode: h.unit_mode }))
+  ];
+
+  if (items.length === 0) {
+    el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;margin-top:10px;">No heads found for Day ${day}.</p>`;
+    return;
+  }
+
+  const rootUnit = entryBoliMode === 'mun' ? 'mun' : entryBoliMode === 'aani' ? 'aani' : 'rupees';
+  el.innerHTML = `<div style="margin-top:10px;">` + items.map(it => {
+    const myUnit = entryEffectiveUnit(it.unitMode, rootUnit);
+    return `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
+      <span style="font-size:14px;color:var(--text);">${it.name}${entryUnitBadge(myUnit)}</span>
+      <button class="btn-accent btn-sm" onclick="showAddToCartModal('${it.id}','${it.name.replace(/'/g,"\\'")}','${it.headType}','${myUnit}')">+ Add</button>
+    </div>
+  `; }).join('') + `</div>`;
 }
 
 // ========== EVENT HEADS (3-level collapsible) ==========
@@ -750,8 +830,8 @@ async function generateTokenFromCart(btn) {
     currentCart = [];
     renderCartList();
     resetCartDonorFields();
-    await loadGeneralHeadsEntry();
-    if (entryEventId) await loadEventHeadsEntry();
+    await loadDay1HeadsEntry();
+    if (document.getElementById('entry-day-tab')?.value) await onEntryDayTabChange();
   } finally {
     // On success renderCartList() replaces this button (cart-actions hides
     // since the cart is now empty); on an error path above it's still on
@@ -854,8 +934,8 @@ async function generateManualReceiptFromCart(btn) {
     if (noInput) noInput.value = '';
     const refInput = document.getElementById('cart-manual-payment-ref');
     if (refInput) { refInput.value = ''; refInput.style.display = 'none'; }
-    await loadGeneralHeadsEntry();
-    if (entryEventId) await loadEventHeadsEntry();
+    await loadDay1HeadsEntry();
+    if (document.getElementById('entry-day-tab')?.value) await onEntryDayTabChange();
   } finally {
     if (btn && document.body.contains(btn)) { btn.disabled = false; btn.textContent = 'Save as Already-Paid'; }
   }
