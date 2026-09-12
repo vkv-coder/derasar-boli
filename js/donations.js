@@ -143,40 +143,33 @@ async function renderEntry() {
       <button class="btn-secondary btn-sm" onclick="showExistingDonationsTokenModal()">🔎 Find &amp; Generate Token</button>
     </div>
 
-    <div class="card">
-      <div class="form-group">
-        <label>Select Event</label>
-        <select id="entry-event" onchange="onEntryEventChange()">
-          <option value="">-- Select Live Event --</option>
-          ${(events || []).map(ev => `<option value="${ev.id}">${ev.name}</option>`).join('')}
-        </select>
-        ${(!events || events.length === 0) ? '<p style="color:var(--danger);font-size:12px;margin-top:4px;">No live events. Admin needs to make an event live.</p>' : '<p style="font-size:11px;color:var(--text-muted);margin-top:4px;">Auto-selected — change only if more than one event is live.</p>'}
-      </div>
-    </div>
-
-    <!-- Day 1 heads — always shown directly, per the printed Paryushan day-wise
-         head-display sheet (2026-09-12): Day 1 items are the evergreen general
-         heads relevant every day of collection, so they stay on-screen without
-         needing a tap. Days 3/5/7/8 are only relevant on their specific festival
-         day, so they're one tap away via the buttons below instead of
-         cluttering the page with ~90 mostly-irrelevant-today items. -->
-    <div class="card">
-      <div class="section-header">
-        <h3>🔷 Day 1</h3>
-      </div>
-      <div id="day1-heads-entry">Loading...</div>
-    </div>
-
-    <!-- Days 3/5/7/8 — one tap each, per the same sheet; combines general +
-         event(swapna) heads tagged for whichever day is picked. -->
+    <!-- Days 3/5/7/8 — one tap each, per the printed Paryushan day-wise
+         head-display sheet (2026-09-12); combines general + event(swapna)
+         heads tagged for whichever day is picked. Placed above General
+         Heads since picking a festival day is the more common first move
+         during Paryushan itself. The old "Select Event" dropdown is gone —
+         every head is now reachable via Day 1/3/5/7/8, so it served no
+         purpose; the one live event still auto-resolves behind the scenes
+         for event_id on swapna-type adds (see renderEntry below). -->
     <div class="card">
       <div class="form-group" style="margin-bottom:0;">
-        <label>📅 More Days</label>
+        <label>📅 Days</label>
         <div id="entry-day-tab-buttons" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
           ${[3, 5, 7, 8].map(d => `<button type="button" class="btn-secondary btn-sm day-tab-btn" data-day="${d}" onclick="selectEntryDayTab(${d})" style="flex:1;min-width:70px;">Day ${d}</button>`).join('')}
         </div>
       </div>
       <div id="day-tab-heads-entry"></div>
+    </div>
+
+    <!-- Day 1 heads — always shown directly (labeled "General Heads": these
+         are the evergreen general heads relevant every day of collection,
+         not specific to one festival day, so they stay on-screen without
+         needing a tap). -->
+    <div class="card">
+      <div class="section-header">
+        <h3>🔷 General Heads</h3>
+      </div>
+      <div id="day1-heads-entry">Loading...</div>
     </div>
 
     <!-- Recent entries -->
@@ -186,20 +179,16 @@ async function renderEntry() {
     </div>
   `;
 
-  // Exactly one live event is the normal case during Paryushan — auto-select
-  // it so day-tab items (which need entryEventId for their event_id) work
-  // without an extra manual step. Still changeable if more than one is live.
+  // No visible event picker anymore — every head is reachable via the
+  // Day 1/3/5/7/8 tabs instead. Swapna-type day-tab adds still need an
+  // event_id though, so this resolves the one live event silently behind
+  // the scenes (the normal case during Paryushan). If there were ever
+  // 0 or 2+ live events this can't guess which one — not a real scenario
+  // today, but worth knowing if a future Paryushan adds a second live event.
   entryEventId = (events && events.length === 1) ? events[0].id : null;
-  if (entryEventId) document.getElementById('entry-event').value = entryEventId;
   expandedEntryHeads = {};
   entrySelectedDay = null;
   await loadDay1HeadsEntry();
-}
-
-// ========== EVENT CHANGE ==========
-async function onEntryEventChange() {
-  entryEventId = document.getElementById('entry-event').value;
-  if (entrySelectedDay) await loadDayTabHeadsEntry();
 }
 
 // ========== DAY 1 HEADS (always visible) ==========
