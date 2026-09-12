@@ -30,21 +30,21 @@ function paymentInfoHTML(mode, ref) {
 
 const RECEIPT_CSS = `
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Hind Vadodara','Noto Sans Gujarati',Arial,sans-serif;background:#f0ece4;display:flex;flex-direction:column;align-items:center;padding:24px;gap:16px;min-height:100vh}
+  body{font-family:'Hind Vadodara','Noto Sans Gujarati',Arial,sans-serif;font-weight:700;background:#f0ece4;display:flex;flex-direction:column;align-items:center;padding:24px;gap:16px;min-height:100vh}
   .receipt{background:#fff;width:360px;border:3px solid #c00;border-radius:4px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.18)}
   .org-header{border-bottom:2px solid #c00;padding:10px 12px;text-align:center;background:#fff}
-  .org-namah{font-size:12px;color:#555;margin-bottom:3px}
-  .org-name{font-size:15px;font-weight:700;color:#c00;line-height:1.35;margin-bottom:3px}
-  .org-addr{font-size:11px;color:#444;line-height:1.4;margin-bottom:3px}
-  .org-reg{font-size:9.5px;color:#666;line-height:1.4;border-top:1px solid #eee;padding-top:4px;margin-top:4px}
+  .org-namah{font-size:12px;color:#222;margin-bottom:3px}
+  .org-name{font-size:15px;font-weight:800;color:#c00;line-height:1.35;margin-bottom:3px}
+  .org-addr{font-size:11px;color:#222;line-height:1.4;margin-bottom:3px}
+  .org-reg{font-size:9.5px;color:#333;line-height:1.4;border-top:1px solid #eee;padding-top:4px;margin-top:4px}
   .receipt-body{padding:12px}
   .receipt-title{display:flex;justify-content:space-between;align-items:center;color:#c00;border:1.5px solid #c00;padding:5px 8px;margin-bottom:10px}
   .receipt-title .rt-label{font-size:10px;font-weight:600;letter-spacing:2px}
   .receipt-title .rt-no{font-size:19px;font-weight:800;letter-spacing:0.5px}
-  .meta{display:flex;justify-content:space-between;font-size:11px;color:#555;margin-bottom:10px}
+  .meta{display:flex;justify-content:space-between;font-size:11px;color:#222;margin-bottom:10px}
   .row{display:flex;border-bottom:1px solid #e0c0c0;padding:5px 0;align-items:flex-start;font-size:13px}
-  .row-label{color:#555;width:110px;flex-shrink:0;font-size:12px}
-  .row-value{font-weight:600;color:#1a1a1a;flex:1}
+  .row-label{color:#222;width:110px;flex-shrink:0;font-size:12px}
+  .row-value{font-weight:800;color:#1a1a1a;flex:1}
   .heads-table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12px}
   .heads-table th{background:#c00;color:#fff;padding:5px 6px;text-align:left;font-weight:600}
   .heads-table th:last-child{text-align:right}
@@ -54,10 +54,10 @@ const RECEIPT_CSS = `
   .total-row{display:flex;justify-content:space-between;padding:8px 6px;background:#fff4f4;border:1.5px solid #c00;border-radius:3px;margin-bottom:6px;font-weight:700;font-size:14px}
   .total-row .lbl{color:#555;font-size:12px}
   .total-row .val{color:#c00;font-size:16px}
-  .words-row{text-align:left;font-size:11.5px;color:#333;font-style:italic;margin-bottom:10px;padding:4px 6px;background:#FFF8F0;border-radius:3px}
-  .pay-info{font-size:11px;color:#555;margin-bottom:10px;padding:6px;background:#f9f9f9;border:1px solid #e8e8e8;border-radius:3px;line-height:1.8}
-  .pay-info strong{color:#333}
-  .sys-note{text-align:center;font-size:9.5px;color:#888;margin-top:10px;padding:6px 4px;border-top:1px dashed #ddd;line-height:1.6}
+  .words-row{text-align:left;font-size:11.5px;color:#1a1a1a;font-style:italic;font-weight:700;margin-bottom:10px;padding:4px 6px;background:#FFF8F0;border-radius:3px}
+  .pay-info{font-size:11px;color:#222;font-weight:700;margin-bottom:10px;padding:6px;background:#f9f9f9;border:1px solid #e8e8e8;border-radius:3px;line-height:1.8}
+  .pay-info strong{color:#111}
+  .sys-note{text-align:center;font-size:9.5px;color:#555;font-weight:700;margin-top:10px;padding:6px 4px;border-top:1px dashed #ddd;line-height:1.6}
   .footer{text-align:center;color:#c00;font-weight:700;font-size:13px;padding:8px 0 4px}
   .btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:10px}
   .btn{padding:10px 18px;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:600}
