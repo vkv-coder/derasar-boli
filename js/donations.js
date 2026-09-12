@@ -14,6 +14,7 @@ let entryBoliMode = 'rupees';
 let entryBoliRate = null;
 let entryAaniRate = null;
 let entrySplitThreshold = 20000;
+let entrySelectedDay = null; // which of the 3/5/7/8 day-tab buttons is active
 
 let currentCart = [];
 let cartPayer = null; // { memberId, name, phone, familyNo }
@@ -157,8 +158,8 @@ async function renderEntry() {
          head-display sheet (2026-09-12): Day 1 items are the evergreen general
          heads relevant every day of collection, so they stay on-screen without
          needing a tap. Days 3/5/7/8 are only relevant on their specific festival
-         day, so they're tucked behind the dropdown below instead of cluttering
-         the page with ~90 mostly-irrelevant-today items. -->
+         day, so they're one tap away via the buttons below instead of
+         cluttering the page with ~90 mostly-irrelevant-today items. -->
     <div class="card">
       <div class="section-header">
         <h3>🔷 Day 1</h3>
@@ -166,18 +167,14 @@ async function renderEntry() {
       <div id="day1-heads-entry">Loading...</div>
     </div>
 
-    <!-- Days 3/5/7/8 — tucked behind a dropdown per the same sheet; combines
-         general + event(swapna) heads tagged for whichever day is picked. -->
+    <!-- Days 3/5/7/8 — one tap each, per the same sheet; combines general +
+         event(swapna) heads tagged for whichever day is picked. -->
     <div class="card">
-      <div class="form-group">
+      <div class="form-group" style="margin-bottom:0;">
         <label>📅 More Days</label>
-        <select id="entry-day-tab" onchange="onEntryDayTabChange()">
-          <option value="">-- Select a Day --</option>
-          <option value="3">Day 3</option>
-          <option value="5">Day 5</option>
-          <option value="7">Day 7</option>
-          <option value="8">Day 8</option>
-        </select>
+        <div id="entry-day-tab-buttons" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+          ${[3, 5, 7, 8].map(d => `<button type="button" class="btn-secondary btn-sm day-tab-btn" data-day="${d}" onclick="selectEntryDayTab(${d})" style="flex:1;min-width:70px;">Day ${d}</button>`).join('')}
+        </div>
       </div>
       <div id="day-tab-heads-entry"></div>
     </div>
@@ -195,14 +192,14 @@ async function renderEntry() {
   entryEventId = (events && events.length === 1) ? events[0].id : null;
   if (entryEventId) document.getElementById('entry-event').value = entryEventId;
   expandedEntryHeads = {};
+  entrySelectedDay = null;
   await loadDay1HeadsEntry();
 }
 
 // ========== EVENT CHANGE ==========
 async function onEntryEventChange() {
   entryEventId = document.getElementById('entry-event').value;
-  const dayTab = document.getElementById('entry-day-tab');
-  if (dayTab && dayTab.value) await onEntryDayTabChange();
+  if (entrySelectedDay) await loadDayTabHeadsEntry();
 }
 
 // ========== DAY 1 HEADS (always visible) ==========
@@ -241,9 +238,19 @@ async function loadDay1HeadsEntry() {
   `; }).join('');
 }
 
-// ========== DAY 3/5/7/8 TAB (dropdown-selected, combines general + swapna) ==========
-async function onEntryDayTabChange() {
-  const day = document.getElementById('entry-day-tab')?.value;
+// ========== DAY 3/5/7/8 TAB (tap-button selected, combines general + swapna) ==========
+function selectEntryDayTab(day) {
+  entrySelectedDay = (entrySelectedDay === day) ? null : day; // tap again to close
+  document.querySelectorAll('.day-tab-btn').forEach(btn => {
+    const isActive = entrySelectedDay && parseInt(btn.dataset.day, 10) === entrySelectedDay;
+    btn.classList.toggle('btn-primary', !!isActive);
+    btn.classList.toggle('btn-secondary', !isActive);
+  });
+  loadDayTabHeadsEntry();
+}
+
+async function loadDayTabHeadsEntry() {
+  const day = entrySelectedDay;
   const el = document.getElementById('day-tab-heads-entry');
   if (!el) return;
   if (!day) { el.innerHTML = ''; return; }
@@ -831,7 +838,7 @@ async function generateTokenFromCart(btn) {
     renderCartList();
     resetCartDonorFields();
     await loadDay1HeadsEntry();
-    if (document.getElementById('entry-day-tab')?.value) await onEntryDayTabChange();
+    if (entrySelectedDay) await loadDayTabHeadsEntry();
   } finally {
     // On success renderCartList() replaces this button (cart-actions hides
     // since the cart is now empty); on an error path above it's still on
@@ -935,7 +942,7 @@ async function generateManualReceiptFromCart(btn) {
     const refInput = document.getElementById('cart-manual-payment-ref');
     if (refInput) { refInput.value = ''; refInput.style.display = 'none'; }
     await loadDay1HeadsEntry();
-    if (document.getElementById('entry-day-tab')?.value) await onEntryDayTabChange();
+    if (entrySelectedDay) await loadDayTabHeadsEntry();
   } finally {
     if (btn && document.body.contains(btn)) { btn.disabled = false; btn.textContent = 'Save as Already-Paid'; }
   }
