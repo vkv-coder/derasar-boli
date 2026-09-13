@@ -328,14 +328,19 @@ async function printSplitAndRefresh(splitId, tokenId) {
   await showTokenSplitsModal(tokenId);
 }
 
-// ========== EDIT PAYMENT MODE (self-service correction) ==========
-// Cash/Online gets picked once at confirm time and is easy to get wrong in
-// a rush — this had to be fixed by hand via direct DB correction multiple
-// times in one day (2026-09-08/09) before this existed. Callable from both
-// the Tokens list (today's paid rows) and the Receipt Register (any date,
-// any source — Token/Split/Donation), since `source`/`sourceId` already
-// match the shape reprintRegisterRow() uses.
+// ========== EDIT RECEIPT (self-service correction: name/amount/payment/date) ==========
+// Started as just Cash/Online (2026-09-08/09 fixes), then Receipt Date
+// (2026-09-11) — kept growing because the same handful of corrections
+// (wrong name, wrong amount, wrong split allocation) had to be fixed by
+// hand via direct DB queries over and over (2026-09-12/13: receipts #78,
+// #95, #172/#173). User feedback 2026-09-13: "edit receipt does not give
+// option to edit everything." Now covers Name and Amount too, callable
+// from both the Tokens list and the Receipt Register (any source —
+// Token/Split/Donation), since `source`/`sourceId` already match the
+// shape reprintRegisterRow() uses.
 const PAYMENT_MODE_TABLE = { Token: 'dr_receipt_tokens', Split: 'dr_token_splits', Donation: 'dr_donations' };
+const EDIT_NAME_FIELD = { Token: 'payer_name', Split: 'name', Donation: 'donor_name' };
+const EDIT_AMOUNT_FIELD = { Token: 'total_amount', Split: 'amount', Donation: 'amount' };
 
 async function editPaymentModeModal(source, id) {
   const table = PAYMENT_MODE_TABLE[source];
@@ -343,7 +348,10 @@ async function editPaymentModeModal(source, id) {
   const { data: row, error } = await db.from(table).select('*').eq('id', id).single();
   if (error || !row) { showToast('Could not load receipt', 'error'); return; }
 
-  const label = row.payer_name || row.name || row.receipt_name || row.donor_name || '';
+  const nameField = EDIT_NAME_FIELD[source];
+  const amountField = EDIT_AMOUNT_FIELD[source];
+  const currentName = row[nameField] || '';
+  const currentAmount = parseFloat(row[amountField] || 0);
   const mode = row.payment_mode || 'cash';
   const ref = row.payment_ref || '';
   // Local calendar date the receipt currently shows — this is what prints
@@ -351,10 +359,35 @@ async function editPaymentModeModal(source, id) {
   // filter reads (receipt_no_assigned_at), kept in sync with each other.
   const currentDate = row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : '';
 
+  // A Token's amount is the SUM of its own dr_donations lines — editing it
+  // is only safe/unambiguous when there's exactly one line underneath (the
+  // common case); with 2+ lines it's not clear which one the new total
+  // should apply to, so the amount field is hidden and a note points to
+  // editing the individual lines in Reports instead.
+  let lineCount = 1;
+  if (source === 'Token') {
+    const { count } = await db.from('dr_donations').select('id', { count: 'exact', head: true }).eq('token_id', id);
+    lineCount = count || 0;
+  }
+  const amountEditable = source !== 'Token' || lineCount === 1;
+
   showModal(`
     <div class="modal-title">Edit Receipt${row.receipt_no ? ' — #' + row.receipt_no : ''}</div>
-    <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">${label}</div>
     <input type="hidden" id="edit-pm-created-at" value="${row.created_at || ''}" />
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="edit-pm-name" value="${currentName.replace(/"/g, '&quot;')}" />
+    </div>
+    <div class="form-group">
+      ${amountEditable ? `
+        <label>Amount (₹)</label>
+        <input type="number" id="edit-pm-amount" value="${currentAmount}" min="1" step="0.01" />
+      ` : `
+        <label>Amount (₹)</label>
+        <div style="font-weight:700;padding:8px 0;">₹${currentAmount.toLocaleString('en-IN')}</div>
+        <p style="font-size:11px;color:var(--text-muted);">This token has ${lineCount} donation lines under it — edit each one's amount individually from Reports instead of here, so it's clear which line changes.</p>
+      `}
+    </div>
     <div class="form-group">
       <label>Payment Mode</label>
       <select id="edit-pm-mode" onchange="toggleEditPmRef()">
@@ -386,10 +419,24 @@ function toggleEditPmRef() {
 
 async function savePaymentModeEdit(source, id) {
   const table = PAYMENT_MODE_TABLE[source];
+  const nameField = EDIT_NAME_FIELD[source];
+  const amountField = EDIT_AMOUNT_FIELD[source];
+
+  const newName = (document.getElementById('edit-pm-name')?.value || '').trim();
+  if (!newName) { showToast('Name cannot be blank', 'error'); return; }
+
+  const amountInput = document.getElementById('edit-pm-amount');
+  let newAmount = null;
+  if (amountInput) {
+    newAmount = parseFloat(amountInput.value);
+    if (!newAmount || newAmount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+  }
+
   const mode = document.getElementById('edit-pm-mode')?.value || 'cash';
   const ref = mode === 'online' ? (document.getElementById('edit-pm-ref')?.value || '').trim() || null : null;
 
-  const update = { payment_mode: mode, payment_ref: ref };
+  const update = { [nameField]: newName, payment_mode: mode, payment_ref: ref };
+  if (newAmount !== null) update[amountField] = newAmount;
 
   // Swap just the calendar date, keeping the original time-of-day, rather
   // than resetting to midnight — this only matters for back-entries where
@@ -411,12 +458,26 @@ async function savePaymentModeEdit(source, id) {
   const { error } = await db.from(table).update(update).eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
-  // A token's own donation lines carry their own copy of payment_mode/ref
-  // (used as the fallback in showDonationReceipt when a single line is
-  // reprinted directly) — keep them in sync so every reprint path shows
-  // the corrected method/date, not just the combined-token receipt.
+  // A token's own donation lines carry their own copy of donor_name/
+  // payment_mode/ref (used as the fallback in showDonationReceipt when a
+  // single line is reprinted directly) — keep them in sync so every
+  // reprint path shows the correction, not just the combined-token
+  // receipt. Amount is different: only cascade it when there's exactly one
+  // line (the modal only offers the amount field in that case to begin
+  // with — see editPaymentModeModal), since the line's own amount/
+  // received_amount need to move together to stay consistent with an
+  // already-paid token (real incident 2026-09-12: receipt #78's line and
+  // token total were edited separately and drifted apart).
   if (source === 'Token') {
-    await db.from('dr_donations').update(update).eq('token_id', id);
+    const donationUpdate = { donor_name: newName, payment_mode: mode, payment_ref: ref, ...(update.created_at ? { created_at: update.created_at } : {}) };
+    if (newAmount !== null) {
+      const { data: lines } = await db.from('dr_donations').select('id').eq('token_id', id);
+      if (lines && lines.length === 1) {
+        donationUpdate.amount = newAmount;
+        donationUpdate.received_amount = newAmount;
+      }
+    }
+    await db.from('dr_donations').update(donationUpdate).eq('token_id', id);
   }
 
   closeModal();
