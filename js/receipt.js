@@ -499,19 +499,45 @@ ${block.html}
   win.document.close();
 }
 
-// Returns just the `.receipt` div markup for one split receipt (just
-// Name + Amount, no item breakdown — a bundled token can span several
-// different heads, so a share divided by name can't be cleanly attributed
-// back to one head — and no family number, since the receipt-holder isn't
-// necessarily on the payer's own family roster row), plus its assigned
-// number — shared by the single-popup viewer below and the bulk
-// range-printer, so the two never drift apart.
+// Returns just the `.receipt` div markup for one split receipt (Name +
+// Amount + the donation head(s) the parent token's total came from), plus
+// its assigned number — shared by the single-popup viewer below and the
+// bulk range-printer, so the two never drift apart. No family number,
+// since the receipt-holder isn't necessarily on the payer's own family
+// roster row.
+//
+// Head name is resolved from the PARENT TOKEN's own donation lines, not
+// from the split row itself — dr_token_splits only ever stored name/amount,
+// since a token can in principle span several different heads, and a share
+// divided by name can't be cleanly attributed back to one specific head in
+// that case (real user report 2026-09-13: split receipts showed no head at
+// all, only the amount). In practice every split so far has come from a
+// single-head token, so showing that head (or joining names if a token
+// genuinely does span more than one) is safe and was the missing piece.
 async function buildSplitReceiptBlock(splitId) {
   const { data: s, error } = await db.from('dr_token_splits').select('*, dr_receipt_tokens(org_id)').eq('id', splitId).single();
   if (error || !s) return null;
 
   const { data: org } = await db.from('dr_organizations').select('*').eq('id', s.dr_receipt_tokens?.org_id || currentOrgId).single();
   const templeHeader = buildTempleHeader(org);
+
+  const { data: lines } = await db.from('dr_donations').select('*').eq('token_id', s.token_id);
+  const headNames = [];
+  for (const d of (lines || [])) {
+    let headName = '';
+    if (d.head_type === 'general_head' && d.general_head_id) {
+      const { data: h } = await db.from('dr_general_heads').select('name').eq('id', d.general_head_id).single();
+      headName = h?.name || '';
+    } else if (d.head_type === 'swapna_item' && d.swapna_item_id) {
+      const { data: item } = await db.from('dr_swapna_items').select('name, dr_swapna(name)').eq('id', d.swapna_item_id).single();
+      headName = (item?.dr_swapna?.name || '') + (item?.name ? ' → ' + item.name : '');
+    } else if (d.head_type === 'swapna' && d.swapna_id) {
+      const { data: sw } = await db.from('dr_swapna').select('name').eq('id', d.swapna_id).single();
+      headName = sw?.name || '';
+    }
+    if (headName && !headNames.includes(headName)) headNames.push(headName);
+  }
+  const headDisplay = headNames.join(', ');
 
   const dt = new Date(s.created_at);
   const receiptDate = dt.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -526,6 +552,7 @@ async function buildSplitReceiptBlock(splitId) {
     <div class="receipt-title"><span class="rt-label">પહોંચ &nbsp;·&nbsp; RECEIPT</span><span class="rt-no">ન.&nbsp;${receiptNo}</span></div>
     <div class="meta" style="justify-content:flex-end;"><span>તા. : ${receiptDate}</span></div>
     <div class="row"><span class="row-label">નામ :</span><span class="row-value">${s.name}</span></div>
+    ${headDisplay ? `<div class="row"><span class="row-label">દાન ની વિગત :</span><span class="row-value">${headDisplay}</span></div>` : ''}
     <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
     <div class="words-row">અંકે ${numToGujaratiWords(total)} રૂપિયા</div>
     ${paymentInfoHTML(s.payment_mode, s.payment_ref)}
