@@ -137,12 +137,6 @@ async function renderEntry() {
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-title">🎫 Generate Token for Already-Saved Donations</div>
-      <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">For older entries saved before tokens were required (no token yet). Search by name or phone below — only unpaid, not-yet-tokened entries show up.</p>
-      <button class="btn-secondary btn-sm" onclick="showExistingDonationsTokenModal()">🔎 Find &amp; Generate Token</button>
-    </div>
-
     <!-- Days 3/5/7/8 — one tap each, per the printed Paryushan day-wise
          head-display sheet (2026-09-12); combines general + event(swapna)
          heads tagged for whichever day is picked. Placed above General
@@ -937,70 +931,18 @@ async function generateManualReceiptFromCart(btn) {
   }
 }
 
-// ========== GENERATE TOKEN FROM ALREADY-SAVED DONATIONS ==========
-// For entries saved via "Save Individually" (or any donation never bundled
-// into a token) that now need a token after all — e.g. several small
-// entries for the same person add up and the donor wants to pay at the
-// counter with one token instead of separately for each.
-function showExistingDonationsTokenModal() {
-  showModal(`
-    <div class="modal-title">🎫 Generate Token from Existing Donations</div>
-    <div class="form-group">
-      <label>Search by donor name or phone</label>
-      <input type="text" id="existing-don-search" placeholder="Type name or phone..." oninput="searchExistingDonations()" />
-    </div>
-    <div id="existing-don-results"></div>
-    <div class="modal-actions">
-      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
-    </div>
-  `);
-}
-
-let existingDonSearchTimer = null;
-function searchExistingDonations() {
-  clearTimeout(existingDonSearchTimer);
-  existingDonSearchTimer = setTimeout(async () => {
-    const q = document.getElementById('existing-don-search').value.trim();
-    const resultsEl = document.getElementById('existing-don-results');
-    if (q.length < 2) { resultsEl.innerHTML = ''; return; }
-
-    const { data } = await db.from('dr_donations')
-      .select('*')
-      .eq('org_id', currentOrgId)
-      .is('token_id', null)
-      .is('received_amount', null)
-      .or(`donor_name.ilike.%${q}%,phone.ilike.%${q}%`)
-      .order('created_at', { ascending: false });
-
-    if (!data || data.length === 0) {
-      resultsEl.innerHTML = '<p style="font-size:13px;color:var(--text-muted);margin-top:8px;">No matching unpaid, not-yet-tokened entries found.</p>';
-      return;
-    }
-
-    resultsEl.innerHTML = `
-      <div style="max-height:280px;overflow-y:auto;margin:10px 0;">
-        ${data.map(d => `
-          <label style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;">
-            <input type="checkbox" class="existing-don-check" value="${d.id}" data-amount="${d.amount}" data-donor="${d.donor_name.replace(/"/g,'&quot;')}" data-phone="${d.phone || ''}" checked onchange="updateExistingDonTotal()" />
-            <span style="flex:1;">${d.donor_name}${d.phone ? ' · ' + d.phone : ''} — <strong>${formatAmount(parseFloat(d.amount))}</strong>
-              <span style="color:var(--text-muted);font-size:11px;">(${new Date(d.created_at).toLocaleDateString('en-IN')})</span>
-            </span>
-          </label>
-        `).join('')}
-      </div>
-      <div id="existing-don-total" style="font-weight:700;margin-bottom:10px;"></div>
-      <button class="btn-primary btn-sm" onclick="generateTokenFromExisting()">🎫 Generate Token for Selected</button>
-    `;
-    updateExistingDonTotal();
-  }, 300);
-}
-
-function updateExistingDonTotal() {
-  const checked = document.querySelectorAll('.existing-don-check:checked');
-  const total = Array.from(checked).reduce((s, c) => s + parseFloat(c.dataset.amount), 0);
-  const el = document.getElementById('existing-don-total');
-  if (el) el.textContent = `Selected Total: ${formatAmount(total)}`;
-}
+// "Find & Generate Token" (search unpaid, not-yet-tokened donations and
+// bundle them into a new token) removed 2026-09-13 — user request, checked
+// first: zero dr_donations rows have ever existed with token_id null in
+// this org's data, confirmed via direct query. The feature existed for a
+// "Save Individually" flow from earlier in the app's history that no
+// longer exists; every donation has required a token from entry onward
+// for as long as there's been real data. Kept bundleDonationsIntoToken()
+// itself since generateTokenFromRecentSelection() (Recent Entries'
+// checkbox flow) still calls it — though that path has the same
+// underlying issue (every Recent Entries row already has a token_id by
+// the time it gets there, so that flow would also always reject today;
+// left alone since it wasn't what was asked to be removed here).
 
 // Shared by both the search modal and the Recent Entries "select + generate
 // token" action — fetches the chosen dr_donations rows fresh (don't trust
@@ -1045,13 +987,6 @@ async function bundleDonationsIntoToken(ids) {
   showToast(`🎫 Token issued for ${formatAmount(total)} — give the slip to the donor`, 'success');
   showTokenSlip(token.id);
   return token;
-}
-
-async function generateTokenFromExisting() {
-  const checked = document.querySelectorAll('.existing-don-check:checked');
-  const ids = Array.from(checked).map(c => c.value);
-  const token = await bundleDonationsIntoToken(ids);
-  if (token) closeModal();
 }
 
 async function generateTokenFromRecentSelection() {
