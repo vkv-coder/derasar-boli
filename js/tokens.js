@@ -16,10 +16,17 @@ function tokenDisplayCode(t) {
   return String(t.token_no ?? '—');
 }
 
+// Latest filtered rows, kept for the Print button — mirrors the pattern
+// already used for registerRows/multiFinderRows elsewhere in Reports.
+let pendingTokensListRows = [];
+
 function tokenDeskSectionHTML() {
   return `
     <div class="card">
-      <div class="card-title">🎫 Tokens — Received &amp; Print</div>
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span>🎫 Tokens — Received &amp; Print</span>
+        <button class="btn-sm btn-secondary" onclick="printPendingTokensList()">🖨 Print List</button>
+      </div>
       <div class="form-group">
         <input type="text" id="token-search" placeholder="Search by name, phone, or token no. (e.g. 12)..." oninput="loadTokensList()" />
       </div>
@@ -76,6 +83,19 @@ async function loadTokensList() {
         (t.phone || '').toLowerCase().includes(q) ||
         tokenDisplayCode(t).toLowerCase().includes(q))
     : allTokens;
+
+  pendingTokensListRows = filtered
+    .slice()
+    .sort((a, b) => (a.token_no ?? 0) - (b.token_no ?? 0))
+    .map(t => ({
+      tokenNo: tokenDisplayCode(t),
+      name: t.payer_name,
+      phone: t.phone || '—',
+      amount: parseFloat(t.total_amount),
+      status: t.status === 'pending' ? 'Pending'
+        : t._printStatus ? `Printed ${t._printed}/${t._splitTotal}`
+        : 'Paid — Split Pending'
+    }));
 
   if (filtered.length === 0) {
     el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No matching tokens.</p>`;
@@ -392,4 +412,55 @@ async function savePaymentModeEdit(source, id) {
   showToast('✅ Receipt updated', 'success');
   if (document.getElementById('register-table-container')) await loadReceiptRegister();
   if (document.getElementById('tokens-list')) await loadTokensList();
+}
+
+// Combined Donor / Token No. / Amount printout for the currently-loaded
+// pending list (respects whatever search filter is active) — user request
+// 2026-09-13: a quick way to see amount pledged per donor across all
+// outstanding tokens, not tied to any one receipt.
+function printPendingTokensList() {
+  if (pendingTokensListRows.length === 0) { showToast('No tokens to print — nothing loaded', 'error'); return; }
+
+  const total = pendingTokensListRows.reduce((s, r) => s + r.amount, 0);
+  const rowsHtml = pendingTokensListRows.map(r => `
+    <tr>
+      <td>${r.tokenNo}</td>
+      <td>${r.name}</td>
+      <td>${r.phone}</td>
+      <td style="text-align:right;">₹${r.amount.toLocaleString('en-IN')}</td>
+      <td>${r.status}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>Pending Tokens</title>
+<style>
+  body{font-family:Arial,sans-serif;padding:20px;color:#222;}
+  h2{margin-bottom:2px;}
+  table{width:100%;border-collapse:collapse;margin-top:14px;}
+  th,td{border:1px solid #999;padding:6px 8px;font-size:12px;text-align:left;}
+  th{background:#7B1E3B;color:#fff;}
+  tfoot td{font-weight:700;background:#f5f5f5;}
+  .btn{margin-top:20px;padding:10px 18px;border:none;border-radius:8px;background:#7B1E3B;color:#fff;font-size:13px;cursor:pointer;}
+  @media print{ @page{size:A4;margin:12mm;} .btn{display:none;} }
+</style>
+</head>
+<body>
+  <h2>Pending Tokens — Donor / Token No. / Amount</h2>
+  <div style="font-size:12px;color:#555;">${pendingTokensListRows.length} token(s) awaiting action, as of ${new Date().toLocaleString('en-IN')}</div>
+  <table>
+    <thead><tr><th>Token No.</th><th>Name</th><th>Phone</th><th style="text-align:right;">Amount</th><th>Status</th></tr></thead>
+    <tbody>${rowsHtml}</tbody>
+    <tfoot><tr><td colspan="3">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td><td></td></tr></tfoot>
+  </table>
+  <button class="btn" onclick="window.print()">🖨 Print</button>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=800,height=900,scrollbars=yes');
+  if (!win) { showToast('Allow pop-ups to view the list', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
 }
