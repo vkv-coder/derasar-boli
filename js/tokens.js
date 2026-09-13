@@ -19,6 +19,7 @@ function tokenDisplayCode(t) {
 // Latest filtered rows, kept for the Print button — mirrors the pattern
 // already used for registerRows/multiFinderRows elsewhere in Reports.
 let pendingTokensListRows = [];
+let pendingDonorGroupRows = [];
 
 function tokenDeskSectionHTML() {
   return `
@@ -31,6 +32,14 @@ function tokenDeskSectionHTML() {
         <input type="text" id="token-search" placeholder="Search by name, phone, or token no. (e.g. 12)..." oninput="loadTokensList()" />
       </div>
       <div id="tokens-list">Loading...</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span>👥 Consolidated by Donor — Unpaid</span>
+        <button class="btn-sm btn-secondary" onclick="printDonorGroupList()">🖨 Print List</button>
+      </div>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">One donor may have several separate pending tokens (e.g. gave to more than one head) — this groups all of them together with a combined total still to receive.</p>
+      <div id="donor-group-list">Loading...</div>
     </div>
   `;
 }
@@ -96,6 +105,8 @@ async function loadTokensList() {
         : t._printStatus ? `Printed ${t._printed}/${t._splitTotal}`
         : 'Paid — Split Pending'
     }));
+
+  renderDonorGroupList(filtered);
 
   if (filtered.length === 0) {
     el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No matching tokens.</p>`;
@@ -454,6 +465,104 @@ function printPendingTokensList() {
     <thead><tr><th>Token No.</th><th>Name</th><th>Phone</th><th style="text-align:right;">Amount</th><th>Status</th></tr></thead>
     <tbody>${rowsHtml}</tbody>
     <tfoot><tr><td colspan="3">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td><td></td></tr></tfoot>
+  </table>
+  <button class="btn" onclick="window.print()">🖨 Print</button>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=800,height=900,scrollbars=yes');
+  if (!win) { showToast('Allow pop-ups to view the list', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+}
+
+// Groups the same pending/unpaid tokens by donor identity (member_id when
+// known, else name+phone — same key style donors.js's groupByDonor already
+// uses) so a donor who gave to more than one head under separate tokens
+// shows as ONE row with every token number and a combined total still to
+// receive, instead of one row per token. User request 2026-09-13.
+function renderDonorGroupList(tokens) {
+  const el = document.getElementById('donor-group-list');
+  if (!el) return;
+
+  const map = {};
+  tokens.forEach(t => {
+    const key = t.member_id || (t.payer_name + '|' + (t.phone || ''));
+    if (!map[key]) {
+      map[key] = { name: t.payer_name, phone: t.phone || '—', familyNo: t.family_no || '—', tokenNos: [], total: 0 };
+    }
+    map[key].tokenNos.push(tokenDisplayCode(t));
+    map[key].total += parseFloat(t.total_amount);
+  });
+
+  pendingDonorGroupRows = Object.values(map)
+    .filter(g => g.tokenNos.length > 0)
+    .sort((a, b) => b.total - a.total);
+
+  if (pendingDonorGroupRows.length === 0) {
+    el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No donors with unpaid tokens.</p>`;
+    return;
+  }
+
+  const grandTotal = pendingDonorGroupRows.reduce((s, g) => s + g.total, 0);
+
+  el.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table class="data-table">
+        <thead><tr><th>Name</th><th>Phone</th><th>Family</th><th>Token No(s).</th><th style="text-align:right;">Total Due</th></tr></thead>
+        <tbody>
+          ${pendingDonorGroupRows.map(g => `
+            <tr>
+              <td><strong>${g.name}</strong></td>
+              <td style="font-size:12px;">${g.phone}</td>
+              <td style="font-size:12px;">${g.familyNo}</td>
+              <td style="font-size:12px;">${g.tokenNos.join(', ')}${g.tokenNos.length > 1 ? ` <span style="color:var(--text-muted);">(${g.tokenNos.length})</span>` : ''}</td>
+              <td style="text-align:right;"><strong>${formatAmount(g.total)}</strong></td>
+            </tr>
+          `).join('')}
+        </tbody>
+        <tfoot><tr style="font-weight:700;"><td colspan="4">${pendingDonorGroupRows.length} donor(s)</td><td style="text-align:right;">${formatAmount(grandTotal)}</td></tr></tfoot>
+      </table>
+    </div>
+  `;
+}
+
+function printDonorGroupList() {
+  if (pendingDonorGroupRows.length === 0) { showToast('No donors to print — nothing loaded', 'error'); return; }
+
+  const total = pendingDonorGroupRows.reduce((s, g) => s + g.total, 0);
+  const rowsHtml = pendingDonorGroupRows.map(g => `
+    <tr>
+      <td>${g.name}</td>
+      <td>${g.phone}</td>
+      <td>${g.familyNo}</td>
+      <td>${g.tokenNos.join(', ')}</td>
+      <td style="text-align:right;">₹${g.total.toLocaleString('en-IN')}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>Consolidated Unpaid by Donor</title>
+<style>
+  body{font-family:Arial,sans-serif;padding:20px;color:#222;}
+  h2{margin-bottom:2px;}
+  table{width:100%;border-collapse:collapse;margin-top:14px;}
+  th,td{border:1px solid #999;padding:6px 8px;font-size:12px;text-align:left;}
+  th{background:#7B1E3B;color:#fff;}
+  tfoot td{font-weight:700;background:#f5f5f5;}
+  .btn{margin-top:20px;padding:10px 18px;border:none;border-radius:8px;background:#7B1E3B;color:#fff;font-size:13px;cursor:pointer;}
+  @media print{ @page{size:A4;margin:12mm;} .btn{display:none;} }
+</style>
+</head>
+<body>
+  <h2>Consolidated Unpaid by Donor</h2>
+  <div style="font-size:12px;color:#555;">${pendingDonorGroupRows.length} donor(s) with tokens still to receive, as of ${new Date().toLocaleString('en-IN')}</div>
+  <table>
+    <thead><tr><th>Name</th><th>Phone</th><th>Family</th><th>Token No(s).</th><th style="text-align:right;">Total Due</th></tr></thead>
+    <tbody>${rowsHtml}</tbody>
+    <tfoot><tr><td colspan="4">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td></tr></tfoot>
   </table>
   <button class="btn" onclick="window.print()">🖨 Print</button>
 </body>
