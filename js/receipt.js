@@ -72,8 +72,99 @@ const RECEIPT_CSS = `
     .receipt{box-shadow:none;border:1.5px solid #c00;width:100%;max-width:100%;min-height:186mm;display:flex;flex-direction:column}
     .receipt-body{flex:1;display:flex;flex-direction:column}
     .footer{margin-top:auto}
-    .btns{display:none}
+    .btns,#wa-info{display:none}
   }`;
+
+// Shared WhatsApp image-share capability for the three live receipt
+// viewers (donation / token / split) — adapted from the html2canvas +
+// navigator.share pattern originally built for the legacy dr_receipts
+// path below (showReceiptById), now parameterized so any receipt's
+// phone number + assigned number can use it. Renders straight into the
+// popup window's <head> since these documents are built via
+// win.document.write(), not loaded as separate script files.
+function receiptWhatsAppScript(receiptNo, phone) {
+  const memberPhone = (phone || '').replace(/\D/g, '');
+  return `
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+const MEMBER_PHONE = '${memberPhone}';
+const RECEIPT_NO = '${receiptNo || ''}';
+
+let _receiptBlob = null;
+async function captureReceiptBlob() {
+  try {
+    const canvas = await html2canvas(document.querySelector('.receipt'), { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+    canvas.toBlob(function(b) { _receiptBlob = b; }, 'image/png');
+  } catch(e) {}
+}
+
+async function sendWA() {
+  if (MEMBER_PHONE.length !== 10) { alert('No phone number on file for this receipt.\\nAdd it via Edit Receipt, then reprint.'); return; }
+  const waNum = '91' + MEMBER_PHONE;
+  const waUrl = 'https://wa.me/' + waNum + '?text=' + encodeURIComponent('🙏 Receipt No. ' + RECEIPT_NO);
+  const fileName = 'Receipt-' + RECEIPT_NO + '.png';
+  const waBtn = document.getElementById('wa-btn');
+  const info = document.getElementById('wa-info');
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  async function tryShare(blob) {
+    const file = new File([blob], fileName, { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'Receipt ' + RECEIPT_NO, text: '🙏 Receipt No. ' + RECEIPT_NO }); return true; }
+      catch(e) { if (e.name === 'AbortError') return true; }
+    }
+    return false;
+  }
+
+  function desktopSend(blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    if (info) info.style.display = 'block';
+    setTimeout(function() { window.open(waUrl); }, 500);
+  }
+
+  if (isMobile) {
+    if (_receiptBlob) { await tryShare(_receiptBlob); return; }
+    if (waBtn) { waBtn.textContent = '⏳ Preparing...'; waBtn.disabled = true; }
+    try {
+      const canvas = await html2canvas(document.querySelector('.receipt'), { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+      canvas.toBlob(async function(blob) {
+        _receiptBlob = blob;
+        if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
+        if (!await tryShare(blob)) desktopSend(blob);
+      }, 'image/png');
+    } catch(err) {
+      if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
+      window.open(waUrl);
+    }
+    return;
+  }
+
+  if (waBtn) { waBtn.textContent = '⏳ Preparing...'; waBtn.disabled = true; }
+  try {
+    const blob = _receiptBlob ? _receiptBlob : await new Promise(async function(res) {
+      const canvas = await html2canvas(document.querySelector('.receipt'), { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+      canvas.toBlob(res, 'image/png');
+    });
+    if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
+    desktopSend(blob);
+  } catch(err) {
+    if (waBtn) { waBtn.textContent = '📲 WhatsApp'; waBtn.disabled = false; }
+    window.open(waUrl);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() { setTimeout(captureReceiptBlob, 200); });
+</script>`;
+}
+
+const RECEIPT_WA_BUTTON_HTML = `<button id="wa-btn" class="btn btn-wa" onclick="sendWA()">📲 WhatsApp</button>`;
+const RECEIPT_WA_INFO_HTML = `<div id="wa-info" style="display:none;background:#e8f5e9;border:1.5px solid #4CAF50;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:12px;color:#1b5e20;text-align:center;line-height:1.6;">
+  ✅ Receipt PNG downloaded. WhatsApp opened.<br>In WhatsApp: tap 📎 Attach → select PNG → Send.
+</div>`;
 
 async function showReceiptById(receiptId, sendWhatsApp, phoneHint) {
   const { data: receipt, error: rErr } = await db.from('dr_receipts').select('*').eq('id', receiptId).single();
@@ -353,7 +444,7 @@ async function buildDonationReceiptBlock(donationId) {
   </div>
 </div>`;
 
-  return { html, receiptNo: assignedNo };
+  return { html, receiptNo: assignedNo, phone: d.phone };
 }
 
 async function showDonationReceipt(donationId) {
@@ -383,11 +474,14 @@ async function showDonationReceipt(donationId) {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
 <style>${RECEIPT_CSS}</style>
+${receiptWhatsAppScript(block.receiptNo, block.phone)}
 </head>
 <body>
 ${block.html}
+${RECEIPT_WA_INFO_HTML}
 <div class="btns">
   <button class="btn btn-print" onclick="window.print();this.disabled=true;this.textContent='✅ Printed';">🖨 Print / PDF</button>
+  ${RECEIPT_WA_BUTTON_HTML}
   <button class="btn btn-close" onclick="window.close()">Close</button>
 </div>
 </body>
@@ -465,7 +559,7 @@ async function buildTokenReceiptBlock(tokenId) {
   </div>
 </div>`;
 
-  return { html, receiptNo: assignedNo };
+  return { html, receiptNo: assignedNo, phone: t.phone };
 }
 
 // Default single-name receipt for a token: every dr_donations line under
@@ -483,11 +577,14 @@ async function showCombinedTokenReceipt(tokenId) {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
 <style>${RECEIPT_CSS}</style>
+${receiptWhatsAppScript(block.receiptNo, block.phone)}
 </head>
 <body>
 ${block.html}
+${RECEIPT_WA_INFO_HTML}
 <div class="btns">
   <button class="btn btn-print" onclick="window.print();this.disabled=true;this.textContent='✅ Printed';">🖨 Print / PDF</button>
+  ${RECEIPT_WA_BUTTON_HTML}
   <button class="btn btn-close" onclick="window.close()">Close</button>
 </div>
 </body>
@@ -515,7 +612,7 @@ ${block.html}
 // single-head token, so showing that head (or joining names if a token
 // genuinely does span more than one) is safe and was the missing piece.
 async function buildSplitReceiptBlock(splitId) {
-  const { data: s, error } = await db.from('dr_token_splits').select('*, dr_receipt_tokens(org_id)').eq('id', splitId).single();
+  const { data: s, error } = await db.from('dr_token_splits').select('*, dr_receipt_tokens(org_id, phone)').eq('id', splitId).single();
   if (error || !s) return null;
 
   const { data: org } = await db.from('dr_organizations').select('*').eq('id', s.dr_receipt_tokens?.org_id || currentOrgId).single();
@@ -561,7 +658,10 @@ async function buildSplitReceiptBlock(splitId) {
   </div>
 </div>`;
 
-  return { html, receiptNo: assignedNo };
+  // dr_token_splits has no phone column of its own (name/amount only, by
+  // design — see the head-resolution comment above) — the donor's number
+  // lives on the parent token.
+  return { html, receiptNo: assignedNo, phone: s.dr_receipt_tokens?.phone };
 }
 
 async function showSplitReceipt(splitId) {
@@ -576,11 +676,14 @@ async function showSplitReceipt(splitId) {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
 <style>${RECEIPT_CSS}</style>
+${receiptWhatsAppScript(block.receiptNo, block.phone)}
 </head>
 <body>
 ${block.html}
+${RECEIPT_WA_INFO_HTML}
 <div class="btns">
   <button class="btn btn-print" onclick="window.print();this.disabled=true;this.textContent='✅ Printed';">🖨 Print / PDF</button>
+  ${RECEIPT_WA_BUTTON_HTML}
   <button class="btn btn-close" onclick="window.close()">Close</button>
 </div>
 </body>
