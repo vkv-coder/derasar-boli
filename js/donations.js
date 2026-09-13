@@ -931,73 +931,15 @@ async function generateManualReceiptFromCart(btn) {
   }
 }
 
-// "Find & Generate Token" (search unpaid, not-yet-tokened donations and
-// bundle them into a new token) removed 2026-09-13 — user request, checked
-// first: zero dr_donations rows have ever existed with token_id null in
-// this org's data, confirmed via direct query. The feature existed for a
-// "Save Individually" flow from earlier in the app's history that no
-// longer exists; every donation has required a token from entry onward
-// for as long as there's been real data. Kept bundleDonationsIntoToken()
-// itself since generateTokenFromRecentSelection() (Recent Entries'
-// checkbox flow) still calls it — though that path has the same
-// underlying issue (every Recent Entries row already has a token_id by
-// the time it gets there, so that flow would also always reject today;
-// left alone since it wasn't what was asked to be removed here).
-
-// Shared by both the search modal and the Recent Entries "select + generate
-// token" action — fetches the chosen dr_donations rows fresh (don't trust
-// stale client-side data), validates they're all the same donor and none
-// already paid/tokened, then bundles them into one new token.
-async function bundleDonationsIntoToken(ids) {
-  if (!ids || ids.length === 0) { showToast('Select at least one entry', 'error'); return null; }
-
-  const { data: rows, error: fErr } = await db.from('dr_donations').select('*').in('id', ids);
-  if (fErr || !rows || rows.length === 0) { showToast('Could not load selected entries', 'error'); return null; }
-
-  const alreadyHandled = rows.filter(r => r.token_id || r.received_amount);
-  if (alreadyHandled.length > 0) {
-    showToast('One or more selected entries already have a token or are already received', 'error');
-    return null;
-  }
-
-  const donorKeys = new Set(rows.map(r => (r.donor_name || '') + '|' + (r.phone || '')));
-  if (donorKeys.size > 1) {
-    showToast('Selected entries must all belong to the same donor', 'error');
-    return null;
-  }
-
-  const total = rows.reduce((s, r) => s + parseFloat(r.amount), 0);
-  const first = rows[0];
-
-  const { data: token, error: tErr } = await db.from('dr_receipt_tokens').insert({
-    org_id: currentOrgId,
-    member_id: first.member_id,
-    payer_name: first.donor_name,
-    phone: first.phone,
-    family_no: first.family_no,
-    total_amount: total,
-    created_by: currentUser?.id || null,
-    status: 'pending'
-  }).select().single();
-  if (tErr) { showToast('Error: ' + tErr.message, 'error'); return null; }
-
-  const { error: uErr } = await db.from('dr_donations').update({ token_id: token.id }).in('id', ids);
-  if (uErr) { showToast('Error: ' + uErr.message, 'error'); return null; }
-
-  showToast(`🎫 Token issued for ${formatAmount(total)} — give the slip to the donor`, 'success');
-  showTokenSlip(token.id);
-  return token;
-}
-
-async function generateTokenFromRecentSelection() {
-  const checked = document.querySelectorAll('.recent-entry-check:checked');
-  const ids = Array.from(checked).map(c => c.value);
-  const token = await bundleDonationsIntoToken(ids);
-  if (token) {
-    recentEntries = recentEntries.filter(e => !ids.includes(e.id));
-    updateRecentEntries();
-  }
-}
+// Both "Find & Generate Token" and the Recent Entries "select + Generate
+// Token for Selected" flow (bundleDonationsIntoToken/
+// generateTokenFromRecentSelection, plus the .recent-entry-check checkbox
+// column) removed 2026-09-13 — user request, checked first: zero
+// dr_donations rows have ever existed with token_id null in this org's
+// data. Both existed for a "Save Individually" flow from earlier in the
+// app's history that no longer exists; every donation has required a
+// token from entry onward for as long as there's been real data, so both
+// flows would always reject with "already has a token" if attempted today.
 
 function updateRecentEntries() {
   const el = document.getElementById('recent-entries');
@@ -1006,12 +948,11 @@ function updateRecentEntries() {
     <div style="overflow-x:auto;">
       <table class="data-table">
         <thead>
-          <tr><th></th><th>Donor</th><th>Phone</th><th>Head</th><th>Amount</th><th>Actions</th></tr>
+          <tr><th>Donor</th><th>Phone</th><th>Head</th><th>Amount</th><th>Actions</th></tr>
         </thead>
         <tbody>
           ${recentEntries.slice(0, 10).map(e => `
             <tr>
-              <td><input type="checkbox" class="recent-entry-check" value="${e.id}" /></td>
               <td>${e.donor}</td>
               <td>${e.phone || '—'}</td>
               <td style="font-size:12px;">${e.head}</td>
@@ -1028,7 +969,6 @@ function updateRecentEntries() {
         </tbody>
       </table>
     </div>
-    <button class="btn-primary btn-sm" style="background:#7B1E3B;margin-top:10px;" onclick="generateTokenFromRecentSelection()">🎫 Generate Token for Selected (same donor)</button>
   `;
 }
 
