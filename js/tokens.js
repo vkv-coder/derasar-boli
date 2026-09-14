@@ -21,25 +21,50 @@ function tokenDisplayCode(t) {
 let pendingTokensListRows = [];
 let pendingDonorGroupRows = [];
 
+// Collapsed by default — this whole desk is only needed for the
+// occasional case of going back to an OLD token to record its payment;
+// the normal flow generates a fresh token instead, so these two full
+// lists don't need to sit open (and take up scroll) on every visit to
+// Reports. Each header shows a live count badge so it's still obvious
+// at a glance whether anything's waiting, without opening it.
+let tokenDeskCollapsed = { tokens: true, donorGroup: true };
+
+function toggleTokenDeskSection(key) {
+  tokenDeskCollapsed[key] = !tokenDeskCollapsed[key];
+  const body = document.getElementById('tds-body-' + key);
+  const chevron = document.getElementById('tds-chevron-' + key);
+  if (body) body.style.display = tokenDeskCollapsed[key] ? 'none' : 'block';
+  if (chevron) chevron.textContent = tokenDeskCollapsed[key] ? '▸' : '▾';
+}
+
+function setTdsCount(key, n) {
+  const el = document.getElementById('tds-count-' + key);
+  if (el) el.textContent = n > 0 ? `(${n})` : '';
+}
+
 function tokenDeskSectionHTML() {
   return `
     <div class="card">
-      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span>🎫 Tokens — Received &amp; Print</span>
-        <button class="btn-sm btn-secondary" onclick="printPendingTokensList()">🖨 Print List</button>
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;cursor:pointer;" onclick="toggleTokenDeskSection('tokens')">
+        <span><span id="tds-chevron-tokens">${tokenDeskCollapsed.tokens ? '▸' : '▾'}</span> 🎫 Tokens — Received &amp; Print <span id="tds-count-tokens" style="font-size:11px;font-weight:600;color:var(--text-muted);"></span></span>
+        <button class="btn-sm btn-secondary" onclick="event.stopPropagation();printPendingTokensList()">🖨 Print List</button>
       </div>
-      <div class="form-group">
-        <input type="text" id="token-search" placeholder="Search by name, phone, or token no. (e.g. 12)..." oninput="loadTokensList()" />
+      <div id="tds-body-tokens" style="display:${tokenDeskCollapsed.tokens ? 'none' : 'block'};">
+        <div class="form-group">
+          <input type="text" id="token-search" placeholder="Search by name, phone, or token no. (e.g. 12)..." oninput="loadTokensList()" />
+        </div>
+        <div id="tokens-list">Loading...</div>
       </div>
-      <div id="tokens-list">Loading...</div>
     </div>
     <div class="card">
-      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span>👥 Consolidated by Donor — Unpaid</span>
-        <button class="btn-sm btn-secondary" onclick="printDonorGroupList()">🖨 Print List</button>
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;cursor:pointer;" onclick="toggleTokenDeskSection('donorGroup')">
+        <span><span id="tds-chevron-donorGroup">${tokenDeskCollapsed.donorGroup ? '▸' : '▾'}</span> 👥 Consolidated by Donor — Unpaid <span id="tds-count-donorGroup" style="font-size:11px;font-weight:600;color:var(--text-muted);"></span></span>
+        <button class="btn-sm btn-secondary" onclick="event.stopPropagation();printDonorGroupList()">🖨 Print List</button>
       </div>
-      <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">One donor may have several separate pending tokens (e.g. gave to more than one head) — this groups all of them together with a combined total still to receive.</p>
-      <div id="donor-group-list">Loading...</div>
+      <div id="tds-body-donorGroup" style="display:${tokenDeskCollapsed.donorGroup ? 'none' : 'block'};">
+        <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">One donor may have several separate pending tokens (e.g. gave to more than one head) — this groups all of them together with a combined total still to receive.</p>
+        <div id="donor-group-list">Loading...</div>
+      </div>
     </div>
   `;
 }
@@ -74,6 +99,7 @@ async function loadTokensList() {
     }));
 
   const allTokens = [...(tokens || []), ...incompletePrint];
+  setTdsCount('tokens', allTokens.length);
 
   if (allTokens.length === 0) {
     el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No tokens awaiting action.</p>`;
@@ -622,6 +648,7 @@ function renderDonorGroupList(tokens) {
   pendingDonorGroupRows = Object.values(map)
     .filter(g => g.tokenNos.length > 0)
     .sort((a, b) => b.total - a.total);
+  setTdsCount('donorGroup', pendingDonorGroupRows.length);
 
   if (pendingDonorGroupRows.length === 0) {
     el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No donors with unpaid tokens.</p>`;
