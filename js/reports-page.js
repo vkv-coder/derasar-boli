@@ -15,6 +15,27 @@ let expandedSummaryRows = {}; // rowId -> bool, shared by category + item-wise s
 let categorySummaryRows = []; // latest computed rows, kept for the Print button (on-screen table always shows zero-amount rows too)
 let itemSummaryRows = [];
 
+// Collapsed by default, same reasoning as the Tokens desk sections above
+// it — Category-wise Summary, Item-wise Summary, and the full Donations
+// Table (the "matched" list with the per-row WhatsApp button) are each
+// long lists that most visits to Reports don't need open. A count badge
+// on each header keeps it obvious at a glance whether there's anything
+// worth opening for.
+let reportSectionCollapsed = { category: true, item: true, table: true };
+
+function toggleReportSection(key) {
+  reportSectionCollapsed[key] = !reportSectionCollapsed[key];
+  const body = document.getElementById('rpt-body-' + key);
+  const chevron = document.getElementById('rpt-chevron-' + key);
+  if (body) body.style.display = reportSectionCollapsed[key] ? 'none' : 'block';
+  if (chevron) chevron.textContent = reportSectionCollapsed[key] ? '▸' : '▾';
+}
+
+function setRptCount(key, n) {
+  const el = document.getElementById('rpt-count-' + key);
+  if (el) el.textContent = n > 0 ? `(${n})` : '';
+}
+
 // ========== RENDER REPORTS PAGE ==========
 async function renderReports() {
   if (!isAdmin()) {
@@ -209,7 +230,12 @@ async function loadReport() {
 
     <!-- Donations Table -->
     <div class="card" style="padding:0;">
-      <div id="report-table-container" style="overflow-x:auto;"></div>
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;cursor:pointer;padding:12px 14px;" onclick="toggleReportSection('table')">
+        <span><span id="rpt-chevron-table">${reportSectionCollapsed.table ? '▸' : '▾'}</span> 🧾 All Donations (Matched / WhatsApp) <span id="rpt-count-table" style="font-size:11px;font-weight:600;color:var(--text-muted);"></span></span>
+      </div>
+      <div id="rpt-body-table" style="display:${reportSectionCollapsed.table ? 'none' : 'block'};">
+        <div id="report-table-container" style="overflow-x:auto;"></div>
+      </div>
     </div>
   `;
 
@@ -495,22 +521,29 @@ function toggleSummaryRow(rowId) {
 
 // Shared renderer for both the 8-category summary and the item-wise summary
 // — each row expands in place to list the donations that make up its total,
-// with the receipt no. each one was actually printed under.
-function renderExpandableSummaryTable(containerId, titleHTML, rows, colLabel, printFnName, printDetailedFnName) {
+// with the receipt no. each one was actually printed under. The whole
+// table itself also starts collapsed behind sectionKey's header (see
+// reportSectionCollapsed above) since most Reports visits don't need it
+// open — only the count badge (rows with any entered amount) shows without
+// expanding.
+function renderExpandableSummaryTable(containerId, titleHTML, rows, colLabel, printFnName, printDetailedFnName, sectionKey) {
   const el = document.getElementById(containerId);
   if (!el) return;
   if (rows.length === 0) { el.innerHTML = ''; return; }
 
+  const activeCount = rows.filter(r => r.entered > 0).length;
+  const collapsed = reportSectionCollapsed[sectionKey];
+
   el.innerHTML = `
     <div class="card">
-      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span>${titleHTML}</span>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;cursor:pointer;" onclick="toggleReportSection('${sectionKey}')">
+        <span><span id="rpt-chevron-${sectionKey}">${collapsed ? '▸' : '▾'}</span> ${titleHTML} <span id="rpt-count-${sectionKey}" style="font-size:11px;font-weight:600;color:var(--text-muted);">${activeCount > 0 ? `(${activeCount})` : ''}</span></span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;" onclick="event.stopPropagation();">
           ${printFnName ? `<button class="btn-sm btn-secondary" onclick="${printFnName}()">🖨 Totals Only</button>` : ''}
           ${printDetailedFnName ? `<button class="btn-sm btn-secondary" onclick="${printDetailedFnName}()">🖨 With Receipt Nos</button>` : ''}
         </div>
       </div>
-      <div style="overflow-x:auto;">
+      <div id="rpt-body-${sectionKey}" style="display:${collapsed ? 'none' : 'block'};overflow-x:auto;">
         <table class="data-table">
           <thead><tr><th style="width:20px;"></th><th>${colLabel}</th><th style="text-align:right;">Entered</th><th style="text-align:right;">Received</th></tr></thead>
           <tbody>
@@ -576,7 +609,7 @@ function renderCategorySummary() {
   }).filter(r => r.name !== 'Uncategorized' || r.lines.length > 0);
 
   categorySummaryRows = rows;
-  renderExpandableSummaryTable('category-summary-container', '📂 Category-wise Summary (8 Khate)', rows, 'Category', 'printCategorySummary', 'printCategorySummaryDetailed');
+  renderExpandableSummaryTable('category-summary-container', '📂 Category-wise Summary (8 Khate)', rows, 'Category', 'printCategorySummary', 'printCategorySummaryDetailed', 'category');
 }
 
 // ========== ITEM-WISE SUMMARY (every head/item in the Master List) ==========
@@ -628,7 +661,7 @@ function renderItemWiseSummary() {
   });
 
   itemSummaryRows = rows;
-  renderExpandableSummaryTable('item-summary-container', '📋 Item-wise Summary (Master List)', rows, 'Head / Item', 'printItemWiseSummary', 'printItemWiseSummaryDetailed');
+  renderExpandableSummaryTable('item-summary-container', '📋 Item-wise Summary (Master List)', rows, 'Head / Item', 'printItemWiseSummary', 'printItemWiseSummaryDetailed', 'item');
 }
 
 // ========== GET STATUS ==========
@@ -666,6 +699,7 @@ function resolveReportReceiptNo(d) {
 // ========== RENDER TABLE ==========
 function renderReportTable(donations) {
   const el = document.getElementById('report-table-container');
+  setRptCount('table', donations ? donations.length : 0);
   if (!donations || donations.length === 0) {
     el.innerHTML = `<div class="empty-state" style="padding:30px;text-align:center;">
       <div style="font-size:36px;">📭</div>
