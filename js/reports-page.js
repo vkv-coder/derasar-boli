@@ -1165,15 +1165,15 @@ function renderReceiptRegisterTable() {
     </div>
     <div style="overflow-x:auto;">
       <table class="data-table">
-        <thead><tr><th>Receipt No.</th><th>Date</th><th>Name</th><th>Amount</th><th>Mode</th><th>Source</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Receipt No.</th><th>Date</th><th>Name</th><th style="text-align:right;">💵 Cash Amt</th><th style="text-align:right;">📱 Online Amt</th><th>Source</th><th>Actions</th></tr></thead>
         <tbody>
           ${registerRows.map(r => `
             <tr>
               <td><strong>${r.receiptNo}</strong></td>
               <td style="font-size:12px;">${new Date(r.date).toLocaleDateString('en-IN')}</td>
               <td>${r.name}</td>
-              <td>${formatAmount(r.amount)}</td>
-              <td style="font-size:12px;">${r.mode === 'online' ? '📱 Online' : '💵 Cash'}</td>
+              <td style="text-align:right;">${r.mode === 'online' ? '' : formatAmount(r.amount)}</td>
+              <td style="text-align:right;">${r.mode === 'online' ? formatAmount(r.amount) : ''}</td>
               <td style="font-size:11px;color:var(--text-muted);">${r.source}</td>
               <td>
                 <button class="btn-sm btn-secondary" onclick="reprintRegisterRow('${r.source}','${r.sourceId}')">🖨</button>
@@ -1182,7 +1182,7 @@ function renderReceiptRegisterTable() {
             </tr>
           `).join('')}
         </tbody>
-        <tfoot><tr style="font-weight:700;"><td colspan="3">${registerRows.length} receipts</td><td>${formatAmount(total)}</td><td colspan="3"></td></tr></tfoot>
+        <tfoot><tr style="font-weight:700;"><td colspan="3">${registerRows.length} receipts</td><td style="text-align:right;">${formatAmount(cashTotal)}</td><td style="text-align:right;">${formatAmount(onlineTotal)}</td><td colspan="2"></td></tr></tfoot>
       </table>
     </div>
   `;
@@ -1198,15 +1198,15 @@ function downloadReceiptRegisterExcel() {
   if (registerRows.length === 0) { showToast('Load the register first', 'error'); return; }
   if (typeof XLSX === 'undefined') { showToast('Excel library not loaded. Check internet connection.', 'error'); return; }
 
-  const rows = [['Receipt No.', 'Date', 'Name', 'Amount (₹)', 'Mode', 'Source']];
-  registerRows.forEach(r => rows.push([r.receiptNo, new Date(r.date).toLocaleDateString('en-IN'), r.name, r.amount, r.mode === 'online' ? 'Online' : 'Cash', r.source]));
+  const rows = [['Receipt No.', 'Date', 'Name', 'Cash Amt (₹)', 'Online Amt (₹)', 'Source']];
+  registerRows.forEach(r => rows.push([r.receiptNo, new Date(r.date).toLocaleDateString('en-IN'), r.name, r.mode === 'online' ? '' : r.amount, r.mode === 'online' ? r.amount : '', r.source]));
   rows.push([]);
   rows.push(['', 'CASH TOTAL', '', registerRows.filter(r => r.mode !== 'online').reduce((s, r) => s + r.amount, 0), '', '']);
-  rows.push(['', 'ONLINE TOTAL', '', registerRows.filter(r => r.mode === 'online').reduce((s, r) => s + r.amount, 0), '', '']);
+  rows.push(['', 'ONLINE TOTAL', '', '', registerRows.filter(r => r.mode === 'online').reduce((s, r) => s + r.amount, 0), '']);
   rows.push(['', 'GRAND TOTAL', '', registerRows.reduce((s, r) => s + r.amount, 0), '', '']);
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 10 }, { wch: 10 }];
+  ws['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 10 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Receipt Register');
 
