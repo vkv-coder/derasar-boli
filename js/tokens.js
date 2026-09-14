@@ -152,8 +152,14 @@ async function loadTokensList() {
                     <button class="btn-sm btn-danger" onclick="cancelToken('${t.id}')">Cancel</button>
                   ` : t._printStatus ? `
                     <button class="btn-sm btn-primary" onclick="showTokenSplitsModal('${t.id}')">View &amp; Print Remaining</button>
+                    ${t._printed === 0 ? `
+                      <button class="btn-sm btn-secondary" onclick="undoTokenSplit('${t.id}')">↩ Undo Split</button>
+                      <button class="btn-sm btn-danger" onclick="cancelToken('${t.id}')">Cancel</button>
+                    ` : ''}
                   ` : `
-                    <button class="btn-sm btn-primary" onclick="showAllocateTokenModal('${t.id}')">Allocate &amp; Print</button>
+                    <button class="btn-sm btn-primary" onclick="printTokenAsSingle('${t.id}')">🖨 Print as Single</button>
+                    <button class="btn-sm btn-secondary" onclick="showAllocateTokenModal('${t.id}')">Split Into Names</button>
+                    <button class="btn-sm btn-danger" onclick="cancelToken('${t.id}')">Cancel</button>
                   `}
                   <button class="btn-sm btn-secondary" onclick="showTokenSlip('${t.id}')">🖨 Slip</button>
                 </div>
@@ -245,10 +251,67 @@ async function confirmTokenReceived(tokenId, splitLater, btn) {
   }
 }
 
+// Print a token's single combined receipt directly, skipping the split
+// screen entirely — for a token that was marked "Split Later" but turns
+// out not to need splitting (the normal case), and also how to finish a
+// token right after Undo Split below. Marks the token 'paid' afterward so
+// it drops off this pending list, matching what the original "✅ Print"
+// button (at initial entry) already does.
+async function printTokenAsSingle(tokenId) {
+  await showCombinedTokenReceipt(tokenId);
+  const { error } = await db.from('dr_receipt_tokens').update({ status: 'paid' }).eq('id', tokenId);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  await loadTokensList();
+}
+
+// Reverses a wrong "Split Into Names" allocation — deletes the split rows
+// and puts the token back to "Paid — Split Pending" so it can be
+// re-allocated correctly or printed as a single receipt instead. Only
+// offered (see the button above) while NO split under this token has a
+// receipt_no yet — re-checked here against the live DB too, since
+// deleting a split whose receipt was already printed and handed to
+// someone would silently orphan that paper receipt (it would still exist
+// in the donor's hand, but vanish from the system with no record).
+async function undoTokenSplit(tokenId) {
+  const { data: splits, error } = await db.from('dr_token_splits').select('id, receipt_no').eq('token_id', tokenId);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  if ((splits || []).some(s => s.receipt_no)) {
+    showToast('Cannot undo — one or more split receipts were already printed. Cancel/edit that specific receipt instead (Receipt Register).', 'error');
+    return;
+  }
+  if (!confirm('Undo this split? The names entered will be removed and the token goes back to "Paid — Split Pending", ready to re-split or print as a single receipt.')) return;
+
+  const { error: delErr } = await db.from('dr_token_splits').delete().eq('token_id', tokenId);
+  if (delErr) { showToast('Error: ' + delErr.message, 'error'); return; }
+
+  const { error: updErr } = await db.from('dr_receipt_tokens')
+    .update({ status: 'paid_awaiting_split', allocated_by: null, allocated_at: null })
+    .eq('id', tokenId);
+  if (updErr) { showToast('Error: ' + updErr.message, 'error'); return; }
+
+  showToast('✅ Split undone', 'success');
+  await loadTokensList();
+}
+
 async function cancelToken(tokenId) {
-  if (!confirm('Cancel this token? Its donation lines will be deleted too. This cannot be undone.')) return;
+  // A token that got as far as being split into names carries dr_token_splits
+  // rows too, not just dr_donations lines — block cancelling if any of THOSE
+  // already has a receipt_no (already printed and handed to a donor;
+  // cancelling the parent token must not silently delete that record).
+  const { data: splits, error: sErr } = await db.from('dr_token_splits').select('id, receipt_no').eq('token_id', tokenId);
+  if (sErr) { showToast('Error: ' + sErr.message, 'error'); return; }
+  if ((splits || []).some(s => s.receipt_no)) {
+    showToast('Cannot cancel — one or more split receipts were already printed. Cancel/edit that specific receipt instead (Receipt Register).', 'error');
+    return;
+  }
+
+  if (!confirm('Cancel this token? Its donation lines (and any split rows) will be deleted too. This cannot be undone.')) return;
   const { error: dErr } = await db.from('dr_donations').delete().eq('token_id', tokenId);
   if (dErr) { showToast('Error: ' + dErr.message, 'error'); return; }
+  if (splits && splits.length > 0) {
+    const { error: spErr } = await db.from('dr_token_splits').delete().eq('token_id', tokenId);
+    if (spErr) { showToast('Error: ' + spErr.message, 'error'); return; }
+  }
   const { error } = await db.from('dr_receipt_tokens').update({ status: 'cancelled' }).eq('id', tokenId).eq('org_id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Token cancelled');
