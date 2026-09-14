@@ -46,7 +46,7 @@ const RECEIPT_CSS = `
   .row-label{color:#222;width:110px;flex-shrink:0;font-size:12px}
   .row-value{font-weight:800;color:#1a1a1a;flex:1}
   .heads-table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12px}
-  .heads-table th{background:#c00;color:#fff;padding:5px 6px;text-align:left;font-weight:600}
+  .heads-table th{background:#c00;color:#fff;padding:5px 6px;text-align:left;font-weight:800}
   .heads-table th:last-child{text-align:right}
   .heads-table td{padding:5px 6px;border-bottom:1px solid #e0c0c0;vertical-align:top}
   .heads-table td:last-child{text-align:right;font-weight:700;color:#c00;white-space:nowrap}
