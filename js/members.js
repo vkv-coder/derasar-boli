@@ -89,9 +89,8 @@ async function loadMembersList(query = '') {
             <td>
               <div style="display:flex;gap:5px;flex-wrap:wrap;">
                 <button class="btn-sm btn-secondary" onclick="showDonorHistory('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${(m.family_no||'').replace(/'/g,"\\'")}')">📜</button>
-                ${m.is_head && m.family_no ? `<button class="btn-sm" style="background:#7B3F00;color:white;" onclick="showMembershipCard('${m.family_no.replace(/'/g,"\\'")}')">🪪</button>` : ''}
-                ${m.is_head && m.family_no ? `<button class="btn-sm" style="background:#1450c9;color:white;" onclick="showFamilyPassModal('${m.family_no.replace(/'/g,"\\'")}','${m.person_name.replace(/'/g,"\\'")}')">🎟</button>` : ''}
-                ${m.is_head && m.family_no ? `<button class="btn-sm" style="background:#6A1B9A;color:white;" onclick="showFamilyIndividualsModal('${m.family_no.replace(/'/g,"\\'")}','${m.person_name.replace(/'/g,"\\'")}')" title="Family Members (for Receipt In Name Of)">👪</button>` : ''}
+                ${m.family_no ? `<button class="btn-sm" style="background:#7B3F00;color:white;" onclick="showMembershipCard('${m.family_no.replace(/'/g,"\\'")}')">🪪</button>` : ''}
+                ${m.family_no ? `<button class="btn-sm" style="background:#1450c9;color:white;" onclick="showFamilyPassModal('${m.family_no.replace(/'/g,"\\'")}','${m.person_name.replace(/'/g,"\\'")}')">🎟</button>` : ''}
                 <button class="btn-sm" style="background:#4CAF50;color:white;" onclick="showEditMemberModal('${m.id}')">Edit</button>
                 <button class="btn-sm btn-danger" onclick="deleteMember('${m.id}')">Del</button>
               </div>
@@ -235,7 +234,7 @@ async function addMember(familyNo = null, personName = null) {
   if (!family_no || !person_name) { showToast('Family No. and Name are required', 'error'); return null; }
 
   const { data, error } = await db.from('dr_members')
-    .insert({ family_no, person_name, phone_no, address, family_member_count, old_member_no, org_id: currentOrgId })
+    .insert({ family_no, person_name, phone_no, address, family_member_count, old_member_no, org_id: currentOrgId, is_head: true })
     .select().single();
   if (error) { showToast('Error: ' + error.message, 'error'); return null; }
 

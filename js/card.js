@@ -14,14 +14,25 @@ function formatFamilyCode(no) {
 }
 
 async function showMembershipCard(familyNo) {
-  const { data: org } = await db.from('dr_organizations').select('*').eq('id', currentOrgId).single();
-  const { data: members, error } = await db.from('dr_members')
-    .select('*').eq('org_id', currentOrgId).eq('family_no', familyNo)
-    .order('is_head', { ascending: false });
-  if (error || !members || members.length === 0) { showToast('Could not load family members', 'error'); return; }
+  // dr_members holds exactly one row per family (the head — phone/address/
+  // count live there) — the rest of the family's names live in
+  // dr_family_individuals instead (same table the "Receipt In Name Of"
+  // dropdown and Edit Member's inline family list read from). The back of
+  // the card used to query dr_members alone and so only ever showed the
+  // one head name, even for families with individuals already on file
+  // (user report 2026-09-15).
+  const [{ data: org }, { data: head, error }, { data: individuals }] = await Promise.all([
+    db.from('dr_organizations').select('*').eq('id', currentOrgId).single(),
+    db.from('dr_members').select('*').eq('org_id', currentOrgId).eq('family_no', familyNo).maybeSingle(),
+    db.from('dr_family_individuals').select('person_name, is_head').eq('org_id', currentOrgId).eq('family_no', familyNo).order('is_head', { ascending: false })
+  ]);
+  if (error || !head) { showToast('Could not load family members', 'error'); return; }
 
-  const head = members.find(m => m.is_head) || members[0];
-  const others = members.filter(m => m.id !== head.id);
+  // Falls back to just the head (from dr_members) if this family never had
+  // individuals added — same as the card's old behavior for those families.
+  const familyList = (individuals && individuals.length) ? individuals : [{ person_name: head.person_name, is_head: true }];
+  const others = familyList.slice(1);
+  const members = familyList; // for the on-card counts below
   const orgName = (org && org.name) || 'Derasar Boli';
   const familyCode = formatFamilyCode(familyNo);
   const logoUrl = window.location.origin + '/jin-pratik.png';
