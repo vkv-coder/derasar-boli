@@ -17,7 +17,7 @@ async function renderMembers() {
         <div style="color:var(--text-muted);font-size:13px;">Loading stats...</div>
       </div>
       <div class="search-box" style="margin-bottom:14px;">
-        <input type="text" id="member-search" placeholder="Search by name, family no or phone..." oninput="searchMembers()" />
+        <input type="text" id="member-search" placeholder="Search by name, family no, old no or phone..." oninput="searchMembers()" />
       </div>
       <div id="members-list">Loading...</div>
     </div>
@@ -58,7 +58,7 @@ function sortFamilyNo(data) {
 
 async function loadMembersList(query = '') {
   let req = db.from('dr_members').select('*').eq('org_id', currentOrgId);
-  if (query) req = req.or(`person_name.ilike.%${query}%,family_no.ilike.%${query}%,phone_no.ilike.%${query}%`);
+  if (query) req = req.or(`person_name.ilike.%${query}%,family_no.ilike.%${query}%,old_member_no.ilike.%${query}%,phone_no.ilike.%${query}%`);
   const { data: raw, error } = await req;
   const data = raw ? sortFamilyNo(raw) : raw;
 
@@ -72,12 +72,15 @@ async function loadMembersList(query = '') {
     <div style="overflow-x:auto;">
     <table class="data-table">
       <thead>
-        <tr><th>Family No.</th><th>Name</th><th>Phone</th><th>Members</th><th>Actions</th></tr>
+        <tr><th>Family No.</th><th>Old No.</th><th>Name</th><th>Phone</th><th>Members</th><th>Actions</th></tr>
       </thead>
       <tbody>
         ${data.map(m => `
           <tr>
             <td><strong>${m.family_no}</strong></td>
+            <td><input type="text" value="${(m.old_member_no || '').replace(/"/g, '&quot;')}" placeholder="—"
+              style="width:70px;padding:4px 6px;font-size:12px;border:1.5px solid var(--border);border-radius:5px;"
+              onchange="updateOldMemberNo('${m.id}', this.value)" onclick="event.stopPropagation()" /></td>
             <td>${m.person_name}${m.address ? `<div style="font-size:11px;color:var(--text-muted);">${m.address}</div>` : ''}</td>
             <td>${m.phone_no
               ? `<a href="tel:${m.phone_no}" style="color:var(--primary);text-decoration:none;">${m.phone_no}</a>`
@@ -105,6 +108,17 @@ async function loadMembersList(query = '') {
   `;
 }
 
+// Saves straight from the list table, no Edit modal needed — old numbers
+// come from the temple's pre-app Excel register and need to be entered in
+// bulk against members already migrated into the app, so editing one at a
+// time via a modal per row would be far too slow (user request 2026-09-15).
+async function updateOldMemberNo(id, value) {
+  const old_member_no = value.trim() || null;
+  const { error } = await db.from('dr_members').update({ old_member_no }).eq('id', id);
+  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  showToast('✅ Saved', 'success');
+}
+
 // ========== EXCEL EXPORT ==========
 async function downloadMembersExcel() {
   if (typeof XLSX === 'undefined') {
@@ -117,14 +131,14 @@ async function downloadMembersExcel() {
   const data = sortFamilyNo(raw);
 
   const rows = [
-    ['Family No.', 'Name', 'Phone', 'Address', 'Family Member Count']
+    ['Family No.', 'Old No.', 'Name', 'Phone', 'Address', 'Family Member Count']
   ];
   data.forEach(m => {
-    rows.push([m.family_no || '', m.person_name || '', m.phone_no || '', m.address || '', m.family_member_count || '']);
+    rows.push([m.family_no || '', m.old_member_no || '', m.person_name || '', m.phone_no || '', m.address || '', m.family_member_count || '']);
   });
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:10},{wch:32},{wch:14},{wch:32},{wch:12}];
+  ws['!cols'] = [{wch:10},{wch:10},{wch:32},{wch:14},{wch:32},{wch:12}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Members');
 
@@ -159,6 +173,10 @@ function showAddMemberModal() {
     <div class="form-group">
       <label>Person Name <span style="color:#c00;">*</span></label>
       <input type="text" id="mem-name" placeholder="Full name" onblur="suggestFamilyNo()" />
+    </div>
+    <div class="form-group">
+      <label>Old Member No. <span style="font-weight:400;color:var(--text-muted);">(from previous register)</span></label>
+      <input type="text" id="mem-old-no" placeholder="e.g. 245" />
     </div>
     <div class="form-group">
       <label>Phone No.</label>
@@ -212,11 +230,12 @@ async function addMember(familyNo = null, personName = null) {
   const phone_no            = document.getElementById('mem-phone')?.value.trim()   || null;
   const address             = document.getElementById('mem-address')?.value.trim() || null;
   const family_member_count = parseInt(document.getElementById('mem-count')?.value) || null;
+  const old_member_no       = document.getElementById('mem-old-no')?.value.trim() || null;
 
   if (!family_no || !person_name) { showToast('Family No. and Name are required', 'error'); return null; }
 
   const { data, error } = await db.from('dr_members')
-    .insert({ family_no, person_name, phone_no, address, family_member_count, org_id: currentOrgId })
+    .insert({ family_no, person_name, phone_no, address, family_member_count, old_member_no, org_id: currentOrgId })
     .select().single();
   if (error) { showToast('Error: ' + error.message, 'error'); return null; }
 
@@ -341,6 +360,10 @@ async function showEditMemberModal(id) {
       <input type="text" id="mem-name-edit" value="${m.person_name || ''}" />
     </div>
     <div class="form-group">
+      <label>Old Member No. <span style="font-weight:400;color:var(--text-muted);">(from previous register)</span></label>
+      <input type="text" id="mem-old-no-edit" value="${m.old_member_no || ''}" placeholder="e.g. 245" />
+    </div>
+    <div class="form-group">
       <label>Phone No.</label>
       <input type="tel" id="mem-phone-edit" value="${m.phone_no || ''}" placeholder="e.g. 9876543210" />
     </div>
@@ -368,13 +391,14 @@ async function updateMember(id) {
   const phone_no            = document.getElementById('mem-phone-edit').value.trim()   || null;
   const address             = document.getElementById('mem-address-edit').value.trim() || null;
   const family_member_count = parseInt(document.getElementById('mem-count-edit').value) || null;
+  const old_member_no       = document.getElementById('mem-old-no-edit').value.trim() || null;
 
   if (!family_no || !person_name) { showToast('Fill required fields', 'error'); return; }
 
   const { data: before } = await db.from('dr_members').select('family_no').eq('id', id).single();
 
   const { error } = await db.from('dr_members')
-    .update({ family_no, person_name, phone_no, address, family_member_count })
+    .update({ family_no, person_name, phone_no, address, family_member_count, old_member_no })
     .eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
