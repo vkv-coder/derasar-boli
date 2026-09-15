@@ -21,11 +21,18 @@ async function showMembershipCard(familyNo) {
   // the card used to query dr_members alone and so only ever showed the
   // one head name, even for families with individuals already on file
   // (user report 2026-09-15).
-  const [{ data: org }, { data: head, error }, { data: individuals }] = await Promise.all([
+  // .limit(1) instead of .maybeSingle() — a duplicate family_no (a real
+  // double-submit bug, fixed 2026-09-15 in Add Member, hit A19/J19/L2 in
+  // production) makes .maybeSingle() throw instead of returning a row, so
+  // the card couldn't be opened at all for an affected family until the
+  // duplicate was manually cleaned up. Just taking the first match keeps
+  // the card working even if a stray duplicate slips in again.
+  const [{ data: org }, { data: headRows, error }, { data: individuals }] = await Promise.all([
     db.from('dr_organizations').select('*').eq('id', currentOrgId).single(),
-    db.from('dr_members').select('*').eq('org_id', currentOrgId).eq('family_no', familyNo).maybeSingle(),
+    db.from('dr_members').select('*').eq('org_id', currentOrgId).eq('family_no', familyNo).order('created_at').limit(1),
     db.from('dr_family_individuals').select('person_name, is_head').eq('org_id', currentOrgId).eq('family_no', familyNo).order('is_head', { ascending: false })
   ]);
+  const head = headRows && headRows[0];
   if (error || !head) { showToast('Could not load family members', 'error'); return; }
 
   // Falls back to just the head (from dr_members) if this family never had

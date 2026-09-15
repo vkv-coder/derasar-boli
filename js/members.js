@@ -186,7 +186,7 @@ function showAddMemberModal() {
       <input type="text" id="mem-address" placeholder="e.g. 12, Harinagar Society" />
     </div>
     <div class="modal-actions">
-      <button class="btn-primary" onclick="addMember()">Save</button>
+      <button class="btn-primary" onclick="addMember(null, null, this)">Save</button>
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>
     </div>
   `);
@@ -223,7 +223,7 @@ async function suggestFamilyNo() {
   famEl.value = await computeNextFamilyNo(name);
 }
 
-async function addMember(familyNo = null, personName = null) {
+async function addMember(familyNo = null, personName = null, btn = null) {
   const family_no           = familyNo   || document.getElementById('mem-family')?.value.trim();
   const person_name         = personName || document.getElementById('mem-name')?.value.trim();
   const phone_no            = document.getElementById('mem-phone')?.value.trim()   || null;
@@ -233,10 +233,21 @@ async function addMember(familyNo = null, personName = null) {
 
   if (!family_no || !person_name) { showToast('Family No. and Name are required', 'error'); return null; }
 
+  // Guard against a double-click/double-tap creating two identical family
+  // rows before the first insert finishes — no unique constraint on
+  // family_no catches this at the DB level, so it silently created twin
+  // "A19"/"J19"/"L2" rows in real data (2026-09-15), which also broke the
+  // Membership Card (its lookup expects exactly one row per family_no).
+  if (btn) { if (btn.disabled) return null; btn.disabled = true; btn.textContent = 'Saving…'; }
+
   const { data, error } = await db.from('dr_members')
     .insert({ family_no, person_name, phone_no, address, family_member_count, old_member_no, org_id: currentOrgId, is_head: true })
     .select().single();
-  if (error) { showToast('Error: ' + error.message, 'error'); return null; }
+  if (error) {
+    showToast('Error: ' + error.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    return null;
+  }
 
   if (!familyNo) {
     // Also seed dr_family_individuals with the head — that table is the
