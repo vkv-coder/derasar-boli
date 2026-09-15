@@ -434,7 +434,7 @@ async function buildDonationReceiptBlock(donationId) {
     <div class="row"><span class="row-label">કુટુંબ ક્રમ :</span><span class="row-value">${d.family_no || '—'}</span></div>
     <table class="heads-table">
       <thead><tr><th style="width:28px;text-align:center;">ક્ર.</th><th>દાન ની વિગત</th><th>રકમ</th></tr></thead>
-      <tbody><tr><td style="text-align:center;color:#888;">1</td><td>${headName}${itemName ? ' → ' + itemName : ''}${d.mun_qty ? `<br><span style="font-size:10px;color:#888;">${d.mun_qty} mun</span>` : ''}${d.aani_qty ? `<br><span style="font-size:10px;color:#888;">${d.aani_qty} aani</span>` : ''}</td><td>₹ ${total.toLocaleString('en-IN')}</td></tr></tbody>
+      <tbody><tr><td style="text-align:center;color:#888;">1</td><td>${headName}${itemName ? ' → ' + itemName : ''}${d.mun_qty ? `<br><span style="font-size:10px;color:#888;">${d.mun_qty} mun</span>` : ''}${d.aani_qty ? `<br><span style="font-size:10px;color:#888;">${d.aani_qty} aani</span>` : ''}${d.pass_qty ? `<br><span style="font-size:10px;color:#888;">${d.pass_qty} pass${d.pass_qty === 1 ? '' : 'es'}</span>` : ''}</td><td>₹ ${total.toLocaleString('en-IN')}</td></tr></tbody>
     </table>
     <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
     <div class="words-row">અંકે ${numToGujaratiWords(total)} રૂપિયા</div>
@@ -522,7 +522,7 @@ async function buildTokenReceiptBlock(tokenId) {
       const { data: s } = await db.from('dr_swapna').select('name').eq('id', d.swapna_id).single();
       headName = s?.name || 'Swapna';
     }
-    rows.push({ sno: sno++, headName: headName + (itemName ? ' → ' + itemName : ''), amount: parseFloat(d.amount), munQty: d.mun_qty, aaniQty: d.aani_qty });
+    rows.push({ sno: sno++, headName: headName + (itemName ? ' → ' + itemName : ''), amount: parseFloat(d.amount), munQty: d.mun_qty, aaniQty: d.aani_qty, passQty: d.pass_qty });
   }
 
   const dt = new Date(t.created_at);
@@ -535,7 +535,7 @@ async function buildTokenReceiptBlock(tokenId) {
   const tableRows = rows.map(r => `
     <tr>
       <td style="text-align:center;color:#888;">${r.sno}</td>
-      <td>${r.headName}${r.munQty ? `<br><span style="font-size:10px;color:#888;">${r.munQty} mun</span>` : ''}${r.aaniQty ? `<br><span style="font-size:10px;color:#888;">${r.aaniQty} aani</span>` : ''}</td>
+      <td>${r.headName}${r.munQty ? `<br><span style="font-size:10px;color:#888;">${r.munQty} mun</span>` : ''}${r.aaniQty ? `<br><span style="font-size:10px;color:#888;">${r.aaniQty} aani</span>` : ''}${r.passQty ? `<br><span style="font-size:10px;color:#888;">${r.passQty} pass${r.passQty === 1 ? '' : 'es'}</span>` : ''}</td>
       <td>₹ ${r.amount.toLocaleString('en-IN')}</td>
     </tr>`).join('');
 

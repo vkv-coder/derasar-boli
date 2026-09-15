@@ -505,8 +505,11 @@ async function saveMasterAdd() {
 
   if (type === 'general') {
     if (!parentId) { showToast('Select which of the 8 main heads this belongs under', 'error'); return; }
+    // paryushan_day defaults to 1 (General Heads, always visible in Donation
+    // Entry) — without this a new head was invisible there until someone
+    // manually set its day, a real gap first hit 2026-09-13 (Building Fund).
     const { error } = await db.from('dr_general_heads').insert({
-      org_id: currentOrgId, name, parent_id: parentId, unit_mode: 'rupees'
+      org_id: currentOrgId, name, parent_id: parentId, unit_mode: 'rupees', paryushan_day: 1
     });
     if (error) { showToast('Error: ' + error.message, 'error'); return; }
   } else {
@@ -585,7 +588,13 @@ function pricingBadge() {
   return ''; // Fixed/Auction distinction was dropped — no longer shown
 }
 
-function showHeadPropertiesModal(table, id, name, ownMode, inheritedFrom, category, pricingType) {
+function feeTypeBadge(feeType, unitPrice) {
+  if (feeType === 'membership') return ` <span style="font-size:10px;font-weight:700;background:#E8F5E9;color:#2E7D32;padding:2px 6px;border-radius:8px;">₹${unitPrice || 0}/family/yr</span>`;
+  if (feeType === 'pass') return ` <span style="font-size:10px;font-weight:700;background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:8px;">₹${unitPrice || 0}/pass</span>`;
+  return '';
+}
+
+function showHeadPropertiesModal(table, id, name, ownMode, inheritedFrom, category, pricingType, feeType, unitPrice) {
   const inheritedLabel = inheritedFrom === 'mun' ? 'Mun' : inheritedFrom === 'aani' ? 'Aani' : '₹ Rupees';
   showModal(`
     <div class="modal-title">⚙ Properties — ${name}</div>
@@ -606,6 +615,20 @@ function showHeadPropertiesModal(table, id, name, ownMode, inheritedFrom, catego
         ${DR_CATEGORIES.map(c => `<option value="${c}" ${category === c ? 'selected' : ''}>${c}</option>`).join('')}
       </select>
     </div>
+    ${table === 'dr_general_heads' ? `
+    <div class="form-group">
+      <label>Fee Type <span style="font-weight:400;color:var(--text-muted);">(for a fixed yearly fee or a per-pass charge, entered from Donation Entry)</span></label>
+      <select id="head-fee-type-select" onchange="onHeadFeeTypeChange()">
+        <option value="" ${!feeType ? 'selected' : ''}>-- Regular donation (type amount each time) --</option>
+        <option value="membership" ${feeType === 'membership' ? 'selected' : ''}>Membership Fee — fixed amount per family per year</option>
+        <option value="pass" ${feeType === 'pass' ? 'selected' : ''}>Pass — fixed price × quantity</option>
+      </select>
+    </div>
+    <div class="form-group" id="head-unit-price-group" style="display:${feeType ? 'block' : 'none'};">
+      <label>Price (₹) <span id="head-unit-price-suffix" style="font-weight:400;color:var(--text-muted);">${feeType === 'pass' ? 'per pass' : 'per family'}</span></label>
+      <input type="number" id="head-unit-price-input" value="${unitPrice || ''}" placeholder="e.g. 200" min="0" />
+    </div>
+    ` : ''}
     <div class="modal-actions">
       <button class="btn-primary" onclick="saveHeadProperties('${table}','${id}')">Save</button>
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>
@@ -613,12 +636,32 @@ function showHeadPropertiesModal(table, id, name, ownMode, inheritedFrom, catego
   `);
 }
 
+function onHeadFeeTypeChange() {
+  const feeType = document.getElementById('head-fee-type-select')?.value;
+  const group = document.getElementById('head-unit-price-group');
+  const suffix = document.getElementById('head-unit-price-suffix');
+  if (group) group.style.display = feeType ? 'block' : 'none';
+  if (suffix) suffix.textContent = feeType === 'pass' ? 'per pass' : 'per family';
+}
+
 async function saveHeadProperties(table, id) {
   const unit_mode = document.getElementById('head-unit-mode-select').value || null;
   const category = document.getElementById('head-category-select').value || null;
 
+  const update = { unit_mode, category };
+
+  const feeTypeSelect = document.getElementById('head-fee-type-select');
+  if (feeTypeSelect) {
+    const fee_type = feeTypeSelect.value || null;
+    const priceInput = document.getElementById('head-unit-price-input');
+    const unit_price = fee_type ? (parseFloat(priceInput?.value) || null) : null;
+    if (fee_type && !unit_price) { showToast('Enter a price for this fee/pass head', 'error'); return; }
+    update.fee_type = fee_type;
+    update.unit_price = unit_price;
+  }
+
   const { error } = await db.from(table)
-    .update({ unit_mode, category })
+    .update(update)
     .eq('id', id);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
@@ -664,11 +707,11 @@ function renderGeneralMainHead(head, num, subHeads) {
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#ffffff;cursor:pointer;"
            onclick="toggleGeneralHead('${head.id}')">
         <strong style="color:var(--primary);font-size:15px;">
-          ${hasSubHeads ? (isExpanded ? '▼' : '▶') : '◦'} ${num}. ${head.name}${unitBadge(myUnit)}${categoryBadge(head.category)}${pricingBadge(head.pricing_type)}
+          ${hasSubHeads ? (isExpanded ? '▼' : '▶') : '◦'} ${num}. ${head.name}${unitBadge(myUnit)}${categoryBadge(head.category)}${feeTypeBadge(head.fee_type, head.unit_price)}
           ${hasSubHeads ? `<span style="font-size:11px;font-weight:400;color:var(--text-muted);"> (${mySubHeads.length} sub)</span>` : ''}
         </strong>
         <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
-          <button class="btn-sm btn-secondary" onclick="showHeadPropertiesModal('dr_general_heads','${head.id}','${head.name.replace(/'/g,"\\'")}','${head.unit_mode || ''}','rupees','${head.category || ''}','${head.pricing_type || 'fixed'}')">⚙</button>
+          <button class="btn-sm btn-secondary" onclick="showHeadPropertiesModal('dr_general_heads','${head.id}','${head.name.replace(/'/g,"\\'")}','${head.unit_mode || ''}','rupees','${head.category || ''}','${head.pricing_type || 'fixed'}','${head.fee_type || ''}',${head.unit_price || 'null'})">⚙</button>
           <button class="btn-sm btn-secondary" onclick="showAddGeneralSubHeadModal('${head.id}','${head.name.replace(/'/g,"\\'")}')">+ Sub</button>
           <button class="btn-sm btn-secondary" onclick="showEditGeneralHeadModal('${head.id}','${head.name.replace(/'/g,"\\'")}')">Edit</button>
           <button class="btn-sm btn-danger" onclick="deleteGeneralHead('${head.id}')">Delete</button>
@@ -680,9 +723,9 @@ function renderGeneralMainHead(head, num, subHeads) {
             const subUnit = effectiveUnit(sub.unit_mode, myUnit);
             return `
             <div class="list-item" style="padding:6px 0;display:flex;align-items:center;justify-content:space-between;">
-              <span style="font-size:13px;color:var(--text);">└ ${sub.name}${unitBadge(subUnit)}${categoryBadge(sub.category)}${pricingBadge(sub.pricing_type)}</span>
+              <span style="font-size:13px;color:var(--text);">└ ${sub.name}${unitBadge(subUnit)}${categoryBadge(sub.category)}${feeTypeBadge(sub.fee_type, sub.unit_price)}</span>
               <div style="display:flex;gap:6px;">
-                <button class="btn-sm btn-secondary" onclick="showHeadPropertiesModal('dr_general_heads','${sub.id}','${sub.name.replace(/'/g,"\\'")}','${sub.unit_mode || ''}','${myUnit}','${sub.category || ''}','${sub.pricing_type || 'fixed'}')">⚙</button>
+                <button class="btn-sm btn-secondary" onclick="showHeadPropertiesModal('dr_general_heads','${sub.id}','${sub.name.replace(/'/g,"\\'")}','${sub.unit_mode || ''}','${myUnit}','${sub.category || ''}','${sub.pricing_type || 'fixed'}','${sub.fee_type || ''}',${sub.unit_price || 'null'})">⚙</button>
                 <button class="btn-sm btn-secondary" onclick="showEditGeneralHeadModal('${sub.id}','${sub.name.replace(/'/g,"\\'")}')">Edit</button>
                 <button class="btn-sm btn-danger" onclick="deleteGeneralHead('${sub.id}')">✕</button>
               </div>
@@ -716,7 +759,7 @@ function showAddGeneralSubHeadModal(parentId, parentName) {
 async function addGeneralSubHead(parentId) {
   const name = document.getElementById('gh-sub-name').value.trim();
   if (!name) { showToast('Enter sub-head name', 'error'); return; }
-  const { error } = await db.from('dr_general_heads').insert({ name, parent_id: parentId, org_id: currentOrgId });
+  const { error } = await db.from('dr_general_heads').insert({ name, parent_id: parentId, org_id: currentOrgId, paryushan_day: 1 });
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   closeModal();
   showToast('Sub-head added!', 'success');

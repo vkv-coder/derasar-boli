@@ -215,10 +215,97 @@ async function loadDay1HeadsEntry() {
     const myUnit = resolveGeneralUnit(h);
     return `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
-      <span style="font-size:14px;color:var(--text);">${h.name}${entryUnitBadge(myUnit)}</span>
-      <button class="btn-accent btn-sm" onclick="showAddToCartModal('${h.id}','${h.name.replace(/'/g,"\\'")}','general','${myUnit}')">+ Add</button>
+      <span style="font-size:14px;color:var(--text);">${h.name}${entryUnitBadge(myUnit)}${feeHeadEntryBadge(h)}</span>
+      ${feeHeadAddButton(h, myUnit)}
     </div>
   `; }).join('');
+}
+
+// ========== FEE / PASS HEADS (fixed yearly fee, or fixed price × qty) ==========
+// A head can be flagged (via ⚙ Properties in Heads Setup) as a Membership
+// Fee (one fixed amount/family/year, no typing needed at the counter — and
+// checked against this year's donations so the same family isn't charged
+// twice) or a Pass (fixed price × however many the family wants — a
+// function can have its own pass head at its own price, since Swamivatsalya
+// passes vary by function, not one fixed price app-wide — user request
+// 2026-09-15).
+function feeHeadEntryBadge(h) {
+  if (h.fee_type === 'membership') return ` <span style="font-size:10px;font-weight:700;background:#E8F5E9;color:#2E7D32;padding:2px 6px;border-radius:8px;">₹${h.unit_price || 0}/family/yr</span>`;
+  if (h.fee_type === 'pass') return ` <span style="font-size:10px;font-weight:700;background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:8px;">₹${h.unit_price || 0}/pass</span>`;
+  return '';
+}
+
+function feeHeadAddButton(h, myUnit, headType) {
+  const nameEsc = h.name.replace(/'/g, "\\'");
+  if (h.fee_type === 'membership') {
+    return `<button class="btn-accent btn-sm" style="background:#2E7D32;" onclick="addMembershipFeeToCart('${h.id}','${nameEsc}',${h.unit_price || 0})">+ Add</button>`;
+  }
+  if (h.fee_type === 'pass') {
+    return `<button class="btn-accent btn-sm" style="background:#1565C0;" onclick="showAddPassToCartModal('${h.id}','${nameEsc}',${h.unit_price || 0})">+ Add</button>`;
+  }
+  return `<button class="btn-accent btn-sm" onclick="showAddToCartModal('${h.id}','${nameEsc}','${headType || 'general'}','${myUnit}')">+ Add</button>`;
+}
+
+// Membership Fee adds straight to the cart at the fixed price — no amount
+// entry — but needs the donor picked first (unlike a regular head, which
+// can be added before the donor is chosen) so it can check whether this
+// family already paid for the current calendar year and warn instead of
+// silently double-charging them.
+async function addMembershipFeeToCart(headId, headName, unitPrice) {
+  const payer = getCartPayer();
+  if (!payer) return;
+  if (!unitPrice || unitPrice <= 0) { showToast('This head has no price set yet — set it via ⚙ in Heads Setup', 'error'); return; }
+
+  if (payer.familyNo) {
+    const year = new Date().getFullYear();
+    const yearStart = new Date(year, 0, 1).toISOString();
+    const { data: existing } = await db.from('dr_donations')
+      .select('amount, created_at')
+      .eq('org_id', currentOrgId).eq('head_type', 'general_head').eq('general_head_id', headId)
+      .eq('family_no', payer.familyNo).gte('created_at', yearStart)
+      .order('created_at', { ascending: false }).limit(1);
+    if (existing && existing.length) {
+      const e = existing[0];
+      const dt = new Date(e.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      if (!confirm(`${payer.name}'s family (${payer.familyNo}) already paid ${headName} — ${formatAmount(parseFloat(e.amount))} on ${dt}, for ${year}.\n\nAdd it again anyway?`)) return;
+    }
+  }
+
+  currentCart.push({ headId, headName, headType: 'general', amount: unitPrice, qty: null, unit: 'rupees', rate: null, feeType: 'membership' });
+  renderCartList();
+  showToast(`✅ Added ${headName} — ${formatAmount(unitPrice)}`, 'success');
+}
+
+function showAddPassToCartModal(headId, headName, unitPrice) {
+  if (!unitPrice || unitPrice <= 0) { showToast('This head has no price set yet — set it via ⚙ in Heads Setup', 'error'); return; }
+  showModal(`
+    <div class="modal-title">+ Add to Cart</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">${headName} — ₹${unitPrice}/pass</div>
+    <div class="form-group">
+      <label>No. of Passes</label>
+      <input type="number" id="cart-pass-qty" placeholder="e.g. 2" min="1" step="1" inputmode="numeric" oninput="updatePassPreview(${unitPrice})" />
+      <div id="cart-pass-preview" style="font-size:12px;color:var(--text-muted);margin-top:4px;">@ ₹${unitPrice}/pass</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="addPassToCart('${headId}','${headName.replace(/'/g,"\\'")}',${unitPrice})">+ Add</button>
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+    </div>
+  `);
+}
+
+function updatePassPreview(unitPrice) {
+  const el = document.getElementById('cart-pass-preview');
+  if (!el) return;
+  const qty = parseInt(document.getElementById('cart-pass-qty')?.value, 10) || 0;
+  el.textContent = `@ ₹${unitPrice}/pass = ${formatAmount(qty * unitPrice)}`;
+}
+
+function addPassToCart(headId, headName, unitPrice) {
+  const qty = parseInt(document.getElementById('cart-pass-qty')?.value, 10);
+  if (!qty || qty <= 0) { showToast('Enter a valid number of passes', 'error'); return; }
+  currentCart.push({ headId, headName, headType: 'general', amount: qty * unitPrice, qty: null, unit: 'rupees', rate: null, feeType: 'pass', passQty: qty });
+  closeModal();
+  renderCartList();
 }
 
 // ========== DAY 3/5/7/8 TAB (tap-button selected, combines general + swapna) ==========
@@ -245,8 +332,8 @@ async function loadDayTabHeadsEntry() {
   ]);
 
   const items = [
-    ...(genHeads || []).map(h => ({ id: h.id, name: h.name, headType: 'general', unitMode: h.unit_mode })),
-    ...(swHeads || []).map(h => ({ id: h.id, name: h.name, headType: 'swapna', unitMode: h.unit_mode }))
+    ...(genHeads || []).map(h => ({ id: h.id, name: h.name, headType: 'general', unitMode: h.unit_mode, feeType: h.fee_type, unitPrice: h.unit_price })),
+    ...(swHeads || []).map(h => ({ id: h.id, name: h.name, headType: 'swapna', unitMode: h.unit_mode, feeType: null, unitPrice: null }))
   ];
 
   if (items.length === 0) {
@@ -259,8 +346,8 @@ async function loadDayTabHeadsEntry() {
     const myUnit = entryEffectiveUnit(it.unitMode, rootUnit);
     return `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
-      <span style="font-size:14px;color:var(--text);">${it.name}${entryUnitBadge(myUnit)}</span>
-      <button class="btn-accent btn-sm" onclick="showAddToCartModal('${it.id}','${it.name.replace(/'/g,"\\'")}','${it.headType}','${myUnit}')">+ Add</button>
+      <span style="font-size:14px;color:var(--text);">${it.name}${entryUnitBadge(myUnit)}${feeHeadEntryBadge({ fee_type: it.feeType, unit_price: it.unitPrice })}</span>
+      ${feeHeadAddButton({ id: it.id, name: it.name, fee_type: it.feeType, unit_price: it.unitPrice }, myUnit, it.headType)}
     </div>
   `; }).join('') + `</div>`;
 }
@@ -506,7 +593,7 @@ function renderCartList() {
         <tbody>
           ${currentCart.map((c, i) => `
             <tr>
-              <td style="font-size:13px;">${c.headName}${c.qty ? `<div style="font-size:11px;color:var(--text-muted);">${c.qty} ${c.unit}</div>` : ''}</td>
+              <td style="font-size:13px;">${c.headName}${c.qty ? `<div style="font-size:11px;color:var(--text-muted);">${c.qty} ${c.unit}</div>` : ''}${c.passQty ? `<div style="font-size:11px;color:var(--text-muted);">${c.passQty} pass${c.passQty === 1 ? '' : 'es'}</div>` : ''}</td>
               <td><strong>${formatAmount(c.amount)}</strong></td>
               <td><button class="btn-sm btn-danger" onclick="removeCartItem(${i})">✕</button></td>
             </tr>
@@ -776,6 +863,7 @@ function buildCartRecords(payer, receiptName) {
     rate_per_mun_used: c.unit === 'mun' ? c.rate : null,
     aani_qty: c.unit === 'aani' ? c.qty : null,
     rate_per_aani_used: c.unit === 'aani' ? c.rate : null,
+    pass_qty: c.passQty || null,
     entered_by: currentUser?.id || null
   }));
 }
