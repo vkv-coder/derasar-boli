@@ -195,6 +195,7 @@ async function loadReport() {
         <button class="btn-primary" style="white-space:nowrap;" onclick="downloadExcelReport()">⬇️ Excel</button>
       </div>
       <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">Search and the head dropdown combine — e.g. type a name AND pick a head to find just that person's donations to that item.</p>
+      <div id="report-split-search-results"></div>
     </div>
 
     <!-- Find Donations by Amount (multiples-of / above-but-not-multiple) -->
@@ -296,6 +297,59 @@ async function applyReportFilter() {
     filtered = filtered.filter(d => (d.receipt_name || d.donor_name || '').toLowerCase().includes(nameQuery));
   }
   renderReportTable(filtered);
+  renderSplitNameSearchResults(nameQuery);
+}
+
+// A split-receipt name (e.g. a family member the token's total got divided
+// to) only ever lives in dr_token_splits — the underlying dr_donations line
+// is still filed under whoever originally generated the token, so a name
+// search on the table above alone would silently return nothing for that
+// person even though they hold a real, printed receipt (real case
+// 2026-09-16: searching "Urmila" found nothing, even though she holds
+// receipt #254 for ₹18,000, split off Jatin Anikumar Vora's token #196).
+// This surfaces those matches separately, with the head(s) resolved from
+// the parent token's own donation lines (same resolution split receipts
+// themselves use — dr_token_splits never stores head info).
+function renderSplitNameSearchResults(nameQuery) {
+  const el = document.getElementById('report-split-search-results');
+  if (!el) return;
+  if (!nameQuery) { el.innerHTML = ''; return; }
+
+  const matches = [];
+  Object.keys(reportSplitsByToken).forEach(tokenId => {
+    (reportSplitsByToken[tokenId] || []).forEach(s => {
+      if ((s.name || '').toLowerCase().includes(nameQuery)) matches.push(s);
+    });
+  });
+
+  if (matches.length === 0) { el.innerHTML = ''; return; }
+
+  const rows = matches.map(s => {
+    const t = reportTokenMap[s.token_id];
+    const lines = reportAllDonations.filter(d => d.token_id === s.token_id);
+    const heads = [...new Set(lines.map(getDonationHeadName))].join(', ') || '—';
+    return { s, t, heads };
+  }).sort((a, b) => new Date(b.s.created_at) - new Date(a.s.created_at));
+
+  el.innerHTML = `
+    <p style="font-size:12px;font-weight:600;color:var(--primary);margin-top:10px;">👤 Split-receipt matches for "${nameQuery}" (divided off another donor's token — not counted separately above)</p>
+    <div style="overflow-x:auto;">
+      <table class="data-table">
+        <thead><tr><th>Name</th><th>Amount</th><th>Head</th><th>Receipt No.</th><th>Token Payer</th></tr></thead>
+        <tbody>
+          ${rows.map(({ s, t, heads }) => `
+            <tr>
+              <td>${s.name}</td>
+              <td style="font-weight:600;">₹${parseFloat(s.amount).toLocaleString('en-IN')}</td>
+              <td style="font-size:12px;">${heads}</td>
+              <td style="font-weight:600;color:${s.receipt_no ? 'var(--primary)' : '#ff9800'};">${s.receipt_no ? formatReceiptNo(reportOrgPrefix, s.receipt_no) : 'Pending print'}</td>
+              <td style="font-size:12px;color:var(--text-muted);">${t?.payer_name || '—'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 function getSwapnaDescendants(parentId) {
