@@ -383,6 +383,23 @@ async function saveTokenAllocation(tokenId) {
   const { data: saved, error: insErr } = await db.from('dr_token_splits').insert(records).select();
   if (insErr) { showToast('Error: ' + insErr.message, 'error'); return; }
 
+  // readSplitRows() above already rejected anything that doesn't add up to
+  // the token's exact total, so every line under it is now fully accounted
+  // for by name — reconcile received_amount to match, since it can still be
+  // stale from whatever partial figure was typed in at the earlier "Confirm
+  // Received" step (that box is free-typed, not locked to the full total —
+  // real incident 2026-09-16, Token #199: ₹18,000 was entered there though
+  // the token totaled ₹21,000, and splitting into the two real names later
+  // never corrected it, so the item's "Received" total stayed short by
+  // ₹3,000 even though both split receipts had been printed and paid).
+  // supabase-js has no column-to-column SQL expression in .update(), so this
+  // needs each line's own amount — fetch then write, same as the loop
+  // confirmTokenReceived() already does for the non-split path.
+  const { data: tokenLines } = await db.from('dr_donations').select('id, amount').eq('token_id', tokenId);
+  for (const line of (tokenLines || [])) {
+    await db.from('dr_donations').update({ received_amount: line.amount }).eq('id', line.id);
+  }
+
   const { error: updErr } = await db.from('dr_receipt_tokens')
     .update({ status: 'allocated', allocated_by: currentUser?.id || null, allocated_at: new Date().toISOString() })
     .eq('id', tokenId);

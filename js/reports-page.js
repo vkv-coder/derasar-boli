@@ -182,6 +182,7 @@ async function loadReport() {
     <!-- Filter + Excel -->
     <div class="card">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="text" id="report-name-filter" placeholder="🔍 Search donor name..." oninput="onReportNameFilterInput()" style="flex:1;min-width:160px;" />
         <select id="report-head-filter" onchange="applyReportFilter()" style="flex:1;min-width:160px;">
           <option value="">-- All Heads --</option>
           <optgroup label="🔶 Swapna Heads">
@@ -193,6 +194,7 @@ async function loadReport() {
         </select>
         <button class="btn-primary" style="white-space:nowrap;" onclick="downloadExcelReport()">⬇️ Excel</button>
       </div>
+      <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">Search and the head dropdown combine — e.g. type a name AND pick a head to find just that person's donations to that item.</p>
     </div>
 
     <!-- Find Donations by Amount (multiples-of / above-but-not-multiple) -->
@@ -274,9 +276,26 @@ function filterDonationsByHeadValue(val) {
 }
 
 // ========== FILTER ==========
+// Name search and the head dropdown combine (not either/or) — e.g. typing
+// a donor's name while a head is also picked narrows to just that person's
+// donations under that one head, which is what actually answers "did X pay
+// against Y item" instead of making the admin scan the whole table by eye
+// (user request 2026-09-16).
+let reportNameFilterTimer = null;
+function onReportNameFilterInput() {
+  clearTimeout(reportNameFilterTimer);
+  reportNameFilterTimer = setTimeout(applyReportFilter, 250);
+}
+
 async function applyReportFilter() {
   const val = document.getElementById('report-head-filter').value;
-  renderReportTable(filterDonationsByHeadValue(val));
+  const nameQuery = (document.getElementById('report-name-filter')?.value || '').trim().toLowerCase();
+
+  let filtered = filterDonationsByHeadValue(val);
+  if (nameQuery) {
+    filtered = filtered.filter(d => (d.receipt_name || d.donor_name || '').toLowerCase().includes(nameQuery));
+  }
+  renderReportTable(filtered);
 }
 
 function getSwapnaDescendants(parentId) {
