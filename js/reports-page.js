@@ -1220,7 +1220,7 @@ async function loadReceiptRegister() {
   const orFilter = `and(receipt_no_assigned_at.gte.${fromTs},receipt_no_assigned_at.lte.${toTs}),and(receipt_no_assigned_at.is.null,created_at.gte.${fromTs},created_at.lte.${toTs})`;
 
   const [{ data: tokens }, { data: splits }, { data: donations }] = await Promise.all([
-    db.from('dr_receipt_tokens').select('id, receipt_no, receipt_no_assigned_at, created_at, payer_name, total_amount, payment_mode')
+    db.from('dr_receipt_tokens').select('id, receipt_no, receipt_no_assigned_at, created_at, payer_name, total_amount, payment_mode, status')
       .eq('org_id', currentOrgId).not('receipt_no', 'is', null).or(orFilter),
     db.from('dr_token_splits').select('id, receipt_no, receipt_no_assigned_at, created_at, name, amount, payment_mode')
       .eq('org_id', currentOrgId).not('receipt_no', 'is', null).or(orFilter),
@@ -1229,7 +1229,23 @@ async function loadReceiptRegister() {
   ]);
 
   registerRows = [
-    ...(tokens || []).map(t => ({ receiptNo: t.receipt_no, date: t.receipt_no_assigned_at || t.created_at, name: t.payer_name, amount: parseFloat(t.total_amount), source: 'Token', sourceId: t.id, mode: t.payment_mode || 'cash' })),
+    // A token with status='allocated' has already been split — its real
+    // receipts are the dr_token_splits rows below, also in this list. A
+    // receipt_no on the token ITSELF at that point only exists because of
+    // the already-split-token bug fixed 2026-09-16 (see buildTokenReceiptBlock
+    // in receipt.js) — the number stays valid since real paper was printed
+    // for it (real case: token #199 / receipt #283), but its amount must be
+    // zeroed here or the register's cash/online totals double-count money
+    // already covered by the split receipts.
+    ...(tokens || []).map(t => {
+      const isDuplicate = t.status === 'allocated';
+      return {
+        receiptNo: t.receipt_no, date: t.receipt_no_assigned_at || t.created_at,
+        name: t.payer_name + (isDuplicate ? ' ⚠ DUPLICATE — already split, see other receipts for this payer' : ''),
+        amount: isDuplicate ? 0 : parseFloat(t.total_amount),
+        source: 'Token', sourceId: t.id, mode: t.payment_mode || 'cash'
+      };
+    }),
     ...(splits || []).map(s => ({ receiptNo: s.receipt_no, date: s.receipt_no_assigned_at || s.created_at, name: s.name, amount: parseFloat(s.amount), source: 'Split', sourceId: s.id, mode: s.payment_mode || 'cash' })),
     ...(donations || []).map(d => ({ receiptNo: d.receipt_no, date: d.receipt_no_assigned_at || d.created_at, name: d.receipt_name || d.donor_name, amount: parseFloat(d.amount), source: 'Donation', sourceId: d.id, mode: d.payment_mode || 'cash' }))
   ].sort((a, b) => a.receiptNo - b.receiptNo);
