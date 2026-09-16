@@ -501,6 +501,18 @@ async function buildTokenReceiptBlock(tokenId) {
   const { data: t, error: tErr } = await db.from('dr_receipt_tokens').select('*').eq('id', tokenId).single();
   if (tErr || !t) return null;
 
+  // A token that's already been split has its real receipt numbers on the
+  // dr_token_splits rows, not here — this combined view has no status guard
+  // of its own, so anything that still routes an already-split token
+  // through it (🧾 on a token-bundled donation line, the Receipt Register's
+  // generic "Print" dispatch, etc.) would silently mint a brand-new,
+  // duplicate receipt number directly on the token, on top of the real
+  // split receipts already printed for the same money. Real incident
+  // 2026-09-16: Token #199 (Jatin Anikumar Vora, already split into
+  // receipts #252/#253) picked up an extra, erroneous receipt #283 this
+  // way.
+  if (t.status === 'allocated') return { alreadySplit: true, tokenId };
+
   const { data: lines, error: lErr } = await db.from('dr_donations').select('*').eq('token_id', tokenId).order('created_at');
   if (lErr || !lines || lines.length === 0) return null;
 
@@ -568,6 +580,10 @@ async function buildTokenReceiptBlock(tokenId) {
 async function showCombinedTokenReceipt(tokenId) {
   const block = await buildTokenReceiptBlock(tokenId);
   if (!block) { showToast('Could not load token', 'error'); return; }
+  if (block.alreadySplit) {
+    showToast('This token was already split into named receipts — open it from Token Desk (👥 View Splits) to print those instead.', 'error');
+    return;
+  }
 
   const html = `<!DOCTYPE html>
 <html lang="gu">
