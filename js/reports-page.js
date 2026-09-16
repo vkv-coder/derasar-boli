@@ -576,10 +576,21 @@ function getDonationReceiptInfo(d) {
     const t = reportTokenMap[d.token_id];
     if (t) {
       if (t.receipt_no) return { label: formatReceiptNo(reportOrgPrefix, t.receipt_no), pending: false };
-      const splits = (reportSplitsByToken[t.id] || []).filter(s => s.receipt_no);
-      if (splits.length) {
-        return { label: 'Split: ' + splits.map(s => formatReceiptNo(reportOrgPrefix, s.receipt_no)).join(', '), pending: false, isSplit: true };
+      const allSplits = reportSplitsByToken[t.id] || [];
+      const printedSplits = allSplits.filter(s => s.receipt_no);
+      if (printedSplits.length) {
+        const remaining = allSplits.length - printedSplits.length;
+        return { label: 'Split: ' + printedSplits.map(s => formatReceiptNo(reportOrgPrefix, s.receipt_no)).join(', ') + (remaining > 0 ? ` (+${remaining} not yet printed)` : ''), pending: false, isSplit: true };
       }
+      // status 'allocated' means the token has already been divided by name
+      // and the split amounts add up to the full total (readSplitRows()
+      // enforces that) — the money side is settled, only the paper for
+      // each named share hasn't been printed yet. Worded separately from a
+      // token that hasn't even been split yet, so "pending" here reads as
+      // "needs printing" rather than "payment not received" (user
+      // confusion 2026-09-16 — the Received amount can already show fully
+      // paid on a line whose receipt still says "Pending print").
+      if (t.status === 'allocated') return { label: 'Split — pending print', pending: true };
       return { label: 'Pending print', pending: true };
     }
   }
@@ -618,12 +629,13 @@ function renderExpandableSummaryTable(containerId, titleHTML, rows, colLabel, pr
       </div>
       <div id="rpt-body-${sectionKey}" style="display:${collapsed ? 'none' : 'block'};overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th style="width:20px;"></th><th>${colLabel}</th><th style="text-align:right;">Entered</th><th style="text-align:right;">Received</th></tr></thead>
+          <thead><tr><th style="width:30px;">Sr.</th><th style="width:20px;"></th><th>${colLabel}</th><th style="text-align:right;">Entered</th><th style="text-align:right;">Received</th></tr></thead>
           <tbody>
-            ${rows.map(r => {
+            ${rows.map((r, i) => {
               const isOpen = !!expandedSummaryRows[r.rowId];
               return `
                 <tr style="cursor:pointer;" onclick="toggleSummaryRow('${r.rowId}')">
+                  <td style="color:var(--text-muted);font-size:11px;">${i + 1}</td>
                   <td style="color:var(--text-muted);">${isOpen ? '▾' : '▸'}</td>
                   <td>${r.name}</td>
                   <td style="text-align:right;">₹${r.entered.toLocaleString('en-IN')}</td>
@@ -632,14 +644,16 @@ function renderExpandableSummaryTable(containerId, titleHTML, rows, colLabel, pr
                 ${isOpen ? `
                 <tr>
                   <td></td>
+                  <td></td>
                   <td colspan="3" style="padding:0 0 8px 0;">
                     ${r.lines.length === 0 ? `<div style="font-size:12px;color:var(--text-muted);padding:6px 4px;">No donations yet.</div>` : `
                     <table class="data-table" style="width:100%;background:#faf9f7;">
-                      <thead><tr><th>Name</th><th style="text-align:right;">Amount</th><th>Receipt No.</th></tr></thead>
+                      <thead><tr><th style="width:26px;">#</th><th>Name</th><th style="text-align:right;">Amount</th><th>Receipt No.</th></tr></thead>
                       <tbody>
-                        ${r.lines.map(d => {
+                        ${r.lines.map((d, di) => {
                           const rec = getDonationReceiptInfo(d);
                           return `<tr>
+                            <td style="font-size:11px;color:var(--text-muted);">${di + 1}</td>
                             <td style="font-size:12px;">${d.receipt_name || d.donor_name || '—'}</td>
                             <td style="text-align:right;font-size:12px;">₹${parseFloat(d.amount || 0).toLocaleString('en-IN')}</td>
                             <td style="font-size:12px;font-weight:600;${rec.pending ? 'color:#ff9800;' : 'color:var(--primary);'}">${rec.label}</td>
