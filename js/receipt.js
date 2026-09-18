@@ -627,6 +627,58 @@ ${RECEIPT_WA_INFO_HTML}
 // all, only the amount). In practice every split so far has come from a
 // single-head token, so showing that head (or joining names if a token
 // genuinely does span more than one) is safe and was the missing piece.
+// A token spanning several heads (e.g. one visit covering Pathshala,
+// Devdravya, Sadharan, etc. all at once) still gets split by NAME, not by
+// head — so which head(s) a given named share actually paid for isn't
+// stored anywhere. When the split amounts happen to line up exactly with
+// one or more of the token's own donation lines (the common real case: one
+// person's share was literally "the Sadharan line", another's was "all the
+// rest"), this finds that exact partition so each receipt can show only
+// ITS OWN head(s) instead of every head on every split receipt. Real
+// incident 2026-09-18, Token #294 (Vipinchandra A Shah, 6 heads, split into
+// Hardik ₹11,000 / Henil ₹6,000): both receipts were showing all 6 heads.
+// Falls back to null (caller shows every head, old behavior) whenever no
+// exact assignment exists — never guesses at a partial/ambiguous match.
+function partitionDonationLinesBySplits(lines, splitAmounts) {
+  const n = lines.length;
+  const used = new Array(n).fill(false);
+  const result = splitAmounts.map(() => []);
+
+  function fillSplit(splitIdx, startLine, remaining) {
+    if (Math.abs(remaining) < 0.005) return assignSplit(splitIdx + 1);
+    if (remaining < -0.005) return false;
+    for (let i = startLine; i < n; i++) {
+      if (used[i]) continue;
+      used[i] = true;
+      result[splitIdx].push(lines[i]);
+      if (fillSplit(splitIdx, i + 1, remaining - lines[i].amount)) return true;
+      result[splitIdx].pop();
+      used[i] = false;
+    }
+    return false;
+  }
+  function assignSplit(splitIdx) {
+    if (splitIdx === splitAmounts.length) return used.every(u => u);
+    return fillSplit(splitIdx, 0, splitAmounts[splitIdx]);
+  }
+
+  return assignSplit(0) ? result : null;
+}
+
+async function resolveDonationHeadName(d) {
+  if (d.head_type === 'general_head' && d.general_head_id) {
+    const { data: h } = await db.from('dr_general_heads').select('name').eq('id', d.general_head_id).single();
+    return h?.name || '';
+  } else if (d.head_type === 'swapna_item' && d.swapna_item_id) {
+    const { data: item } = await db.from('dr_swapna_items').select('name, dr_swapna(name)').eq('id', d.swapna_item_id).single();
+    return (item?.dr_swapna?.name || '') + (item?.name ? ' → ' + item.name : '');
+  } else if (d.head_type === 'swapna' && d.swapna_id) {
+    const { data: sw } = await db.from('dr_swapna').select('name').eq('id', d.swapna_id).single();
+    return sw?.name || '';
+  }
+  return '';
+}
+
 async function buildSplitReceiptBlock(splitId) {
   const { data: s, error } = await db.from('dr_token_splits').select('*, dr_receipt_tokens(org_id, phone)').eq('id', splitId).single();
   if (error || !s) return null;
@@ -634,23 +686,28 @@ async function buildSplitReceiptBlock(splitId) {
   const { data: org } = await db.from('dr_organizations').select('*').eq('id', s.dr_receipt_tokens?.org_id || currentOrgId).single();
   const templeHeader = buildTempleHeader(org);
 
-  const { data: lines } = await db.from('dr_donations').select('*').eq('token_id', s.token_id);
+  const [{ data: lines }, { data: allSplits }] = await Promise.all([
+    db.from('dr_donations').select('*').eq('token_id', s.token_id),
+    db.from('dr_token_splits').select('id, amount').eq('token_id', s.token_id).order('created_at')
+  ]);
+
+  const lineObjs = [];
   const headNames = [];
   for (const d of (lines || [])) {
-    let headName = '';
-    if (d.head_type === 'general_head' && d.general_head_id) {
-      const { data: h } = await db.from('dr_general_heads').select('name').eq('id', d.general_head_id).single();
-      headName = h?.name || '';
-    } else if (d.head_type === 'swapna_item' && d.swapna_item_id) {
-      const { data: item } = await db.from('dr_swapna_items').select('name, dr_swapna(name)').eq('id', d.swapna_item_id).single();
-      headName = (item?.dr_swapna?.name || '') + (item?.name ? ' → ' + item.name : '');
-    } else if (d.head_type === 'swapna' && d.swapna_id) {
-      const { data: sw } = await db.from('dr_swapna').select('name').eq('id', d.swapna_id).single();
-      headName = sw?.name || '';
-    }
+    const headName = await resolveDonationHeadName(d);
+    lineObjs.push({ amount: parseFloat(d.amount), headName });
     if (headName && !headNames.includes(headName)) headNames.push(headName);
   }
-  const headDisplay = headNames.join(', ');
+
+  let headDisplay = headNames.join(', ');
+  if (headNames.length > 1 && (allSplits || []).length > 1) {
+    const partition = partitionDonationLinesBySplits(lineObjs, allSplits.map(sp => parseFloat(sp.amount)));
+    if (partition) {
+      const myIdx = allSplits.findIndex(sp => sp.id === s.id);
+      const myHeads = [...new Set(partition[myIdx].map(l => l.headName).filter(Boolean))];
+      if (myHeads.length) headDisplay = myHeads.join(', ');
+    }
+  }
 
   const dt = new Date(s.created_at);
   const receiptDate = dt.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
