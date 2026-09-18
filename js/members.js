@@ -26,11 +26,18 @@ async function renderMembers() {
 }
 
 async function loadMembersStats() {
-  const { data } = await db.from('dr_members').select('family_no, phone_no, family_member_count').eq('org_id', currentOrgId);
+  const [{ data }, { data: individuals }] = await Promise.all([
+    db.from('dr_members').select('family_no, phone_no, family_member_count').eq('org_id', currentOrgId),
+    db.from('dr_family_individuals').select('family_no').eq('org_id', currentOrgId)
+  ]);
   const el = document.getElementById('members-stats');
   if (!el || !data) return;
+  const individualCounts = {};
+  (individuals || []).forEach(p => { individualCounts[p.family_no] = (individualCounts[p.family_no] || 0) + 1; });
   const uniqueFamilies = new Set(data.map(m => m.family_no).filter(Boolean)).size;
-  const totalPersons   = data.reduce((s, m) => s + (m.family_member_count || 0), 0);
+  // Prefer the live Family Members count over the one-off typed-in number
+  // (see loadMembersList for why — same staleness bug, same fix).
+  const totalPersons   = data.reduce((s, m) => s + (individualCounts[m.family_no] ?? m.family_member_count ?? 0), 0);
   const missingPhone   = data.filter(m => !m.phone_no).length;
   const chip = (icon, val, label, warn) =>
     `<div style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;
@@ -68,6 +75,21 @@ async function loadMembersList(query = '') {
     return;
   }
 
+  // family_member_count is a number typed in once at Add Member time and
+  // never updated after — adding more names via the Family Members batch
+  // list (or the 👪 flow before it was folded into Edit) left this column
+  // stuck at whatever was typed initially, so it kept showing "1" for a
+  // family that had genuinely grown to 4 individuals (real report
+  // 2026-09-18, family V14: 3 names added today, list still said 1).
+  // dr_family_individuals is the live source of truth for who's actually
+  // in the family, so prefer its count wherever it has any rows at all.
+  const { data: allIndividuals } = await db.from('dr_family_individuals')
+    .select('family_no').eq('org_id', currentOrgId);
+  const individualCounts = {};
+  (allIndividuals || []).forEach(p => {
+    individualCounts[p.family_no] = (individualCounts[p.family_no] || 0) + 1;
+  });
+
   el.innerHTML = `
     <div style="overflow-x:auto;">
     <table class="data-table">
@@ -85,7 +107,7 @@ async function loadMembersList(query = '') {
             <td>${m.phone_no
               ? `<a href="tel:${m.phone_no}" style="color:var(--primary);text-decoration:none;">${m.phone_no}</a>`
               : '<span style="color:#f44;font-size:11px;">⚠ Missing</span>'}</td>
-            <td style="text-align:center;">${m.family_member_count || '—'}</td>
+            <td style="text-align:center;">${individualCounts[m.family_no] ?? m.family_member_count ?? '—'}</td>
             <td>
               <div style="display:flex;gap:5px;flex-wrap:wrap;">
                 <button class="btn-sm btn-secondary" onclick="showDonorHistory('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${(m.family_no||'').replace(/'/g,"\\'")}')">📜</button>
@@ -101,7 +123,7 @@ async function loadMembersList(query = '') {
     </table>
     </div>
     <p style="font-size:12px;color:var(--text-muted);margin-top:10px;">${data.length} families
-      &nbsp;·&nbsp; ${data.reduce((s,m)=>s+(m.family_member_count||0),0)} persons
+      &nbsp;·&nbsp; ${data.reduce((s,m)=>s+(individualCounts[m.family_no] ?? m.family_member_count ?? 0),0)} persons
       &nbsp;·&nbsp; Missing phone: ${data.filter(m => !m.phone_no).length}
     </p>
   `;
