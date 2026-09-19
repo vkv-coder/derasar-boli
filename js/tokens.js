@@ -324,6 +324,8 @@ async function cancelToken(tokenId) {
   // rows too, not just dr_donations lines — block cancelling if any of THOSE
   // already has a receipt_no (already printed and handed to a donor;
   // cancelling the parent token must not silently delete that record).
+  const { data: tokenRow, error: tErr } = await db.from('dr_receipt_tokens').select('id, receipt_no, org_id').eq('id', tokenId).single();
+  if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
   const { data: splits, error: sErr } = await db.from('dr_token_splits').select('id, receipt_no').eq('token_id', tokenId);
   if (sErr) { showToast('Error: ' + sErr.message, 'error'); return; }
   if ((splits || []).some(s => s.receipt_no)) {
@@ -340,6 +342,16 @@ async function cancelToken(tokenId) {
   }
   const { error } = await db.from('dr_receipt_tokens').update({ status: 'cancelled' }).eq('id', tokenId).eq('org_id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
+
+  // Best-effort: this token's own receipt_no gets stamped the moment its
+  // preview is built (before an actual print is ever confirmed — see
+  // getOrAssignReceiptNo in receipt.js). Give it back so the next receipt
+  // doesn't skip a number, unless something has already been numbered since
+  // (then the gap is unavoidable and correctly left as-is).
+  if (tokenRow && tokenRow.receipt_no) {
+    await db.rpc('dr_release_receipt_no', { p_org_id: tokenRow.org_id, p_no: tokenRow.receipt_no });
+  }
+
   showToast('Token cancelled');
   await loadTokensList();
 }
