@@ -1311,7 +1311,8 @@ async function loadReceiptRegister() {
         receiptNo: t.receipt_no, date: t.receipt_no_assigned_at || t.created_at,
         name: t.payer_name + (isDuplicate ? ' ⚠ DUPLICATE — already split, see other receipts for this payer' : '') + (isCancelled ? ' ⚠ CANCELLED' : ''),
         amount: (isDuplicate || isCancelled) ? 0 : parseFloat(t.total_amount),
-        source: 'Token', sourceId: t.id, mode: t.payment_mode || 'cash'
+        source: 'Token', sourceId: t.id, mode: t.payment_mode || 'cash',
+        voidable: !isDuplicate && !isCancelled
       };
     }),
     ...(splits || []).map(s => ({ receiptNo: s.receipt_no, date: s.receipt_no_assigned_at || s.created_at, name: s.name, amount: parseFloat(s.amount), source: 'Split', sourceId: s.id, mode: s.payment_mode || 'cash' })),
@@ -1369,6 +1370,7 @@ function renderReceiptRegisterTable() {
               <td>
                 <button class="btn-sm btn-secondary" onclick="reprintRegisterRow('${r.source}','${r.sourceId}')">🖨</button>
                 <button class="btn-sm btn-secondary" onclick="editPaymentModeModal('${r.source}','${r.sourceId}')">✏️</button>
+                ${r.source === 'Token' && r.voidable ? `<button class="btn-sm btn-danger" onclick="voidRegisterToken('${r.sourceId}')">🚫</button>` : ''}
               </td>
             </tr>
           `).join('')}
@@ -1383,6 +1385,18 @@ function reprintRegisterRow(source, id) {
   if (source === 'Token') showCombinedTokenReceipt(id);
   else if (source === 'Split') showSplitReceipt(id);
   else showDonationReceipt(id);
+}
+
+// Voiding a receipt AFTER it's already been printed (already has a
+// receipt_no, already fully "paid") needs its own entry point here — once a
+// token is fully done it drops off the Tokens desk entirely (loadTokensList
+// only shows pending/awaiting-split/incomplete-split rows), so its Cancel
+// button there becomes unreachable. Reuses cancelToken() as-is (from
+// tokens.js, same page) since it doesn't actually check current status
+// before allowing cancellation, only whether a split was already printed.
+async function voidRegisterToken(tokenId) {
+  await cancelToken(tokenId);
+  await loadReceiptRegister();
 }
 
 function downloadReceiptRegisterExcel() {
