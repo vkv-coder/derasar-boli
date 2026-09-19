@@ -609,13 +609,65 @@ function toggleSummaryRow(rowId) {
 // reportSectionCollapsed above) since most Reports visits don't need it
 // open — only the count badge (rows with any entered amount) shows without
 // expanding.
-function renderExpandableSummaryTable(containerId, titleHTML, rows, colLabel, printFnName, printDetailedFnName, sectionKey) {
+// groupByHead (Category-wise Summary only — Item-wise is already single-head,
+// no grouping needed) renders each main head as a centered banner row — its
+// total is the WHOLE category (itself plus every sub-head under it, exactly
+// as computed) — and, when expanded, breaks the donations down by sub-head
+// first (each a side-indented subtotal row) before listing donors under
+// each. Previously every donor under a category was one flat list with no
+// indication of which of the category's several sub-heads they belonged
+// to, which made it hard to tell the main head's own direct donations
+// apart from its sub-heads (user request 2026-09-19).
+function renderExpandableSummaryTable(containerId, titleHTML, rows, colLabel, printFnName, printDetailedFnName, sectionKey, groupByHead) {
   const el = document.getElementById(containerId);
   if (!el) return;
   if (rows.length === 0) { el.innerHTML = ''; return; }
 
   const activeCount = rows.filter(r => r.entered > 0).length;
   const collapsed = reportSectionCollapsed[sectionKey];
+
+  const donorRow = (d, di) => {
+    const rec = getDonationReceiptInfo(d);
+    return `<tr>
+      <td style="font-size:11px;color:var(--text-muted);">${di + 1}</td>
+      <td style="font-size:12px;">${d.receipt_name || d.donor_name || '—'}</td>
+      <td style="text-align:right;font-size:12px;">₹${parseFloat(d.amount || 0).toLocaleString('en-IN')}</td>
+      <td style="font-size:12px;font-weight:600;${rec.pending ? 'color:#ff9800;' : 'color:var(--primary);'}">${rec.label}</td>
+    </tr>`;
+  };
+
+  const detailHtml = r => {
+    if (r.lines.length === 0) return `<div style="font-size:12px;color:var(--text-muted);padding:6px 4px;">No donations yet.</div>`;
+
+    if (!groupByHead) {
+      return `<table class="data-table" style="width:100%;background:#faf9f7;">
+        <thead><tr><th style="width:26px;">#</th><th>Name</th><th style="text-align:right;">Amount</th><th>Receipt No.</th></tr></thead>
+        <tbody>${r.lines.map(donorRow).join('')}</tbody>
+      </table>`;
+    }
+
+    const order = [];
+    const byHead = {};
+    r.lines.forEach(d => {
+      const h = getDirectHeadNameForGrouping(d) || '—';
+      if (!byHead[h]) { byHead[h] = []; order.push(h); }
+      byHead[h].push(d);
+    });
+    return order.map(h => {
+      const groupLines = byHead[h];
+      const subtotal = groupLines.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
+      const isDirect = h === r.name;
+      return `
+        <div style="margin:${order.indexOf(h) === 0 ? '0' : '10px'} 0 4px 8px;padding:6px 10px;background:#f3ece0;border-left:3px solid var(--accent);display:flex;justify-content:space-between;font-size:12.5px;font-weight:700;color:var(--primary);">
+          <span>${h}${isDirect ? ' <span style="font-weight:400;color:var(--text-muted);">(main head — direct)</span>' : ''}</span>
+          <span>₹${subtotal.toLocaleString('en-IN')}</span>
+        </div>
+        <table class="data-table" style="width:100%;background:#faf9f7;margin-left:8px;">
+          <thead><tr><th style="width:26px;">#</th><th>Name</th><th style="text-align:right;">Amount</th><th>Receipt No.</th></tr></thead>
+          <tbody>${groupLines.map(donorRow).join('')}</tbody>
+        </table>`;
+    }).join('');
+  };
 
   el.innerHTML = `
     <div class="card">
@@ -628,38 +680,34 @@ function renderExpandableSummaryTable(containerId, titleHTML, rows, colLabel, pr
       </div>
       <div id="rpt-body-${sectionKey}" style="display:${collapsed ? 'none' : 'block'};overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th style="width:30px;">Sr.</th><th style="width:20px;"></th><th>${colLabel}</th><th style="text-align:right;">Entered</th><th style="text-align:right;">Received</th></tr></thead>
+          ${groupByHead ? '' : `<thead><tr><th style="width:30px;">Sr.</th><th style="width:20px;"></th><th>${colLabel}</th><th style="text-align:right;">Entered</th><th style="text-align:right;">Received</th></tr></thead>`}
           <tbody>
             ${rows.map((r, i) => {
               const isOpen = !!expandedSummaryRows[r.rowId];
-              return `
+              const headerRow = groupByHead ? `
+                <tr style="cursor:pointer;" onclick="toggleSummaryRow('${r.rowId}')">
+                  <td colspan="5" style="padding:0;">
+                    <div style="background:var(--primary);color:#fff;padding:10px 14px;text-align:center;">
+                      <div style="font-weight:800;font-size:15px;letter-spacing:0.3px;">${isOpen ? '▾' : '▸'} ${i + 1}. ${r.name}</div>
+                      <div style="font-size:12px;font-weight:600;opacity:.92;margin-top:3px;">Entered ₹${r.entered.toLocaleString('en-IN')} &nbsp;·&nbsp; Received ₹${r.received.toLocaleString('en-IN')}</div>
+                    </div>
+                  </td>
+                </tr>` : `
                 <tr style="cursor:pointer;" onclick="toggleSummaryRow('${r.rowId}')">
                   <td style="color:var(--text-muted);font-size:11px;">${i + 1}</td>
                   <td style="color:var(--text-muted);">${isOpen ? '▾' : '▸'}</td>
                   <td>${r.name}</td>
                   <td style="text-align:right;">₹${r.entered.toLocaleString('en-IN')}</td>
                   <td style="text-align:right;color:#4CAF50;">₹${r.received.toLocaleString('en-IN')}</td>
-                </tr>
+                </tr>`;
+              return `
+                ${headerRow}
                 ${isOpen ? `
                 <tr>
                   <td></td>
                   <td></td>
-                  <td colspan="3" style="padding:0 0 8px 0;">
-                    ${r.lines.length === 0 ? `<div style="font-size:12px;color:var(--text-muted);padding:6px 4px;">No donations yet.</div>` : `
-                    <table class="data-table" style="width:100%;background:#faf9f7;">
-                      <thead><tr><th style="width:26px;">#</th><th>Name</th><th style="text-align:right;">Amount</th><th>Receipt No.</th></tr></thead>
-                      <tbody>
-                        ${r.lines.map((d, di) => {
-                          const rec = getDonationReceiptInfo(d);
-                          return `<tr>
-                            <td style="font-size:11px;color:var(--text-muted);">${di + 1}</td>
-                            <td style="font-size:12px;">${d.receipt_name || d.donor_name || '—'}</td>
-                            <td style="text-align:right;font-size:12px;">₹${parseFloat(d.amount || 0).toLocaleString('en-IN')}</td>
-                            <td style="font-size:12px;font-weight:600;${rec.pending ? 'color:#ff9800;' : 'color:var(--primary);'}">${rec.label}</td>
-                          </tr>`;
-                        }).join('')}
-                      </tbody>
-                    </table>`}
+                  <td colspan="3" style="padding:0 0 10px 0;">
+                    ${detailHtml(r)}
                   </td>
                 </tr>` : ''}
               `;
@@ -695,7 +743,7 @@ function renderCategorySummary() {
   }).filter(r => r.name !== 'Uncategorized' || r.lines.length > 0);
 
   categorySummaryRows = rows;
-  renderExpandableSummaryTable('category-summary-container', '📂 Category-wise Summary (8 Khate)', rows, 'Category', 'printCategorySummary', 'printCategorySummaryDetailed', 'category');
+  renderExpandableSummaryTable('category-summary-container', '📂 Category-wise Summary (8 Khate)', rows, 'Category', 'printCategorySummary', 'printCategorySummaryDetailed', 'category', true);
 }
 
 // ========== ITEM-WISE SUMMARY (every head/item in the Master List) ==========
@@ -1460,9 +1508,10 @@ function printSummaryReportDetailed(title, colLabel, rows, groupByHead) {
       bodyHtml = order.map(h => {
         const groupLines = byHead[h];
         const subtotal = groupLines.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
+        const isDirect = h === r.name;
         return `
       <tr style="background:#faf6ef;font-weight:600;">
-        <td colspan="2" style="padding-left:16px;">${h}</td>
+        <td colspan="2" style="padding-left:16px;">${h}${isDirect ? ' <span style="font-weight:400;color:#777;font-size:11px;">(main head — direct)</span>' : ''}</td>
         <td style="text-align:right;">₹${subtotal.toLocaleString('en-IN')}</td>
       </tr>
       ${groupLines.map(d => donorRowHtml(d, 34)).join('')}`;
@@ -1470,11 +1519,17 @@ function printSummaryReportDetailed(title, colLabel, rows, groupByHead) {
     } else {
       bodyHtml = r.lines.map(d => donorRowHtml(d, 20)).join('');
     }
+    const mainHeadRow = groupByHead
+      ? `<tr style="background:#7B1E3B;"><td colspan="3" style="text-align:center;padding:8px;">
+           <div style="color:#fff;font-weight:800;font-size:14px;">${r.name}</div>
+           <div style="color:#f0d9c8;font-weight:600;font-size:11.5px;margin-top:2px;">Total ₹${r.entered.toLocaleString('en-IN')} (this head + all its sub-heads)</div>
+         </td></tr>`
+      : `<tr style="background:#f5f0e8;font-weight:700;">
+           <td colspan="2">${r.name}</td>
+           <td style="text-align:right;">₹${r.entered.toLocaleString('en-IN')}</td>
+         </tr>`;
     return `
-      <tr style="background:#f5f0e8;font-weight:700;">
-        <td colspan="2">${r.name}</td>
-        <td style="text-align:right;">₹${r.entered.toLocaleString('en-IN')}</td>
-      </tr>
+      ${mainHeadRow}
       ${bodyHtml}
     `;
   }).join('');
