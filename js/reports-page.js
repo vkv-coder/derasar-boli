@@ -1298,12 +1298,19 @@ async function loadReceiptRegister() {
     // for it (real case: token #199 / receipt #283), but its amount must be
     // zeroed here or the register's cash/online totals double-count money
     // already covered by the split receipts.
+    //
+    // A token with status='cancelled' still carries its receipt_no and
+    // total_amount on the row (cancelToken() never deletes the token, only
+    // flags it) — real incident: receipt #308 counted in full toward cash
+    // even though it was cancelled. Zeroed here the same way, with its own
+    // label so the number's audit trail stays visible instead of vanishing.
     ...(tokens || []).map(t => {
       const isDuplicate = t.status === 'allocated';
+      const isCancelled = t.status === 'cancelled';
       return {
         receiptNo: t.receipt_no, date: t.receipt_no_assigned_at || t.created_at,
-        name: t.payer_name + (isDuplicate ? ' ⚠ DUPLICATE — already split, see other receipts for this payer' : ''),
-        amount: isDuplicate ? 0 : parseFloat(t.total_amount),
+        name: t.payer_name + (isDuplicate ? ' ⚠ DUPLICATE — already split, see other receipts for this payer' : '') + (isCancelled ? ' ⚠ CANCELLED' : ''),
+        amount: (isDuplicate || isCancelled) ? 0 : parseFloat(t.total_amount),
         source: 'Token', sourceId: t.id, mode: t.payment_mode || 'cash'
       };
     }),
