@@ -615,7 +615,7 @@ function printPendingTokensList() {
 <meta charset="UTF-8"/>
 <title>Pending Tokens</title>
 <style>
-  body{font-family:Arial,sans-serif;padding:20px;color:#222;}
+  body{font-family:Arial,sans-serif;padding:20px;color:#222;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
   h2{margin-bottom:2px;}
   table{width:100%;border-collapse:collapse;margin-top:14px;}
   th,td{border:1px solid #999;padding:6px 8px;font-size:12px;text-align:left;}
@@ -713,7 +713,7 @@ function printDonorGroupList() {
 <meta charset="UTF-8"/>
 <title>Consolidated Unpaid by Donor</title>
 <style>
-  body{font-family:Arial,sans-serif;padding:20px;color:#222;}
+  body{font-family:Arial,sans-serif;padding:20px;color:#222;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
   h2{margin-bottom:2px;}
   table{width:100%;border-collapse:collapse;margin-top:14px;}
   th,td{border:1px solid #999;padding:6px 8px;font-size:12px;text-align:left;}

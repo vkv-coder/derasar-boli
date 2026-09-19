@@ -30,7 +30,7 @@ function paymentInfoHTML(mode, ref) {
 
 const RECEIPT_CSS = `
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Hind Vadodara','Noto Sans Gujarati',Arial,sans-serif;font-weight:700;background:#f0ece4;display:flex;flex-direction:column;align-items:center;padding:24px;gap:16px;min-height:100vh}
+  body{font-family:'Hind Vadodara','Noto Sans Gujarati',Arial,sans-serif;font-weight:700;background:#f0ece4;display:flex;flex-direction:column;align-items:center;padding:24px;gap:16px;min-height:100vh;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
   .receipt{background:#fff;width:360px;border:3px solid #c00;border-radius:4px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.18)}
   .org-header{border-bottom:2px solid #c00;padding:10px 12px;text-align:center;background:#fff}
   .org-namah{font-size:12px;color:#222;margin-bottom:3px}
@@ -891,7 +891,7 @@ async function showTokenSlip(tokenId) {
 <title>${code}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,sans-serif;}
-  body{background:#eee;display:flex;flex-direction:column;align-items:center;padding:16px;gap:12px;}
+  body{background:#eee;display:flex;flex-direction:column;align-items:center;padding:16px;gap:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
   .page{background:#fff;width:396px;border:1px solid #ccc;}
   .page.size-a6{width:361px;}
   .slip{padding:16px;border-bottom:2px dashed #999;position:relative;}

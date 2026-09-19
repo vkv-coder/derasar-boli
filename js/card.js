@@ -55,7 +55,7 @@ async function showMembershipCard(familyNo) {
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Hind Vadodara','Noto Sans Gujarati',Arial,sans-serif;background:#f0ece4;display:flex;flex-direction:column;align-items:center;padding:20px;gap:16px;min-height:100vh}
+  body{font-family:'Hind Vadodara','Noto Sans Gujarati',Arial,sans-serif;background:#f0ece4;display:flex;flex-direction:column;align-items:center;padding:20px;gap:16px;min-height:100vh;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
   #card-capture{display:flex;flex-direction:column;gap:14px;align-items:center}
   .vcard{width:3.5in;height:2in;background:#fdf6e8;border:1px solid #ddd;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.15);position:relative;overflow:hidden}
   .vc-front{display:flex;flex-direction:column;height:100%}

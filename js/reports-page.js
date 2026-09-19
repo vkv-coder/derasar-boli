@@ -462,7 +462,7 @@ function printMultiFinderResults() {
 <meta charset="UTF-8"/>
 <title>${headLabel} — ${modeLabel}</title>
 <style>
-  body{font-family:Arial,sans-serif;padding:20px;color:#222;}
+  body{font-family:Arial,sans-serif;padding:20px;color:#222;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
   h2{margin-bottom:2px;}
   table{width:100%;border-collapse:collapse;margin-top:14px;}
   th,td{border:1px solid #999;padding:6px 8px;font-size:12px;text-align:left;}
@@ -1427,7 +1427,7 @@ function printSummaryReport(title, colLabel, rows) {
 <meta charset="UTF-8"/>
 <title>${title}</title>
 <style>
-  body{font-family:Arial,sans-serif;padding:20px;color:#222;}
+  body{font-family:Arial,sans-serif;padding:20px;color:#222;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
   h2{margin-bottom:2px;}
   table{width:100%;border-collapse:collapse;margin-top:14px;}
   th,td{border:1px solid #999;padding:6px 8px;font-size:12px;text-align:left;}
@@ -1540,7 +1540,7 @@ function printSummaryReportDetailed(title, colLabel, rows, groupByHead) {
 <meta charset="UTF-8"/>
 <title>${title} — Detailed</title>
 <style>
-  body{font-family:Arial,sans-serif;padding:20px;color:#222;}
+  body{font-family:Arial,sans-serif;padding:20px;color:#222;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
   h2{margin-bottom:2px;}
   table{width:100%;border-collapse:collapse;margin-top:14px;}
   th,td{border:1px solid #999;padding:5px 8px;font-size:12px;text-align:left;}
@@ -1598,7 +1598,7 @@ function printReceiptRegister() {
 <meta charset="UTF-8"/>
 <title>Receipt Register ${fromDate} to ${toDate}</title>
 <style>
-  body{font-family:Arial,sans-serif;padding:20px;color:#222;}
+  body{font-family:Arial,sans-serif;padding:20px;color:#222;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
   h2{margin-bottom:2px;}
   table{width:100%;border-collapse:collapse;margin-top:14px;}
   th,td{border:1px solid #999;padding:6px 8px;font-size:12px;text-align:left;}

@@ -286,7 +286,7 @@ function printMasterList() {
 <title>Master List — ${dateStr}</title>
 <style>
   *{box-sizing:border-box;font-family:Arial,sans-serif;}
-  body{margin:0;padding:20px;}
+  body{margin:0;padding:20px;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
   h1{font-size:18px;margin:0 0 4px;}
   h2{font-size:14px;margin:20px 0 6px;padding-top:10px;border-top:2px solid #333;}
   h2:first-of-type{border-top:none;padding-top:0;margin-top:10px;}
