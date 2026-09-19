@@ -1416,28 +1416,68 @@ function printItemWiseSummary() { printSummaryReport('Item-wise Summary (Master 
 // getDonationReceiptInfo() uses, so it matches what's actually printed on
 // each physical receipt), and amount — so a head's total can be checked
 // back against the individual receipts it came from.
-function printSummaryReportDetailed(title, colLabel, rows) {
+// Category summary rows bundle EVERY sub-head's donations flat together
+// (that's the whole point of the category rollup) — so a Category-wise
+// Detailed printout used to list every donor straight under the category
+// total with no indication of which of the category's several sub-heads
+// (e.g. Swamivatsalya, Pathshala, under સાધારણ ખાતે) each one actually
+// belongs to. groupByHead re-splits a category's lines by their own head
+// name first, with a subtotal per sub-head, before listing donors under
+// each (user request 2026-09-19). Item-wise rows are already at the
+// single-head level, so they never need this — only Category passes true.
+function getDirectHeadNameForGrouping(d) {
+  if (d.head_type === 'general_head' && d.general_head_id) {
+    const gh = reportGeneralHeads.find(h => h.id === d.general_head_id);
+    return gh?.name || '—';
+  }
+  return getDonationHeadName(d);
+}
+
+function printSummaryReportDetailed(title, colLabel, rows, groupByHead) {
   const nonZero = rows.filter(r => r.entered > 0);
   if (nonZero.length === 0) { showToast('No heads with an entered amount to print', 'error'); return; }
 
   const totalEntered = nonZero.reduce((s, r) => s + r.entered, 0);
 
-  const sectionsHtml = nonZero.map(r => {
-    const lineRows = r.lines.map(d => {
-      const rec = getDonationReceiptInfo(d);
-      return `
+  const donorRowHtml = (d, indent) => {
+    const rec = getDonationReceiptInfo(d);
+    return `
         <tr>
-          <td style="padding-left:20px;">${d.receipt_name || d.donor_name || '—'}</td>
+          <td style="padding-left:${indent}px;">${d.receipt_name || d.donor_name || '—'}</td>
           <td>${rec.label}</td>
           <td style="text-align:right;">₹${parseFloat(d.amount || 0).toLocaleString('en-IN')}</td>
         </tr>`;
-    }).join('');
+  };
+
+  const sectionsHtml = nonZero.map(r => {
+    let bodyHtml;
+    if (groupByHead) {
+      const order = [];
+      const byHead = {};
+      r.lines.forEach(d => {
+        const h = getDirectHeadNameForGrouping(d) || '—';
+        if (!byHead[h]) { byHead[h] = []; order.push(h); }
+        byHead[h].push(d);
+      });
+      bodyHtml = order.map(h => {
+        const groupLines = byHead[h];
+        const subtotal = groupLines.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
+        return `
+      <tr style="background:#faf6ef;font-weight:600;">
+        <td colspan="2" style="padding-left:16px;">${h}</td>
+        <td style="text-align:right;">₹${subtotal.toLocaleString('en-IN')}</td>
+      </tr>
+      ${groupLines.map(d => donorRowHtml(d, 34)).join('')}`;
+      }).join('');
+    } else {
+      bodyHtml = r.lines.map(d => donorRowHtml(d, 20)).join('');
+    }
     return `
       <tr style="background:#f5f0e8;font-weight:700;">
         <td colspan="2">${r.name}</td>
         <td style="text-align:right;">₹${r.entered.toLocaleString('en-IN')}</td>
       </tr>
-      ${lineRows}
+      ${bodyHtml}
     `;
   }).join('');
 
@@ -1475,8 +1515,8 @@ function printSummaryReportDetailed(title, colLabel, rows) {
   win.document.close();
 }
 
-function printCategorySummaryDetailed() { printSummaryReportDetailed('Category-wise Summary (8 Khate)', 'Category', categorySummaryRows); }
-function printItemWiseSummaryDetailed() { printSummaryReportDetailed('Item-wise Summary (Master List)', 'Head / Item', itemSummaryRows); }
+function printCategorySummaryDetailed() { printSummaryReportDetailed('Category-wise Summary (8 Khate)', 'Category', categorySummaryRows, true); }
+function printItemWiseSummaryDetailed() { printSummaryReportDetailed('Item-wise Summary (Master List)', 'Head / Item', itemSummaryRows, false); }
 
 // A clean tabular printout for the physical audit file — not each receipt
 // re-rendered in full branded format (that's already one click away per row
