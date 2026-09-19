@@ -630,8 +630,7 @@ function printPendingTokensList() {
   <div style="font-size:12px;color:#555;">${pendingTokensListRows.length} token(s) awaiting action, as of ${new Date().toLocaleString('en-IN')}</div>
   <table>
     <thead><tr><th>Token No.</th><th>Name</th><th>Phone</th><th style="text-align:right;">Amount</th><th>Status</th></tr></thead>
-    <tbody>${rowsHtml}</tbody>
-    <tfoot><tr><td colspan="3">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td><td></td></tr></tfoot>
+    <tbody>${rowsHtml}<tr><td colspan="3">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td><td></td></tr></tbody>
   </table>
   <button class="btn" onclick="window.print()">🖨 Print</button>
 </body>
@@ -729,8 +728,7 @@ function printDonorGroupList() {
   <div style="font-size:12px;color:#555;">${pendingDonorGroupRows.length} donor(s) with tokens still to receive, as of ${new Date().toLocaleString('en-IN')}</div>
   <table>
     <thead><tr><th>Name</th><th>Phone</th><th>Family</th><th>Token No(s).</th><th style="text-align:right;">Total Due</th></tr></thead>
-    <tbody>${rowsHtml}</tbody>
-    <tfoot><tr><td colspan="4">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td></tr></tfoot>
+    <tbody>${rowsHtml}<tr><td colspan="4">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td></tr></tbody>
   </table>
   <button class="btn" onclick="window.print()">🖨 Print</button>
 </body>

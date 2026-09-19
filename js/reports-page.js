@@ -431,8 +431,8 @@ function renderMultiFinderResults() {
               <td style="text-align:right;font-weight:600;">₹${r.amount.toLocaleString('en-IN')}</td>
             </tr>
           `).join('')}
+          <tr style="font-weight:700;"><td colspan="4">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td></tr>
         </tbody>
-        <tfoot><tr style="font-weight:700;"><td colspan="4">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td></tr></tfoot>
       </table>
     </div>
   `;
@@ -477,8 +477,7 @@ function printMultiFinderResults() {
   <div style="font-size:12px;color:#555;">${modeLabel} — ${multiFinderRows.length} receipts</div>
   <table>
     <thead><tr><th>#</th><th>Name</th><th>Receipt No.</th><th>Date</th><th style="text-align:right;">Amount</th></tr></thead>
-    <tbody>${rowsHtml}</tbody>
-    <tfoot><tr><td colspan="4">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td></tr></tfoot>
+    <tbody>${rowsHtml}<tr><td colspan="4">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td></tr></tbody>
   </table>
   <button class="btn" onclick="window.print()">🖨 Print</button>
 </body>
@@ -1318,8 +1317,8 @@ function renderReceiptRegisterTable() {
               </td>
             </tr>
           `).join('')}
+          <tr style="font-weight:700;"><td colspan="3">${registerRows.length} receipts</td><td style="text-align:right;">${formatAmount(cashTotal)}</td><td style="text-align:right;">${formatAmount(onlineTotal)}</td><td colspan="2"></td></tr>
         </tbody>
-        <tfoot><tr style="font-weight:700;"><td colspan="3">${registerRows.length} receipts</td><td style="text-align:right;">${formatAmount(cashTotal)}</td><td style="text-align:right;">${formatAmount(onlineTotal)}</td><td colspan="2"></td></tr></tfoot>
       </table>
     </div>
   `;
@@ -1395,8 +1394,7 @@ function printSummaryReport(title, colLabel, rows) {
   <div style="font-size:12px;color:#555;">${nonZero.length} of ${rows.length} heads had an entry — empty heads omitted from this printout.</div>
   <table>
     <thead><tr><th>${colLabel}</th><th style="text-align:right;">Entered</th><th style="text-align:right;">Received</th></tr></thead>
-    <tbody>${rowsHtml}</tbody>
-    <tfoot><tr><td>Total</td><td style="text-align:right;">₹${totalEntered.toLocaleString('en-IN')}</td><td style="text-align:right;">₹${totalReceived.toLocaleString('en-IN')}</td></tr></tfoot>
+    <tbody>${rowsHtml}<tr><td>Total</td><td style="text-align:right;">₹${totalEntered.toLocaleString('en-IN')}</td><td style="text-align:right;">₹${totalReceived.toLocaleString('en-IN')}</td></tr></tbody>
   </table>
   <button class="btn" onclick="window.print()">🖨 Print</button>
 </body>
@@ -1502,8 +1500,7 @@ function printSummaryReportDetailed(title, colLabel, rows, groupByHead) {
   <div style="font-size:12px;color:#555;">${nonZero.length} of ${rows.length} heads had an entry — empty heads omitted. Each head lists every receipt counted under it.</div>
   <table>
     <thead><tr><th>${colLabel} / Donor</th><th>Receipt No.</th><th style="text-align:right;">Amount</th></tr></thead>
-    <tbody>${sectionsHtml}</tbody>
-    <tfoot><tr><td colspan="2">Total</td><td style="text-align:right;">₹${totalEntered.toLocaleString('en-IN')}</td></tr></tfoot>
+    <tbody>${sectionsHtml}<tr><td colspan="2">Total</td><td style="text-align:right;">₹${totalEntered.toLocaleString('en-IN')}</td></tr></tbody>
   </table>
   <button class="btn" onclick="window.print()">🖨 Print</button>
 </body>
@@ -1566,8 +1563,7 @@ function printReceiptRegister() {
   </div>
   <table>
     <thead><tr><th>Receipt No.</th><th>Date</th><th>Name</th><th>Amount</th><th>Mode</th><th>Source</th></tr></thead>
-    <tbody>${rowsHtml}</tbody>
-    <tfoot><tr><td colspan="3">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td><td colspan="2"></td></tr></tfoot>
+    <tbody>${rowsHtml}<tr><td colspan="3">Total</td><td style="text-align:right;">₹${total.toLocaleString('en-IN')}</td><td colspan="2"></td></tr></tbody>
   </table>
   <button class="btn" onclick="window.print()">🖨 Print</button>
 </body>
