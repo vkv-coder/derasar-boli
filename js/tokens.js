@@ -299,6 +299,9 @@ async function printTokenAsSingle(tokenId) {
 // someone would silently orphan that paper receipt (it would still exist
 // in the donor's hand, but vanish from the system with no record).
 async function undoTokenSplit(tokenId) {
+  const { data: tokenRow, error: tErr } = await db.from('dr_receipt_tokens').select('created_at').eq('id', tokenId).single();
+  if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
+  if (await guardLockedEdit(tokenRow?.created_at)) return;
   const { data: splits, error } = await db.from('dr_token_splits').select('id, receipt_no').eq('token_id', tokenId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   if ((splits || []).some(s => s.receipt_no)) {
@@ -324,8 +327,9 @@ async function cancelToken(tokenId) {
   // rows too, not just dr_donations lines — block cancelling if any of THOSE
   // already has a receipt_no (already printed and handed to a donor;
   // cancelling the parent token must not silently delete that record).
-  const { data: tokenRow, error: tErr } = await db.from('dr_receipt_tokens').select('id, receipt_no, org_id').eq('id', tokenId).single();
+  const { data: tokenRow, error: tErr } = await db.from('dr_receipt_tokens').select('id, receipt_no, org_id, created_at').eq('id', tokenId).single();
   if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
+  if (await guardLockedEdit(tokenRow?.created_at)) return;
   const { data: splits, error: sErr } = await db.from('dr_token_splits').select('id, receipt_no').eq('token_id', tokenId);
   if (sErr) { showToast('Error: ' + sErr.message, 'error'); return; }
   if ((splits || []).some(s => s.receipt_no)) {
@@ -539,6 +543,9 @@ async function savePaymentModeEdit(source, id) {
   const table = PAYMENT_MODE_TABLE[source];
   const nameField = EDIT_NAME_FIELD[source];
   const amountField = EDIT_AMOUNT_FIELD[source];
+
+  const entryCreatedAt = document.getElementById('edit-pm-created-at')?.value;
+  if (await guardLockedEdit(entryCreatedAt)) return;
 
   const newName = (document.getElementById('edit-pm-name')?.value || '').trim();
   if (!newName) { showToast('Name cannot be blank', 'error'); return; }

@@ -1085,6 +1085,7 @@ async function showEditDonationModal(id, refreshFn) {
 
   showModal(`
     <div class="modal-title">Edit Donation</div>
+    <input type="hidden" id="edit-don-created-at" value="${d.created_at || ''}" />
     <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">
       <strong>${d.donor_name}</strong>${d.family_no ? ' · Family: ' + d.family_no : ''}
     </div>
@@ -1128,6 +1129,9 @@ async function showEditDonationModal(id, refreshFn) {
 }
 
 async function updateDonation(id, refreshFn) {
+  const entryCreatedAt = document.getElementById('edit-don-created-at')?.value;
+  if (await guardLockedEdit(entryCreatedAt)) return;
+
   const donor_name = document.getElementById('edit-don-name').value.trim();
   const phone = document.getElementById('edit-don-phone').value.trim();
   const receipt_name = document.getElementById('edit-don-receipt-name').value.trim();
@@ -1174,9 +1178,10 @@ async function updateDonation(id, refreshFn) {
 // 2026-09-08, receipt #7 (Gurupujan, Paryushan) went unprintable this way.
 async function deleteDonation(id, refreshFn) {
   const { data: d, error: dErr } = await db.from('dr_donations')
-    .select('id, token_id, receipt_no, received_amount')
+    .select('id, token_id, receipt_no, received_amount, created_at')
     .eq('id', id).eq('org_id', currentOrgId).single();
   if (dErr || !d) { showToast('Could not load donation', 'error'); return; }
+  if (await guardLockedEdit(d.created_at)) return;
 
   let token = null;
   let siblingCount = 0;

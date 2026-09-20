@@ -75,6 +75,7 @@ async function renderReports() {
     await loadDonorsList();
   } else if (reportView === 'register') {
     initReceiptRegisterDates();
+    await loadLockControlSection();
   } else if (reportView === 'item') {
     await loadReport();
   }
@@ -1219,6 +1220,10 @@ async function downloadExcelReport() {
 
 function receiptRegisterSectionHTML() {
   return `
+    <div class="card">
+      <div class="card-title">🔒 Entry Lock</div>
+      <div id="lock-control-container"><p style="font-size:13px;color:var(--text-muted);">Loading...</p></div>
+    </div>
     <div class="card">
       <div class="card-title">🧾 Receipt Register</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;">
