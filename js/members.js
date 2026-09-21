@@ -168,11 +168,22 @@ async function downloadMembersExcel() {
   if (error || !raw) { showToast('Could not load members', 'error'); return; }
   const data = sortFamilyNo(raw);
 
+  // family_member_count alone is stale (see loadMembersList's own comment on
+  // this) - prefer the live dr_family_individuals count per family, same as
+  // the on-screen total, so this export can't undercount against what the
+  // app itself shows (real report: 842 in this file vs 858 on screen).
+  const { data: allIndividuals } = await db.from('dr_family_individuals')
+    .select('family_no').eq('org_id', currentOrgId);
+  const individualCounts = {};
+  (allIndividuals || []).forEach(p => {
+    individualCounts[p.family_no] = (individualCounts[p.family_no] || 0) + 1;
+  });
+
   const rows = [
     ['Family No.', 'Old No.', 'Name', 'Phone', 'Address', 'Family Member Count']
   ];
   data.forEach(m => {
-    rows.push([m.family_no || '', m.old_member_no || '', m.person_name || '', m.phone_no || '', m.address || '', m.family_member_count || '']);
+    rows.push([m.family_no || '', m.old_member_no || '', m.person_name || '', m.phone_no || '', m.address || '', individualCounts[m.family_no] ?? m.family_member_count ?? '']);
   });
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
