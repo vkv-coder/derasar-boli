@@ -192,8 +192,24 @@ function showAddMemberModal() {
       </div>
     </div>
     <div class="form-group">
-      <label>Person Name <span style="color:#c00;">*</span></label>
+      <label>Person Name (Head) <span style="color:#c00;">*</span></label>
       <input type="text" id="mem-name" placeholder="Full name" onblur="suggestFamilyNo()" />
+    </div>
+    <div style="display:flex;gap:8px;">
+      <div class="form-group" style="flex:1;">
+        <label>DOB (Head)</label>
+        <input type="date" id="mem-dob" onchange="showComputedAge('mem-dob','mem-age')" />
+        <div id="mem-age" style="font-size:11px;color:var(--text-muted);margin-top:2px;"></div>
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label>Gender (Head)</label>
+        <select id="mem-gender">
+          <option value="">—</option>
+          <option value="M">Male</option>
+          <option value="F">Female</option>
+          <option value="O">Other</option>
+        </select>
+      </div>
     </div>
     <div class="form-group">
       <label>Old Member No. <span style="font-weight:400;color:var(--text-muted);">(from previous register)</span></label>
@@ -212,6 +228,27 @@ function showAddMemberModal() {
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>
     </div>
   `);
+}
+
+// Age is always computed from dob, never stored — avoids a second value
+// that silently goes stale as time passes. Used wherever a dob input needs
+// a live "(n yrs)" readout next to it.
+function calcAge(dobStr) {
+  if (!dobStr) return null;
+  const dob = new Date(dobStr);
+  if (isNaN(dob)) return null;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+  return age >= 0 ? age : null;
+}
+
+function showComputedAge(dobFieldId, ageFieldId) {
+  const el = document.getElementById(ageFieldId);
+  if (!el) return;
+  const age = calcAge(document.getElementById(dobFieldId)?.value);
+  el.textContent = age != null ? age + ' yrs' : '';
 }
 
 // Next family_no in the A1/A2.../B1... scheme: first letter of the head's
@@ -252,6 +289,8 @@ async function addMember(familyNo = null, personName = null, btn = null) {
   const address             = document.getElementById('mem-address')?.value.trim() || null;
   const family_member_count = parseInt(document.getElementById('mem-count')?.value) || null;
   const old_member_no       = document.getElementById('mem-old-no')?.value.trim() || null;
+  const dob                 = document.getElementById('mem-dob')?.value || null;
+  const gender              = document.getElementById('mem-gender')?.value || null;
 
   if (!family_no || !person_name) { showToast('Family No. and Name are required', 'error'); return null; }
 
@@ -279,7 +318,7 @@ async function addMember(familyNo = null, personName = null, btn = null) {
     // there, only "Same as Donor". Only for a genuinely NEW family (this
     // branch) — adding a person to an existing family shouldn't re-seed it.
     const { error: individualError } = await db.from('dr_family_individuals')
-      .insert({ org_id: currentOrgId, family_no, person_name, is_head: true });
+      .insert({ org_id: currentOrgId, family_no, person_name, is_head: true, dob, gender, phone_no });
 
     closeModal();
     showToast('Member added!', 'success');
@@ -304,44 +343,103 @@ async function addMember(familyNo = null, personName = null, btn = null) {
 // one at a time — repeating a full add-member form per person was the
 // exact friction that made this feature impractical to use (user
 // feedback 2026-09-10).
+// Detailed per-member rows (Name/DOB/Gender/Phone) mirroring the Google
+// Form's M1-M8 layout, so any Sangh without a Google Form of their own can
+// capture the same detail directly here. A dynamic "+ Add Row" list inside
+// ONE modal (not one add-member-style form per person) keeps this usable —
+// repeating a full form per person was the exact friction that made the
+// original name-only version necessary (user feedback 2026-09-10); this
+// keeps that single-screen shape while adding the extra fields.
+let newIndivRowCount = 0;
+
+function newIndivRowHtml(n) {
+  return `
+    <div id="new-indiv-row-${n}" style="display:flex;gap:6px;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap;">
+      <div class="form-group" style="margin-bottom:0;flex:2;min-width:140px;">
+        <label style="font-size:11px;">Name</label>
+        <input type="text" id="new-indiv-name-${n}" placeholder="Full name" />
+      </div>
+      <div class="form-group" style="margin-bottom:0;flex:1;min-width:120px;">
+        <label style="font-size:11px;">DOB</label>
+        <input type="date" id="new-indiv-dob-${n}" />
+      </div>
+      <div class="form-group" style="margin-bottom:0;flex:1;min-width:90px;">
+        <label style="font-size:11px;">Gender</label>
+        <select id="new-indiv-gender-${n}">
+          <option value="">—</option>
+          <option value="M">Male</option>
+          <option value="F">Female</option>
+          <option value="O">Other</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:0;flex:1;min-width:110px;">
+        <label style="font-size:11px;">Phone</label>
+        <input type="tel" id="new-indiv-phone-${n}" placeholder="Optional" />
+      </div>
+      <button class="btn-sm btn-danger" onclick="document.getElementById('new-indiv-row-${n}').remove()">✕</button>
+    </div>`;
+}
+
+function addNewIndivRow() {
+  newIndivRowCount++;
+  document.getElementById('new-indiv-rows').insertAdjacentHTML('beforeend', newIndivRowHtml(newIndivRowCount));
+}
+
 async function showFamilyIndividualsModal(familyNo, headName) {
   const { data: existing } = await db.from('dr_family_individuals')
-    .select('id, person_name, is_head').eq('org_id', currentOrgId).eq('family_no', familyNo)
+    .select('id, person_name, is_head, dob, gender, phone_no').eq('org_id', currentOrgId).eq('family_no', familyNo)
     .order('is_head', { ascending: false });
 
   const listHtml = (existing && existing.length)
     ? existing.map(p => `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">
-          <span>${p.person_name}${p.is_head ? ' <span style="font-size:11px;color:var(--text-muted);">(Head)</span>' : ''}</span>
+          <span>${p.person_name}${p.is_head ? ' <span style="font-size:11px;color:var(--text-muted);">(Head)</span>' : ''}
+            <span style="font-size:11px;color:var(--text-muted);">${[p.gender, p.dob ? (calcAge(p.dob) + ' yrs') : '', p.phone_no].filter(Boolean).join(' · ')}</span>
+          </span>
           <button class="btn-sm btn-danger" onclick="deleteFamilyIndividual('${p.id}','${familyNo.replace(/'/g, "\\'")}','${(headName || '').replace(/'/g, "\\'")}')">✕</button>
         </div>`).join('')
     : `<p style="font-size:12px;color:var(--text-muted);">No individual names yet — donation receipts for this family will only offer "Same as Donor".</p>`;
 
+  newIndivRowCount = 0;
   showModal(`
     <div class="modal-title">Family Members — ${familyNo}</div>
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">These names appear in the "Receipt In Name Of" dropdown when recording a donation for this family.</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">These appear in the "Receipt In Name Of" dropdown when recording a donation for this family.</div>
     <div style="max-height:180px;overflow-y:auto;margin-bottom:12px;">${listHtml}</div>
-    <div class="form-group">
-      <label>Add Names (one per line)</label>
-      <textarea id="family-indiv-names" rows="4" placeholder="e.g.&#10;Rameshbhai Shah&#10;Kokilaben Shah&#10;Jinal Shah"></textarea>
-    </div>
+    <label style="font-size:13px;font-weight:600;">Add Members</label>
+    <div id="new-indiv-rows" style="margin-top:6px;">${newIndivRowHtml(++newIndivRowCount)}</div>
+    <button class="btn-sm btn-secondary" onclick="addNewIndivRow()">+ Add Another Row</button>
     <div class="modal-actions">
-      <button class="btn-primary" onclick="saveFamilyIndividuals('${familyNo.replace(/'/g, "\\'")}')">💾 Add</button>
+      <button class="btn-primary" onclick="saveFamilyIndividuals('${familyNo.replace(/'/g, "\\'")}')">💾 Save</button>
       <button class="btn-secondary" onclick="closeModal()">Close</button>
     </div>
   `);
 }
 
-async function saveFamilyIndividuals(familyNo) {
-  const raw = document.getElementById('family-indiv-names')?.value || '';
-  const names = raw.split('\n').map(n => n.trim()).filter(Boolean);
-  if (names.length === 0) { showToast('Type at least one name', 'error'); return; }
+function collectNewIndivRows(familyNo) {
+  const records = [];
+  for (let n = 1; n <= newIndivRowCount; n++) {
+    const nameEl = document.getElementById('new-indiv-name-' + n);
+    if (!nameEl) continue; // row was removed via ✕
+    const person_name = nameEl.value.trim();
+    if (!person_name) continue;
+    records.push({
+      org_id: currentOrgId, family_no: familyNo, person_name, is_head: false,
+      dob: document.getElementById('new-indiv-dob-' + n)?.value || null,
+      gender: document.getElementById('new-indiv-gender-' + n)?.value || null,
+      phone_no: document.getElementById('new-indiv-phone-' + n)?.value.trim() || null
+    });
+  }
+  return records;
+}
 
-  const records = names.map(person_name => ({ org_id: currentOrgId, family_no: familyNo, person_name, is_head: false }));
+async function saveFamilyIndividuals(familyNo) {
+  const records = collectNewIndivRows(familyNo);
+  if (records.length === 0) { showToast('Enter at least one name', 'error'); return; }
+
   const { error } = await db.from('dr_family_individuals').insert(records);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
 
-  showToast(`✅ Added ${names.length} name${names.length > 1 ? 's' : ''}`, 'success');
+  showToast(`✅ Added ${records.length} member${records.length > 1 ? 's' : ''}`, 'success');
   showFamilyIndividualsModal(familyNo);
 }
 
@@ -362,19 +460,46 @@ async function showEditMemberModal(id) {
   // places — user feedback 2026-09-11: Edit only ever touched the head,
   // the rest of the family was invisible from this screen.
   const { data: individuals } = await db.from('dr_family_individuals')
-    .select('id, person_name, is_head').eq('org_id', currentOrgId).eq('family_no', m.family_no || '')
+    .select('id, person_name, is_head, dob, gender, phone_no').eq('org_id', currentOrgId).eq('family_no', m.family_no || '')
     .order('is_head', { ascending: false });
+
+  // dr_members has no dob/gender columns of its own for the head — those
+  // live only on the head's dr_family_individuals row (is_head=true),
+  // seeded when the family was first added.
+  const headIndiv = (individuals || []).find(p => p.is_head);
 
   const individualsHtml = (individuals && individuals.length)
     ? individuals.map(p => `
-        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
-          <input type="text" id="fam-indiv-${p.id}" value="${(p.person_name || '').replace(/"/g, '&quot;')}" style="flex:1;" />
-          ${p.is_head ? '<span style="font-size:10px;color:var(--text-muted);">Head</span>' : ''}
-          <button class="btn-sm btn-secondary" onclick="updateFamilyIndividualName('${p.id}')" title="Save name">💾</button>
+        <div style="display:flex;gap:6px;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap;">
+          <div class="form-group" style="margin-bottom:0;flex:2;min-width:140px;">
+            <label style="font-size:11px;">Name ${p.is_head ? '(Head)' : ''}</label>
+            <input type="text" id="fam-indiv-name-${p.id}" value="${(p.person_name || '').replace(/"/g, '&quot;')}" />
+          </div>
+          ${!p.is_head ? `
+          <div class="form-group" style="margin-bottom:0;flex:1;min-width:120px;">
+            <label style="font-size:11px;">DOB</label>
+            <input type="date" id="fam-indiv-dob-${p.id}" value="${p.dob || ''}" />
+          </div>
+          <div class="form-group" style="margin-bottom:0;flex:1;min-width:90px;">
+            <label style="font-size:11px;">Gender</label>
+            <select id="fam-indiv-gender-${p.id}">
+              <option value="" ${!p.gender ? 'selected' : ''}>—</option>
+              <option value="M" ${p.gender === 'M' ? 'selected' : ''}>Male</option>
+              <option value="F" ${p.gender === 'F' ? 'selected' : ''}>Female</option>
+              <option value="O" ${p.gender === 'O' ? 'selected' : ''}>Other</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom:0;flex:1;min-width:110px;">
+            <label style="font-size:11px;">Phone</label>
+            <input type="tel" id="fam-indiv-phone-${p.id}" value="${p.phone_no || ''}" />
+          </div>
+          ` : ''}
+          <button class="btn-sm btn-secondary" onclick="updateFamilyIndividual('${p.id}')" title="Save">💾</button>
           ${!p.is_head ? `<button class="btn-sm btn-danger" onclick="deleteFamilyIndividualInline('${p.id}','${id}')">✕</button>` : ''}
         </div>`).join('')
     : `<p style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">No individual names yet.</p>`;
 
+  newIndivRowCount = 0;
   showModal(`
     <div class="modal-title">Edit Member</div>
     <div style="display:flex;gap:8px;">
@@ -390,6 +515,22 @@ async function showEditMemberModal(id) {
     <div class="form-group">
       <label>Person Name (Head) <span style="color:#c00;">*</span></label>
       <input type="text" id="mem-name-edit" value="${m.person_name || ''}" />
+    </div>
+    <div style="display:flex;gap:8px;">
+      <div class="form-group" style="flex:1;">
+        <label>DOB (Head)</label>
+        <input type="date" id="mem-dob-edit" value="${headIndiv?.dob || ''}" onchange="showComputedAge('mem-dob-edit','mem-age-edit')" />
+        <div id="mem-age-edit" style="font-size:11px;color:var(--text-muted);margin-top:2px;">${headIndiv?.dob ? calcAge(headIndiv.dob) + ' yrs' : ''}</div>
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label>Gender (Head)</label>
+        <select id="mem-gender-edit">
+          <option value="" ${!headIndiv?.gender ? 'selected' : ''}>—</option>
+          <option value="M" ${headIndiv?.gender === 'M' ? 'selected' : ''}>Male</option>
+          <option value="F" ${headIndiv?.gender === 'F' ? 'selected' : ''}>Female</option>
+          <option value="O" ${headIndiv?.gender === 'O' ? 'selected' : ''}>Other</option>
+        </select>
+      </div>
     </div>
     <div class="form-group">
       <label>Old Member No. <span style="font-weight:400;color:var(--text-muted);">(from previous register)</span></label>
@@ -411,8 +552,10 @@ async function showEditMemberModal(id) {
     <div class="form-group">
       <label>Family Members <span style="font-weight:400;color:var(--text-muted);">(for "Receipt In Name Of")</span></label>
       <div id="fam-indiv-list">${individualsHtml}</div>
-      <textarea id="mem-edit-new-names" rows="2" placeholder="Add more names, one per line"></textarea>
-      <button class="btn-sm btn-secondary" style="margin-top:6px;" onclick="addFamilyIndividualsFromEdit('${(m.family_no || '').replace(/'/g, "\\'")}','${id}')">+ Add</button>
+      <label style="font-size:13px;font-weight:600;">Add More Members</label>
+      <div id="new-indiv-rows" style="margin-top:6px;">${newIndivRowHtml(++newIndivRowCount)}</div>
+      <button class="btn-sm btn-secondary" onclick="addNewIndivRow()">+ Add Row</button>
+      <button class="btn-sm btn-primary" style="margin-left:6px;" onclick="addFamilyIndividualsFromEdit('${(m.family_no || '').replace(/'/g, "\\'")}','${id}')">💾 Save New Rows</button>
     </div>
   `);
 }
@@ -424,6 +567,8 @@ async function updateMember(id) {
   const address             = document.getElementById('mem-address-edit').value.trim() || null;
   const family_member_count = parseInt(document.getElementById('mem-count-edit').value) || null;
   const old_member_no       = document.getElementById('mem-old-no-edit').value.trim() || null;
+  const dob                 = document.getElementById('mem-dob-edit')?.value || null;
+  const gender              = document.getElementById('mem-gender-edit')?.value || null;
 
   if (!family_no || !person_name) { showToast('Fill required fields', 'error'); return; }
 
@@ -437,9 +582,10 @@ async function updateMember(id) {
   // Keep the head's own row in dr_family_individuals (seeded when this
   // family was first added) in sync, so the "Receipt In Name Of" dropdown
   // doesn't keep showing a stale name (or the old family_no) after an edit.
+  // dob/gender also live only there (dr_members has no such columns).
   if (before?.family_no) {
     await db.from('dr_family_individuals')
-      .update({ person_name, family_no })
+      .update({ person_name, family_no, dob, gender })
       .eq('org_id', currentOrgId).eq('family_no', before.family_no).eq('is_head', true);
   }
 
@@ -448,13 +594,21 @@ async function updateMember(id) {
   await Promise.all([loadMembersStats(), loadMembersList()]);
 }
 
-async function updateFamilyIndividualName(individualId) {
-  const val = document.getElementById(`fam-indiv-${individualId}`)?.value.trim();
-  if (!val) { showToast('Name cannot be blank', 'error'); return; }
+async function updateFamilyIndividual(individualId) {
+  const name = document.getElementById(`fam-indiv-name-${individualId}`)?.value.trim();
+  if (!name) { showToast('Name cannot be blank', 'error'); return; }
+  const update = { person_name: name };
+  const dobEl = document.getElementById(`fam-indiv-dob-${individualId}`);
+  const genderEl = document.getElementById(`fam-indiv-gender-${individualId}`);
+  const phoneEl = document.getElementById(`fam-indiv-phone-${individualId}`);
+  if (dobEl) update.dob = dobEl.value || null;
+  if (genderEl) update.gender = genderEl.value || null;
+  if (phoneEl) update.phone_no = phoneEl.value.trim() || null;
+
   const { error } = await db.from('dr_family_individuals')
-    .update({ person_name: val }).eq('id', individualId).eq('org_id', currentOrgId);
+    .update(update).eq('id', individualId).eq('org_id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
-  showToast('✅ Name updated', 'success');
+  showToast('✅ Updated', 'success');
 }
 
 async function deleteFamilyIndividualInline(individualId, memberId) {
@@ -466,13 +620,11 @@ async function deleteFamilyIndividualInline(individualId, memberId) {
 }
 
 async function addFamilyIndividualsFromEdit(familyNo, memberId) {
-  const raw = document.getElementById('mem-edit-new-names')?.value || '';
-  const names = raw.split('\n').map(n => n.trim()).filter(Boolean);
-  if (names.length === 0) { showToast('Type at least one name', 'error'); return; }
-  const records = names.map(person_name => ({ org_id: currentOrgId, family_no: familyNo, person_name, is_head: false }));
+  const records = collectNewIndivRows(familyNo);
+  if (records.length === 0) { showToast('Enter at least one name', 'error'); return; }
   const { error } = await db.from('dr_family_individuals').insert(records);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
-  showToast(`✅ Added ${names.length} name${names.length > 1 ? 's' : ''}`, 'success');
+  showToast(`✅ Added ${records.length} member${records.length > 1 ? 's' : ''}`, 'success');
   showEditMemberModal(memberId);
 }
 
