@@ -382,7 +382,8 @@ const RECEIPT_NO_RPC = {
   dr_receipt_tokens: 'dr_assign_receipt_no_token',
   dr_token_splits: 'dr_assign_receipt_no_split',
   dr_membership_fees: 'dr_assign_receipt_no_membership_fee',
-  dr_function_passes: 'dr_assign_receipt_no_function_pass'
+  dr_function_passes: 'dr_assign_receipt_no_function_pass',
+  dr_enrollment_fees: 'dr_assign_receipt_no_enrollment_fee'
 };
 
 async function getOrAssignReceiptNo(table, row) {
@@ -568,6 +569,76 @@ async function showFunctionPassReceipt(passId) {
   const block = await buildFunctionPassReceiptBlock(passId);
   if (!block) { showToast('Could not load pass record', 'error'); return; }
   if (block.pendingPayment) { showToast('This pass has no amount recorded - nothing to print', 'error'); return; }
+
+  const html = `<!DOCTYPE html>
+<html lang="gu">
+<head>
+<meta charset="UTF-8"/>
+<title>Receipt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
+<style>${RECEIPT_CSS}</style>
+</head>
+<body>
+${block.html}
+<div class="btns">
+  <button class="btn btn-print" onclick="window.print();this.disabled=true;this.textContent='✅ Printed';">🖨 Print / PDF</button>
+  <button class="btn btn-close" onclick="window.close()">Close</button>
+</div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=430,height=720,scrollbars=yes');
+  if (!win) { showToast('Allow pop-ups to view receipt', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+}
+
+// Same shape as buildMembershipFeeReceiptBlock, for a dr_enrollment_fees
+// row - a genuinely one-time (not per-year) "New Member Enrollment Fee"
+// receipt, sharing the org's one continuous receipt_no sequence.
+async function buildEnrollmentFeeReceiptBlock(feeId) {
+  const { data: f, error } = await db.from('dr_enrollment_fees').select('*').eq('id', feeId).single();
+  if (error || !f) return null;
+
+  const { data: org } = await db.from('dr_organizations').select('*').eq('id', f.org_id || currentOrgId).single();
+  const templeHeader = buildTempleHeader(org);
+
+  const { data: head } = await db.from('dr_family_individuals')
+    .select('person_name').eq('org_id', f.org_id).eq('family_no', f.family_no).eq('is_head', true).maybeSingle();
+
+  const dt = new Date(f.created_at);
+  const receiptDate = dt.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const assignedNo = await getOrAssignReceiptNo('dr_enrollment_fees', f);
+  const receiptNo = formatReceiptNo(org?.receipt_prefix, assignedNo);
+  const total = parseFloat(f.amount);
+
+  const html = `
+<div class="receipt">
+  ${templeHeader}
+  <div class="receipt-body">
+    <div class="receipt-title">પહોંચ &nbsp;·&nbsp; RECEIPT</div>
+    <div class="meta"><span>ન. : ${receiptNo}</span><span>તા. : ${receiptDate}</span></div>
+    <div class="row"><span class="row-label">નામ :</span><span class="row-value">${head?.person_name || f.family_no}</span></div>
+    <div class="row"><span class="row-label">કુટુંબ ક્રમ :</span><span class="row-value">${f.family_no || '—'}</span></div>
+    <table class="heads-table">
+      <thead><tr><th style="width:28px;text-align:center;">ક્ર.</th><th>દાન ની વિગત</th><th>રકમ</th></tr></thead>
+      <tbody><tr><td style="text-align:center;color:#888;">1</td><td>New Member Enrollment Fee</td><td>₹ ${total.toLocaleString('en-IN')}</td></tr></tbody>
+    </table>
+    <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
+    <div class="words-row">અંકે ${numToGujaratiWords(total)} રૂપિયા</div>
+    ${paymentInfoHTML(f.payment_mode, f.payment_ref)}
+    <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
+    <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
+  </div>
+</div>`;
+
+  return { html, receiptNo: assignedNo, phone: null };
+}
+
+async function showEnrollmentFeeReceipt(feeId) {
+  const block = await buildEnrollmentFeeReceiptBlock(feeId);
+  if (!block) { showToast('Could not load enrollment fee record', 'error'); return; }
 
   const html = `<!DOCTYPE html>
 <html lang="gu">

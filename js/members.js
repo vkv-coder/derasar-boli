@@ -129,6 +129,7 @@ async function loadMembersList(query = '') {
                 ${m.family_no ? `<button class="btn-sm" style="background:#7B3F00;color:white;" title="Membership Card" onclick="showMembershipCard('${m.family_no.replace(/'/g,"\\'")}')">🪪</button>` : ''}
                 ${m.family_no ? `<button class="btn-sm" style="background:#1450c9;color:white;" title="Event Pass" onclick="showFamilyPassModal('${m.family_no.replace(/'/g,"\\'")}','${m.person_name.replace(/'/g,"\\'")}')">🎟</button>` : ''}
                 ${m.family_no ? `<button class="btn-sm" style="background:#8B5A00;color:white;" title="Membership Fee" onclick="showMembershipFeeModal('${m.family_no.replace(/'/g,"\\'")}','${m.person_name.replace(/'/g,"\\'")}')">💳</button>` : ''}
+                ${m.family_no ? `<button class="btn-sm" style="background:#00838F;color:white;" title="New Member Enrollment Fee (one-time)" onclick="showEnrollmentFeeModal('${m.family_no.replace(/'/g,"\\'")}','${m.person_name.replace(/'/g,"\\'")}')">🆕</button>` : ''}
                 <button class="btn-sm" style="background:#4CAF50;color:white;" title="Edit Member" onclick="showEditMemberModal('${m.id}')">Edit</button>
                 <button class="btn-sm btn-danger" title="Delete Member" onclick="deleteMember('${m.id}')">Del</button>
               </div>
@@ -773,6 +774,86 @@ async function saveMembershipFee(familyNo, headName) {
   showToast('✅ Membership fee saved');
   await loadMembersList();
   await showMembershipFeeReceipt(data.id);
+}
+
+// ========== NEW MEMBER / ENROLLMENT FEE (one-time, not per-year) ==========
+async function showEnrollmentFeeModal(familyNo, headName) {
+  const { data: existing } = await db.from('dr_enrollment_fees')
+    .select('id, amount, payment_mode, receipt_no, remarks').eq('org_id', currentOrgId).eq('family_no', familyNo).maybeSingle();
+
+  if (existing) {
+    showModal(`
+      <div class="modal-title">🆕 Enrollment Fee — ${familyNo}${headName ? ' (' + headName + ')' : ''}</div>
+      <p style="font-size:13px;">Already paid: <strong>₹${parseFloat(existing.amount).toLocaleString('en-IN')}</strong> ${existing.payment_mode === 'online' ? '📱' : '💵'} ${existing.receipt_no ? '— Receipt #' + existing.receipt_no : ''}</p>
+      ${existing.remarks ? `<p style="font-size:12px;color:var(--text-muted);">📝 ${existing.remarks}</p>` : ''}
+      <div class="modal-actions">
+        <button class="btn-primary" onclick="showEnrollmentFeeReceipt('${existing.id}')">🖨 Print Receipt</button>
+        <button class="btn-secondary" onclick="closeModal()">Close</button>
+      </div>
+    `);
+    return;
+  }
+
+  showModal(`
+    <div class="modal-title">🆕 New Member Enrollment Fee — ${familyNo}${headName ? ' (' + headName + ')' : ''}</div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">One-time fee, separate from the yearly Membership Fee. Paid once per family only.</p>
+    <div class="form-group">
+      <label>Amount (₹)</label>
+      <input type="number" id="efee-amount" min="1" step="0.01" placeholder="e.g. 1000" />
+    </div>
+    <div class="form-group">
+      <label>Payment Mode</label>
+      <select id="efee-mode" onchange="document.getElementById('efee-ref-row').style.display=this.value==='online'?'block':'none';">
+        <option value="cash">💵 Cash</option>
+        <option value="online">📱 Online</option>
+      </select>
+    </div>
+    <div class="form-group" id="efee-ref-row" style="display:none;">
+      <label>Chq/UPI No.</label>
+      <input type="text" id="efee-ref" placeholder="Chq/UPI No." />
+    </div>
+    <div class="form-group">
+      <label>Remarks <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+      <input type="text" id="efee-remarks" placeholder="Any comment" />
+    </div>
+    <div class="form-group">
+      <label>Receipt No. <span style="font-weight:400;color:var(--text-muted);">(manual - leave blank to auto-assign)</span></label>
+      <input type="number" id="efee-receipt-no" min="1" placeholder="e.g. from this year's paper receipt book" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="saveEnrollmentFee('${familyNo.replace(/'/g, "\\'")}','${(headName || '').replace(/'/g, "\\'")}')">💾 Save &amp; Print Receipt</button>
+      <button class="btn-secondary" onclick="closeModal()">Close</button>
+    </div>
+  `);
+}
+
+async function saveEnrollmentFee(familyNo, headName) {
+  const amount = parseFloat(document.getElementById('efee-amount')?.value);
+  const payment_mode = document.getElementById('efee-mode')?.value || 'cash';
+  const payment_ref = payment_mode === 'online' ? (document.getElementById('efee-ref')?.value || '').trim() || null : null;
+  const remarks = (document.getElementById('efee-remarks')?.value || '').trim() || null;
+  const manualReceiptNo = parseInt(document.getElementById('efee-receipt-no')?.value) || null;
+
+  if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+
+  const insertObj = { org_id: currentOrgId, family_no: familyNo, amount, payment_mode, payment_ref, remarks };
+  if (manualReceiptNo) {
+    insertObj.receipt_no = manualReceiptNo;
+    insertObj.receipt_no_assigned_at = new Date().toISOString();
+  }
+
+  const { data, error } = await db.from('dr_enrollment_fees')
+    .insert(insertObj)
+    .select().single();
+  if (error) {
+    if (error.code === '23505') { showToast('Enrollment fee already recorded for this family', 'error'); return; }
+    showToast('Error: ' + error.message, 'error');
+    return;
+  }
+
+  closeModal();
+  showToast('✅ Enrollment fee saved');
+  await showEnrollmentFeeReceipt(data.id);
 }
 
 async function showDonorHistory(memberId, memberName, familyNo) {
