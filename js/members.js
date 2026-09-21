@@ -677,7 +677,7 @@ async function deleteMember(id) {
 // ========== YEARLY MEMBERSHIP FEE ==========
 async function showMembershipFeeModal(familyNo, headName) {
   const { data: history } = await db.from('dr_membership_fees')
-    .select('id, year, amount, payment_mode, receipt_no').eq('org_id', currentOrgId).eq('family_no', familyNo)
+    .select('id, year, amount, payment_mode, receipt_no, remarks').eq('org_id', currentOrgId).eq('family_no', familyNo)
     .order('year', { ascending: false });
 
   const paidYears = new Set((history || []).map(h => h.year));
@@ -686,11 +686,14 @@ async function showMembershipFeeModal(familyNo, headName) {
 
   const historyHtml = (history && history.length)
     ? history.map(h => `
-        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px;">
-          <span>${h.year}</span>
-          <span>₹${parseFloat(h.amount).toLocaleString('en-IN')} ${h.payment_mode === 'online' ? '📱' : '💵'}</span>
-          <span style="color:var(--text-muted);">${h.receipt_no ? '#' + h.receipt_no : '—'}</span>
-          <button class="btn-sm btn-secondary" onclick="showMembershipFeeReceipt('${h.id}')" title="Print">🖨</button>
+        <div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:13px;">
+          <div style="display:flex;justify-content:space-between;">
+            <span>${h.year}</span>
+            <span>₹${parseFloat(h.amount).toLocaleString('en-IN')} ${h.payment_mode === 'online' ? '📱' : '💵'}</span>
+            <span style="color:var(--text-muted);">${h.receipt_no ? '#' + h.receipt_no : '—'}</span>
+            <button class="btn-sm btn-secondary" onclick="showMembershipFeeReceipt('${h.id}')" title="Print">🖨</button>
+          </div>
+          ${h.remarks ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">📝 ${h.remarks}</div>` : ''}
         </div>`).join('')
     : `<p style="font-size:12px;color:var(--text-muted);">No membership fee paid yet.</p>`;
 
@@ -719,6 +722,14 @@ async function showMembershipFeeModal(familyNo, headName) {
       <label>Chq/UPI No.</label>
       <input type="text" id="mfee-ref" placeholder="Chq/UPI No." />
     </div>
+    <div class="form-group">
+      <label>Remarks <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+      <input type="text" id="mfee-remarks" placeholder="Any comment" />
+    </div>
+    <div class="form-group">
+      <label>Receipt No. <span style="font-weight:400;color:var(--text-muted);">(manual - leave blank to auto-assign)</span></label>
+      <input type="number" id="mfee-receipt-no" min="1" placeholder="e.g. from this year's paper receipt book" />
+    </div>
     <div class="modal-actions">
       <button class="btn-primary" onclick="saveMembershipFee('${familyNo.replace(/'/g, "\\'")}','${(headName || '').replace(/'/g, "\\'")}')">💾 Save &amp; Print Receipt</button>
       <button class="btn-secondary" onclick="closeModal()">Close</button>
@@ -731,12 +742,26 @@ async function saveMembershipFee(familyNo, headName) {
   const amount = parseFloat(document.getElementById('mfee-amount')?.value);
   const payment_mode = document.getElementById('mfee-mode')?.value || 'cash';
   const payment_ref = payment_mode === 'online' ? (document.getElementById('mfee-ref')?.value || '').trim() || null : null;
+  const remarks = (document.getElementById('mfee-remarks')?.value || '').trim() || null;
+  const manualReceiptNo = parseInt(document.getElementById('mfee-receipt-no')?.value) || null;
 
   if (!year) { showToast('Enter a valid year', 'error'); return; }
   if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
 
+  const insertObj = { org_id: currentOrgId, family_no: familyNo, year, amount, payment_mode, payment_ref, remarks };
+  // This year's receipts were already issued from the paper book before this
+  // feature existed - a manually typed number is stored as-is, bypassing the
+  // shared auto-counter entirely (getOrAssignReceiptNo in receipt.js already
+  // skips assigning when receipt_no is non-null, so printing just uses this
+  // number unchanged). Leave blank to fall back to the normal auto-sequence
+  // (the plan for next year onward).
+  if (manualReceiptNo) {
+    insertObj.receipt_no = manualReceiptNo;
+    insertObj.receipt_no_assigned_at = new Date().toISOString();
+  }
+
   const { data, error } = await db.from('dr_membership_fees')
-    .insert({ org_id: currentOrgId, family_no: familyNo, year, amount, payment_mode, payment_ref })
+    .insert(insertObj)
     .select().single();
   if (error) {
     if (error.code === '23505') { showToast(`${year} fee already recorded for this family`, 'error'); return; }
