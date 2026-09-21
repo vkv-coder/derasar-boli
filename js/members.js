@@ -470,6 +470,10 @@ async function saveFamilyIndividuals(familyNo) {
 
   showToast(`✅ Added ${records.length} member${records.length > 1 ? 's' : ''}`, 'success');
   showFamilyIndividualsModal(familyNo);
+  // The Members list table/stats sit behind this modal and were rendered
+  // before this insert - refresh them too, or the "Members" count/column
+  // stays stale until the whole page is reloaded (real report: family N23).
+  Promise.all([loadMembersStats(), loadMembersList()]);
 }
 
 async function deleteFamilyIndividual(id, familyNo, headName) {
@@ -656,6 +660,7 @@ async function deleteFamilyIndividualInline(individualId, memberId) {
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Removed');
   showEditMemberModal(memberId);
+  Promise.all([loadMembersStats(), loadMembersList()]);
 }
 
 async function addFamilyIndividualsFromEdit(familyNo, memberId) {
@@ -665,6 +670,9 @@ async function addFamilyIndividualsFromEdit(familyNo, memberId) {
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast(`✅ Added ${records.length} member${records.length > 1 ? 's' : ''}`, 'success');
   showEditMemberModal(memberId);
+  // Same staleness fix as saveFamilyIndividuals above - this modal is the
+  // Edit Member one, reached from the list, which needs refreshing too.
+  Promise.all([loadMembersStats(), loadMembersList()]);
 }
 
 async function deleteMember(id) {
