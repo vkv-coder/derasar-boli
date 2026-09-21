@@ -689,7 +689,19 @@ async function addFamilyIndividualsFromEdit(familyNo, memberId) {
 async function deleteMember(id) {
   if (!confirm('Delete this member?')) return;
   const { error } = await db.from('dr_members').delete().eq('id', id);
-  if (error) { showToast('Error: ' + error.message, 'error'); return; }
+  if (error) {
+    // The DB is correctly refusing to orphan real donation receipts already
+    // tied to this family (dr_receipt_tokens.member_id foreign key) - the
+    // raw Postgres constraint error is unreadable to a non-technical admin,
+    // so translate that specific case into plain language. Anything else
+    // still shows the raw message so a genuinely unexpected error isn't hidden.
+    if (error.code === '23503') {
+      showToast('Cannot delete — this family has donation receipts on record. Removing it would break that history.', 'error');
+    } else {
+      showToast('Error: ' + error.message, 'error');
+    }
+    return;
+  }
   showToast('Member deleted');
   await Promise.all([loadMembersStats(), loadMembersList()]);
 }
