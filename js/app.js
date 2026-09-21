@@ -115,7 +115,10 @@ function showToast(msg, type = '') {
   const toast = document.getElementById('toast');
   toast.textContent = msg;
   toast.className = 'toast show ' + type;
-  setTimeout(() => { toast.className = 'toast'; }, 3000);
+  // Errors need longer on screen to actually be read (and reported back) -
+  // 3s was the same for every toast, so a real error message ("del member
+  // shows some error") flashed and vanished before it could even be read.
+  setTimeout(() => { toast.className = 'toast'; }, type === 'error' ? 8000 : 3000);
 }
 
 // ========== MODAL ==========
