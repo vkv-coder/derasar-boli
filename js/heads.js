@@ -68,10 +68,10 @@ async function renderHeads() {
     </div>
     <div class="card">
       <div class="section-header">
-        <h3>🎟 Functions / Event Entry</h3>
-        <button class="btn-accent btn-sm" onclick="showAddFunctionModal()">+ Add Function</button>
+        <h3>🎟 Event Passes</h3>
+        <button class="btn-accent btn-sm" onclick="showAddFunctionModal()">+ Add Event Pass</button>
       </div>
-      <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Upcoming functions only — past ones drop off this list automatically. Set pass counts per family from the Members tab (🎟) or when scanning their Membership Card.</p>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Upcoming events only — past ones drop off this list automatically. Set pass counts per family from the Members tab (🎟) or when scanning their Membership Card.</p>
       <div id="functions-list">Loading...</div>
     </div>
     <div class="card">

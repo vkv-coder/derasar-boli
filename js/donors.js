@@ -312,7 +312,7 @@ async function showFamilyOutstanding(familyNo) {
       <div id="family-donations-list"></div>
     </div>
     <div class="card">
-      <h3 style="margin-bottom:10px;">🎟 Function Passes</h3>
+      <h3 style="margin-bottom:10px;">🎟 Event Passes</h3>
       <div id="family-pass-section">Loading...</div>
     </div>
   `;

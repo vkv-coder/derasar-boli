@@ -26,7 +26,7 @@ async function loadFunctionsList() {
   if (!el) return;
   const functions = await loadActiveFunctions();
   if (functions.length === 0) {
-    el.innerHTML = `<p style="font-size:12px;color:var(--text-muted);">No upcoming functions. Add one below.</p>`;
+    el.innerHTML = `<p style="font-size:12px;color:var(--text-muted);">No upcoming events. Add one below.</p>`;
     return;
   }
 
@@ -62,9 +62,9 @@ async function loadFunctionsList() {
 
 function showAddFunctionModal() {
   showModal(`
-    <div class="modal-header"><h3>🎟 Add Function</h3></div>
+    <div class="modal-header"><h3>🎟 Add Event Pass</h3></div>
     <div class="form-group">
-      <label>Function Name</label>
+      <label>Event Name</label>
       <input type="text" id="fn-name-input" placeholder="e.g. Diwali Snehmilan / Swamivatsalya" />
     </div>
     <div class="form-group">
@@ -95,13 +95,13 @@ async function saveNewFunction() {
   if (!isFree && (!amountPerPerson || amountPerPerson <= 0)) { showToast('Enter a valid amount per person', 'error'); return; }
   const { error } = await db.from('dr_functions').insert({ org_id: currentOrgId, name, event_date: eventDate, is_free: isFree, amount_per_person: amountPerPerson });
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
-  showToast('✅ Function added!', 'success');
+  showToast('✅ Event pass added!', 'success');
   closeModal();
   await loadFunctionsList();
 }
 
 async function deleteFunction(id) {
-  if (!confirm('Delete this function? Any saved pass counts for it will also be removed.')) return;
+  if (!confirm('Delete this event pass? Any saved pass counts for it will also be removed.')) return;
   const { error } = await db.from('dr_functions').delete().eq('id', id).eq('org_id', currentOrgId);
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Deleted', 'success');
@@ -119,7 +119,7 @@ async function buildFamilyPassesHTML(familyNo, memberCount) {
   ]);
 
   if (functions.length === 0) {
-    return `<p style="font-size:12px;color:var(--text-muted);">No upcoming functions.</p>`;
+    return `<p style="font-size:12px;color:var(--text-muted);">No upcoming events.</p>`;
   }
 
   const passMap = {};
@@ -214,7 +214,7 @@ let lastFunctionReportName = '';
 
 async function showFunctionReport(functionId) {
   const { data: fn } = await db.from('dr_functions').select('*').eq('id', functionId).single();
-  if (!fn) { showToast('Function not found', 'error'); return; }
+  if (!fn) { showToast('Event pass not found', 'error'); return; }
 
   const { data: passes } = await db.from('dr_function_passes')
     .select('*').eq('org_id', currentOrgId).eq('function_id', functionId).gt('allowed_count', 0)
@@ -283,7 +283,7 @@ function downloadFunctionReportExcel() {
 async function showFamilyPassModal(familyNo, headName) {
   const { data: famMembers } = await db.from('dr_members').select('id').eq('org_id', currentOrgId).eq('family_no', familyNo);
   showModal(`
-    <div class="modal-header"><h3>🎟 ${headName} — Function Passes</h3></div>
+    <div class="modal-header"><h3>🎟 ${headName} — Event Passes</h3></div>
     <div id="family-pass-list">Loading...</div>
   `);
   const html = await buildFamilyPassesHTML(familyNo, (famMembers || []).length);

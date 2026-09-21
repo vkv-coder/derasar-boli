@@ -127,7 +127,7 @@ async function loadMembersList(query = '') {
               <div style="display:flex;gap:5px;flex-wrap:wrap;">
                 <button class="btn-sm btn-secondary" title="Donation History" onclick="showDonorHistory('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${(m.family_no||'').replace(/'/g,"\\'")}')">📜</button>
                 ${m.family_no ? `<button class="btn-sm" style="background:#7B3F00;color:white;" title="Membership Card" onclick="showMembershipCard('${m.family_no.replace(/'/g,"\\'")}')">🪪</button>` : ''}
-                ${m.family_no ? `<button class="btn-sm" style="background:#1450c9;color:white;" title="Event / Function Pass" onclick="showFamilyPassModal('${m.family_no.replace(/'/g,"\\'")}','${m.person_name.replace(/'/g,"\\'")}')">🎟</button>` : ''}
+                ${m.family_no ? `<button class="btn-sm" style="background:#1450c9;color:white;" title="Event Pass" onclick="showFamilyPassModal('${m.family_no.replace(/'/g,"\\'")}','${m.person_name.replace(/'/g,"\\'")}')">🎟</button>` : ''}
                 ${m.family_no ? `<button class="btn-sm" style="background:#8B5A00;color:white;" title="Membership Fee" onclick="showMembershipFeeModal('${m.family_no.replace(/'/g,"\\'")}','${m.person_name.replace(/'/g,"\\'")}')">💳</button>` : ''}
                 <button class="btn-sm" style="background:#4CAF50;color:white;" title="Edit Member" onclick="showEditMemberModal('${m.id}')">Edit</button>
                 <button class="btn-sm btn-danger" title="Delete Member" onclick="deleteMember('${m.id}')">Del</button>
