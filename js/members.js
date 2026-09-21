@@ -199,7 +199,10 @@ function showAddMemberModal() {
       <div class="form-group" style="flex:1;">
         <label>DOB (Head)</label>
         <input type="date" id="mem-dob" onchange="showComputedAge('mem-dob','mem-age')" />
-        <div id="mem-age" style="font-size:11px;color:var(--text-muted);margin-top:2px;"></div>
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label>Age <span style="font-weight:400;color:var(--text-muted);">(if DOB unknown)</span></label>
+        <input type="number" id="mem-age" min="0" max="130" placeholder="e.g. 62" />
       </div>
       <div class="form-group" style="flex:1;">
         <label>Gender (Head)</label>
@@ -230,9 +233,12 @@ function showAddMemberModal() {
   `);
 }
 
-// Age is always computed from dob, never stored — avoids a second value
-// that silently goes stale as time passes. Used wherever a dob input needs
-// a live "(n yrs)" readout next to it.
+// Age has its own field (many members, especially older ones, don't know
+// their exact DOB but do know their approximate age) — when DOB IS known,
+// this auto-fills Age from it as a convenience, but Age stays independently
+// editable/overridable and is what actually gets saved. Like the source
+// Google Form, a typed age is a snapshot as of entry time, not recomputed
+// later — accepted since that's already how the form itself behaves.
 function calcAge(dobStr) {
   if (!dobStr) return null;
   const dob = new Date(dobStr);
@@ -248,7 +254,7 @@ function showComputedAge(dobFieldId, ageFieldId) {
   const el = document.getElementById(ageFieldId);
   if (!el) return;
   const age = calcAge(document.getElementById(dobFieldId)?.value);
-  el.textContent = age != null ? age + ' yrs' : '';
+  if (age != null) el.value = age;
 }
 
 // Next family_no in the A1/A2.../B1... scheme: first letter of the head's
@@ -290,6 +296,7 @@ async function addMember(familyNo = null, personName = null, btn = null) {
   const family_member_count = parseInt(document.getElementById('mem-count')?.value) || null;
   const old_member_no       = document.getElementById('mem-old-no')?.value.trim() || null;
   const dob                 = document.getElementById('mem-dob')?.value || null;
+  const age                 = parseInt(document.getElementById('mem-age')?.value) || null;
   const gender              = document.getElementById('mem-gender')?.value || null;
 
   if (!family_no || !person_name) { showToast('Family No. and Name are required', 'error'); return null; }
@@ -318,7 +325,7 @@ async function addMember(familyNo = null, personName = null, btn = null) {
     // there, only "Same as Donor". Only for a genuinely NEW family (this
     // branch) — adding a person to an existing family shouldn't re-seed it.
     const { error: individualError } = await db.from('dr_family_individuals')
-      .insert({ org_id: currentOrgId, family_no, person_name, is_head: true, dob, gender, phone_no });
+      .insert({ org_id: currentOrgId, family_no, person_name, is_head: true, dob, age, gender, phone_no });
 
     closeModal();
     showToast('Member added!', 'success');
@@ -361,7 +368,11 @@ function newIndivRowHtml(n) {
       </div>
       <div class="form-group" style="margin-bottom:0;flex:1;min-width:120px;">
         <label style="font-size:11px;">DOB</label>
-        <input type="date" id="new-indiv-dob-${n}" />
+        <input type="date" id="new-indiv-dob-${n}" onchange="showComputedAge('new-indiv-dob-${n}','new-indiv-age-${n}')" />
+      </div>
+      <div class="form-group" style="margin-bottom:0;flex:1;min-width:70px;">
+        <label style="font-size:11px;">Age</label>
+        <input type="number" id="new-indiv-age-${n}" min="0" max="130" placeholder="If DOB unknown" />
       </div>
       <div class="form-group" style="margin-bottom:0;flex:1;min-width:90px;">
         <label style="font-size:11px;">Gender</label>
@@ -387,14 +398,14 @@ function addNewIndivRow() {
 
 async function showFamilyIndividualsModal(familyNo, headName) {
   const { data: existing } = await db.from('dr_family_individuals')
-    .select('id, person_name, is_head, dob, gender, phone_no').eq('org_id', currentOrgId).eq('family_no', familyNo)
+    .select('id, person_name, is_head, dob, age, gender, phone_no').eq('org_id', currentOrgId).eq('family_no', familyNo)
     .order('is_head', { ascending: false });
 
   const listHtml = (existing && existing.length)
     ? existing.map(p => `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">
           <span>${p.person_name}${p.is_head ? ' <span style="font-size:11px;color:var(--text-muted);">(Head)</span>' : ''}
-            <span style="font-size:11px;color:var(--text-muted);">${[p.gender, p.dob ? (calcAge(p.dob) + ' yrs') : '', p.phone_no].filter(Boolean).join(' · ')}</span>
+            <span style="font-size:11px;color:var(--text-muted);">${[p.gender, (p.age ?? (p.dob ? calcAge(p.dob) : null)) != null ? (p.age ?? calcAge(p.dob)) + ' yrs' : '', p.phone_no].filter(Boolean).join(' · ')}</span>
           </span>
           <button class="btn-sm btn-danger" onclick="deleteFamilyIndividual('${p.id}','${familyNo.replace(/'/g, "\\'")}','${(headName || '').replace(/'/g, "\\'")}')">✕</button>
         </div>`).join('')
@@ -425,6 +436,7 @@ function collectNewIndivRows(familyNo) {
     records.push({
       org_id: currentOrgId, family_no: familyNo, person_name, is_head: false,
       dob: document.getElementById('new-indiv-dob-' + n)?.value || null,
+      age: parseInt(document.getElementById('new-indiv-age-' + n)?.value) || null,
       gender: document.getElementById('new-indiv-gender-' + n)?.value || null,
       phone_no: document.getElementById('new-indiv-phone-' + n)?.value.trim() || null
     });
@@ -460,7 +472,7 @@ async function showEditMemberModal(id) {
   // places — user feedback 2026-09-11: Edit only ever touched the head,
   // the rest of the family was invisible from this screen.
   const { data: individuals } = await db.from('dr_family_individuals')
-    .select('id, person_name, is_head, dob, gender, phone_no').eq('org_id', currentOrgId).eq('family_no', m.family_no || '')
+    .select('id, person_name, is_head, dob, age, gender, phone_no').eq('org_id', currentOrgId).eq('family_no', m.family_no || '')
     .order('is_head', { ascending: false });
 
   // dr_members has no dob/gender columns of its own for the head — those
@@ -478,7 +490,11 @@ async function showEditMemberModal(id) {
           ${!p.is_head ? `
           <div class="form-group" style="margin-bottom:0;flex:1;min-width:120px;">
             <label style="font-size:11px;">DOB</label>
-            <input type="date" id="fam-indiv-dob-${p.id}" value="${p.dob || ''}" />
+            <input type="date" id="fam-indiv-dob-${p.id}" value="${p.dob || ''}" onchange="showComputedAge('fam-indiv-dob-${p.id}','fam-indiv-age-${p.id}')" />
+          </div>
+          <div class="form-group" style="margin-bottom:0;flex:1;min-width:70px;">
+            <label style="font-size:11px;">Age</label>
+            <input type="number" id="fam-indiv-age-${p.id}" min="0" max="130" value="${p.age ?? ''}" placeholder="If DOB unknown" />
           </div>
           <div class="form-group" style="margin-bottom:0;flex:1;min-width:90px;">
             <label style="font-size:11px;">Gender</label>
@@ -520,7 +536,10 @@ async function showEditMemberModal(id) {
       <div class="form-group" style="flex:1;">
         <label>DOB (Head)</label>
         <input type="date" id="mem-dob-edit" value="${headIndiv?.dob || ''}" onchange="showComputedAge('mem-dob-edit','mem-age-edit')" />
-        <div id="mem-age-edit" style="font-size:11px;color:var(--text-muted);margin-top:2px;">${headIndiv?.dob ? calcAge(headIndiv.dob) + ' yrs' : ''}</div>
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label>Age <span style="font-weight:400;color:var(--text-muted);">(if DOB unknown)</span></label>
+        <input type="number" id="mem-age-edit" min="0" max="130" value="${headIndiv?.age ?? ''}" placeholder="e.g. 62" />
       </div>
       <div class="form-group" style="flex:1;">
         <label>Gender (Head)</label>
@@ -568,6 +587,7 @@ async function updateMember(id) {
   const family_member_count = parseInt(document.getElementById('mem-count-edit').value) || null;
   const old_member_no       = document.getElementById('mem-old-no-edit').value.trim() || null;
   const dob                 = document.getElementById('mem-dob-edit')?.value || null;
+  const age                 = parseInt(document.getElementById('mem-age-edit')?.value) || null;
   const gender              = document.getElementById('mem-gender-edit')?.value || null;
 
   if (!family_no || !person_name) { showToast('Fill required fields', 'error'); return; }
@@ -585,7 +605,7 @@ async function updateMember(id) {
   // dob/gender also live only there (dr_members has no such columns).
   if (before?.family_no) {
     await db.from('dr_family_individuals')
-      .update({ person_name, family_no, dob, gender })
+      .update({ person_name, family_no, dob, age, gender })
       .eq('org_id', currentOrgId).eq('family_no', before.family_no).eq('is_head', true);
   }
 
@@ -599,9 +619,11 @@ async function updateFamilyIndividual(individualId) {
   if (!name) { showToast('Name cannot be blank', 'error'); return; }
   const update = { person_name: name };
   const dobEl = document.getElementById(`fam-indiv-dob-${individualId}`);
+  const ageEl = document.getElementById(`fam-indiv-age-${individualId}`);
   const genderEl = document.getElementById(`fam-indiv-gender-${individualId}`);
   const phoneEl = document.getElementById(`fam-indiv-phone-${individualId}`);
   if (dobEl) update.dob = dobEl.value || null;
+  if (ageEl) update.age = parseInt(ageEl.value) || null;
   if (genderEl) update.gender = genderEl.value || null;
   if (phoneEl) update.phone_no = phoneEl.value.trim() || null;
 
