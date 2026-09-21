@@ -381,7 +381,8 @@ const RECEIPT_NO_RPC = {
   dr_donations: 'dr_assign_receipt_no_donation',
   dr_receipt_tokens: 'dr_assign_receipt_no_token',
   dr_token_splits: 'dr_assign_receipt_no_split',
-  dr_membership_fees: 'dr_assign_receipt_no_membership_fee'
+  dr_membership_fees: 'dr_assign_receipt_no_membership_fee',
+  dr_function_passes: 'dr_assign_receipt_no_function_pass'
 };
 
 async function getOrAssignReceiptNo(table, row) {
@@ -494,6 +495,79 @@ async function buildMembershipFeeReceiptBlock(feeId) {
 async function showMembershipFeeReceipt(feeId) {
   const block = await buildMembershipFeeReceiptBlock(feeId);
   if (!block) { showToast('Could not load membership fee record', 'error'); return; }
+
+  const html = `<!DOCTYPE html>
+<html lang="gu">
+<head>
+<meta charset="UTF-8"/>
+<title>Receipt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;600;700&display=swap" rel="stylesheet">
+<style>${RECEIPT_CSS}</style>
+</head>
+<body>
+${block.html}
+<div class="btns">
+  <button class="btn btn-print" onclick="window.print();this.disabled=true;this.textContent='✅ Printed';">🖨 Print / PDF</button>
+  <button class="btn btn-close" onclick="window.close()">Close</button>
+</div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=430,height=720,scrollbars=yes');
+  if (!win) { showToast('Allow pop-ups to view receipt', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+}
+
+// Same shape as buildMembershipFeeReceiptBlock, for a paid dr_function_passes
+// row - a single-line "<Event Name> — N person(s)" receipt, sharing the
+// org's one continuous receipt_no sequence.
+async function buildFunctionPassReceiptBlock(passId) {
+  const { data: p, error } = await db.from('dr_function_passes').select('*, dr_functions(name, event_date)').eq('id', passId).single();
+  if (error || !p) return null;
+  if (!p.total_amount || parseFloat(p.total_amount) <= 0) return { pendingPayment: true };
+
+  const { data: org } = await db.from('dr_organizations').select('*').eq('id', p.org_id || currentOrgId).single();
+  const templeHeader = buildTempleHeader(org);
+
+  const { data: head } = await db.from('dr_family_individuals')
+    .select('person_name').eq('org_id', p.org_id).eq('family_no', p.family_no).eq('is_head', true).maybeSingle();
+
+  const dt = new Date(p.updated_at || p.receipt_no_assigned_at || Date.now());
+  const receiptDate = dt.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const assignedNo = await getOrAssignReceiptNo('dr_function_passes', p);
+  const receiptNo = formatReceiptNo(org?.receipt_prefix, assignedNo);
+  const total = parseFloat(p.total_amount);
+  const eventName = p.dr_functions?.name || 'Event';
+
+  const html = `
+<div class="receipt">
+  ${templeHeader}
+  <div class="receipt-body">
+    <div class="receipt-title">પહોંચ &nbsp;·&nbsp; RECEIPT</div>
+    <div class="meta"><span>ન. : ${receiptNo}</span><span>તા. : ${receiptDate}</span></div>
+    <div class="row"><span class="row-label">નામ :</span><span class="row-value">${head?.person_name || p.family_no}</span></div>
+    <div class="row"><span class="row-label">કુટુંબ ક્રમ :</span><span class="row-value">${p.family_no || '—'}</span></div>
+    <table class="heads-table">
+      <thead><tr><th style="width:28px;text-align:center;">ક્ર.</th><th>દાન ની વિગત</th><th>રકમ</th></tr></thead>
+      <tbody><tr><td style="text-align:center;color:#888;">1</td><td>${eventName} — ${p.allowed_count} person${p.allowed_count === 1 ? '' : 's'}</td><td>₹ ${total.toLocaleString('en-IN')}</td></tr></tbody>
+    </table>
+    <div class="total-row"><span class="lbl">કુલ (Total)</span><span class="val">₹ ${total.toLocaleString('en-IN')} /-</span></div>
+    <div class="words-row">અંકે ${numToGujaratiWords(total)} રૂપિયા</div>
+    ${paymentInfoHTML(p.payment_mode, p.payment_ref)}
+    <div class="footer">🙏 જય જિનેન્દ્ર 🙏</div>
+    <div class="sys-note">આ સ્વ-ઉત્પન્ન (Computer Generated) પહોંચ છે.<br>સહી ની જ઼રૂર નથી. &nbsp;·&nbsp; Signature not required.</div>
+  </div>
+</div>`;
+
+  return { html, receiptNo: assignedNo, phone: null };
+}
+
+async function showFunctionPassReceipt(passId) {
+  const block = await buildFunctionPassReceiptBlock(passId);
+  if (!block) { showToast('Could not load pass record', 'error'); return; }
+  if (block.pendingPayment) { showToast('This pass has no amount recorded - nothing to print', 'error'); return; }
 
   const html = `<!DOCTYPE html>
 <html lang="gu">
