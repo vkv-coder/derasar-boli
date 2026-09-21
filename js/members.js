@@ -90,14 +90,26 @@ async function loadMembersList(query = '') {
     individualCounts[p.family_no] = (individualCounts[p.family_no] || 0) + 1;
   });
 
+  // Latest membership fee year per family - one query for the whole org,
+  // reduced client-side to the max year per family_no (PostgREST has no
+  // easy DISTINCT ON), same shape as individualCounts above.
+  const { data: allFees } = await db.from('dr_membership_fees')
+    .select('family_no, year, amount, receipt_no').eq('org_id', currentOrgId);
+  const latestFee = {};
+  (allFees || []).forEach(f => {
+    if (!latestFee[f.family_no] || f.year > latestFee[f.family_no].year) latestFee[f.family_no] = f;
+  });
+
   el.innerHTML = `
     <div style="overflow-x:auto;">
     <table class="data-table">
       <thead>
-        <tr><th>Family No.</th><th>Old No.</th><th>Name</th><th>Phone</th><th>Members</th><th>Actions</th></tr>
+        <tr><th>Family No.</th><th>Old No.</th><th>Name</th><th>Phone</th><th>Members</th><th>Last Fee Paid</th><th>Actions</th></tr>
       </thead>
       <tbody>
-        ${data.map(m => `
+        ${data.map(m => {
+          const fee = m.family_no ? latestFee[m.family_no] : null;
+          return `
           <tr>
             <td><strong>${m.family_no}</strong></td>
             <td><input type="text" value="${(m.old_member_no || '').replace(/"/g, '&quot;')}" placeholder="—"
@@ -108,17 +120,21 @@ async function loadMembersList(query = '') {
               ? `<a href="tel:${m.phone_no}" style="color:var(--primary);text-decoration:none;">${m.phone_no}</a>`
               : '<span style="color:#f44;font-size:11px;">⚠ Missing</span>'}</td>
             <td style="text-align:center;">${individualCounts[m.family_no] ?? m.family_member_count ?? '—'}</td>
+            <td style="font-size:12px;">${fee
+              ? `${fee.year} · ₹${parseFloat(fee.amount).toLocaleString('en-IN')}${fee.receipt_no ? ` <span style="color:var(--text-muted);">#${fee.receipt_no}</span>` : ''}`
+              : '<span style="color:#f44;">Not paid</span>'}</td>
             <td>
               <div style="display:flex;gap:5px;flex-wrap:wrap;">
                 <button class="btn-sm btn-secondary" onclick="showDonorHistory('${m.id}','${m.person_name.replace(/'/g,"\\'")}','${(m.family_no||'').replace(/'/g,"\\'")}')">📜</button>
                 ${m.family_no ? `<button class="btn-sm" style="background:#7B3F00;color:white;" onclick="showMembershipCard('${m.family_no.replace(/'/g,"\\'")}')">🪪</button>` : ''}
                 ${m.family_no ? `<button class="btn-sm" style="background:#1450c9;color:white;" onclick="showFamilyPassModal('${m.family_no.replace(/'/g,"\\'")}','${m.person_name.replace(/'/g,"\\'")}')">🎟</button>` : ''}
+                ${m.family_no ? `<button class="btn-sm" style="background:#8B5A00;color:white;" onclick="showMembershipFeeModal('${m.family_no.replace(/'/g,"\\'")}','${m.person_name.replace(/'/g,"\\'")}')">💳</button>` : ''}
                 <button class="btn-sm" style="background:#4CAF50;color:white;" onclick="showEditMemberModal('${m.id}')">Edit</button>
                 <button class="btn-sm btn-danger" onclick="deleteMember('${m.id}')">Del</button>
               </div>
             </td>
           </tr>
-        `).join('')}
+        `; }).join('')}
       </tbody>
     </table>
     </div>
@@ -656,6 +672,82 @@ async function deleteMember(id) {
   if (error) { showToast('Error: ' + error.message, 'error'); return; }
   showToast('Member deleted');
   await Promise.all([loadMembersStats(), loadMembersList()]);
+}
+
+// ========== YEARLY MEMBERSHIP FEE ==========
+async function showMembershipFeeModal(familyNo, headName) {
+  const { data: history } = await db.from('dr_membership_fees')
+    .select('id, year, amount, payment_mode, receipt_no').eq('org_id', currentOrgId).eq('family_no', familyNo)
+    .order('year', { ascending: false });
+
+  const paidYears = new Set((history || []).map(h => h.year));
+  const currentYear = new Date().getFullYear();
+  const nextUnpaidYear = paidYears.has(currentYear) ? currentYear + 1 : currentYear;
+
+  const historyHtml = (history && history.length)
+    ? history.map(h => `
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px;">
+          <span>${h.year}</span>
+          <span>₹${parseFloat(h.amount).toLocaleString('en-IN')} ${h.payment_mode === 'online' ? '📱' : '💵'}</span>
+          <span style="color:var(--text-muted);">${h.receipt_no ? '#' + h.receipt_no : '—'}</span>
+          <button class="btn-sm btn-secondary" onclick="showMembershipFeeReceipt('${h.id}')" title="Print">🖨</button>
+        </div>`).join('')
+    : `<p style="font-size:12px;color:var(--text-muted);">No membership fee paid yet.</p>`;
+
+  showModal(`
+    <div class="modal-title">💳 Membership Fee — ${familyNo}${headName ? ' (' + headName + ')' : ''}</div>
+    <div style="max-height:160px;overflow-y:auto;margin-bottom:12px;">${historyHtml}</div>
+    <hr style="margin:12px 0;border:none;border-top:1px solid var(--border);" />
+    <div style="display:flex;gap:8px;">
+      <div class="form-group" style="flex:1;">
+        <label>Year</label>
+        <input type="number" id="mfee-year" value="${nextUnpaidYear}" min="2000" max="2100" />
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label>Amount (₹)</label>
+        <input type="number" id="mfee-amount" min="1" step="0.01" placeholder="e.g. 500" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Payment Mode</label>
+      <select id="mfee-mode" onchange="document.getElementById('mfee-ref-row').style.display=this.value==='online'?'block':'none';">
+        <option value="cash">💵 Cash</option>
+        <option value="online">📱 Online</option>
+      </select>
+    </div>
+    <div class="form-group" id="mfee-ref-row" style="display:none;">
+      <label>Chq/UPI No.</label>
+      <input type="text" id="mfee-ref" placeholder="Chq/UPI No." />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="saveMembershipFee('${familyNo.replace(/'/g, "\\'")}','${(headName || '').replace(/'/g, "\\'")}')">💾 Save &amp; Print Receipt</button>
+      <button class="btn-secondary" onclick="closeModal()">Close</button>
+    </div>
+  `);
+}
+
+async function saveMembershipFee(familyNo, headName) {
+  const year = parseInt(document.getElementById('mfee-year')?.value);
+  const amount = parseFloat(document.getElementById('mfee-amount')?.value);
+  const payment_mode = document.getElementById('mfee-mode')?.value || 'cash';
+  const payment_ref = payment_mode === 'online' ? (document.getElementById('mfee-ref')?.value || '').trim() || null : null;
+
+  if (!year) { showToast('Enter a valid year', 'error'); return; }
+  if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+
+  const { data, error } = await db.from('dr_membership_fees')
+    .insert({ org_id: currentOrgId, family_no: familyNo, year, amount, payment_mode, payment_ref })
+    .select().single();
+  if (error) {
+    if (error.code === '23505') { showToast(`${year} fee already recorded for this family`, 'error'); return; }
+    showToast('Error: ' + error.message, 'error');
+    return;
+  }
+
+  closeModal();
+  showToast('✅ Membership fee saved');
+  await loadMembersList();
+  await showMembershipFeeReceipt(data.id);
 }
 
 async function showDonorHistory(memberId, memberName, familyNo) {
