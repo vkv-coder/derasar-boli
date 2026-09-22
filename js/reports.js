@@ -74,20 +74,31 @@ async function loadLiveData() {
   if (!donations) return;
 
   // Calculate totals
+  // "total" = amount pledged/entered (dr_donations.amount, recorded at
+  // entry time). "received" = received_amount, the separate field used
+  // elsewhere to gate receipt printing until payment is actually
+  // confirmed - shown alongside so pledged vs. actually-collected is
+  // visible at a glance instead of only the pledged figure.
   const swapnaTotals = {};
   const generalTotals = {};
   let grandTotal = 0;
+  let grandReceived = 0;
 
   donations.forEach(d => {
-    grandTotal += parseFloat(d.amount);
+    const amt = parseFloat(d.amount) || 0;
+    const rcvd = parseFloat(d.received_amount) || 0;
+    grandTotal += amt;
+    grandReceived += rcvd;
     if (d.head_type === 'swapna_item' && d.swapna_item_id) {
-      if (!swapnaTotals[d.swapna_item_id]) swapnaTotals[d.swapna_item_id] = { total: 0, count: 0 };
-      swapnaTotals[d.swapna_item_id].total += parseFloat(d.amount);
+      if (!swapnaTotals[d.swapna_item_id]) swapnaTotals[d.swapna_item_id] = { total: 0, received: 0, count: 0 };
+      swapnaTotals[d.swapna_item_id].total += amt;
+      swapnaTotals[d.swapna_item_id].received += rcvd;
       swapnaTotals[d.swapna_item_id].count++;
     }
     if (d.head_type === 'general_head' && d.general_head_id) {
-      if (!generalTotals[d.general_head_id]) generalTotals[d.general_head_id] = { total: 0, count: 0 };
-      generalTotals[d.general_head_id].total += parseFloat(d.amount);
+      if (!generalTotals[d.general_head_id]) generalTotals[d.general_head_id] = { total: 0, received: 0, count: 0 };
+      generalTotals[d.general_head_id].total += amt;
+      generalTotals[d.general_head_id].received += rcvd;
       generalTotals[d.general_head_id].count++;
     }
   });
@@ -95,8 +106,16 @@ async function loadLiveData() {
   el.innerHTML = `
     <!-- Grand Total -->
     <div class="card" style="background:var(--primary);color:white;text-align:center;">
-      <div style="font-size:13px;opacity:0.8;margin-bottom:4px;">Grand Total</div>
-      <div style="font-size:36px;font-weight:800;">${formatAmount(grandTotal)}</div>
+      <div style="display:flex;justify-content:center;gap:28px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:13px;opacity:0.8;margin-bottom:4px;">Pledged</div>
+          <div style="font-size:36px;font-weight:800;">${formatAmount(grandTotal)}</div>
+        </div>
+        <div>
+          <div style="font-size:13px;opacity:0.8;margin-bottom:4px;">Received</div>
+          <div style="font-size:36px;font-weight:800;color:#A5D6A7;">${formatAmount(grandReceived)}</div>
+        </div>
+      </div>
       <div style="font-size:12px;opacity:0.7;margin-top:4px;">${donations.length} entries</div>
     </div>
 
@@ -109,11 +128,12 @@ async function loadLiveData() {
           <div style="font-weight:700;color:var(--primary);margin-bottom:6px;">${sw.name}</div>
           <div class="total-grid">
             ${(sw.dr_swapna_items || []).map(item => {
-              const t = swapnaTotals[item.id] || { total: 0, count: 0 };
+              const t = swapnaTotals[item.id] || { total: 0, received: 0, count: 0 };
               return `
                 <div class="total-card">
                   <div class="head-name">${item.name}</div>
                   <div class="total-amount">${formatAmount(t.total)}</div>
+                  <div style="font-size:11px;color:#2E7D32;font-weight:600;">Received: ${formatAmount(t.received)}</div>
                   <div class="entry-count">${t.count} entr${t.count === 1 ? 'y' : 'ies'}</div>
                 </div>
               `;
@@ -130,11 +150,12 @@ async function loadLiveData() {
       <div class="card-title">🔷 General Heads</div>
       <div class="total-grid">
         ${generalHeads.map(h => {
-          const t = generalTotals[h.id] || { total: 0, count: 0 };
+          const t = generalTotals[h.id] || { total: 0, received: 0, count: 0 };
           return `
             <div class="total-card">
               <div class="head-name">${h.name}</div>
               <div class="total-amount">${formatAmount(t.total)}</div>
+              <div style="font-size:11px;color:#2E7D32;font-weight:600;">Received: ${formatAmount(t.received)}</div>
               <div class="entry-count">${t.count} entr${t.count === 1 ? 'y' : 'ies'}</div>
             </div>
           `;
