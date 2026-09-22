@@ -79,7 +79,8 @@ async function loadLiveData() {
   // elsewhere to gate receipt printing until payment is actually
   // confirmed - shown alongside so pledged vs. actually-collected is
   // visible at a glance instead of only the pledged figure.
-  const swapnaTotals = {};
+  const swapnaTotals = {};      // per dr_swapna_items.id (a specific item picked)
+  const swapnaDirectTotals = {}; // per dr_swapna.id (donated to the auction itself, no item picked)
   const generalTotals = {};
   let grandTotal = 0;
   let grandReceived = 0;
@@ -91,19 +92,30 @@ async function loadLiveData() {
     const rcvd = parseFloat(d.received_amount) || 0;
     grandTotal += amt;
     grandReceived += rcvd;
-    if (d.head_type === 'swapna_item') {
-      // Consolidated Swapna block below sums by head_type alone (not also
-      // requiring swapna_item_id), and Misc is grandTotal minus this - a
-      // subtraction, not a second independent sum - so the two blocks are
-      // mathematically guaranteed to add up to the top total exactly, even
-      // if some row were missing its swapna_item_id link.
+    // Donation Entry records a Swapna donation one of two ways: against a
+    // specific item (head_type='swapna_item', swapna_item_id set) or
+    // directly against the auction with no item picked (head_type='swapna',
+    // swapna_id set) - real incident: only the first kind was being
+    // counted anywhere on this page, silently dropping what turned out to
+    // be the larger chunk of real Swapna donations.
+    if (d.head_type === 'swapna_item' || d.head_type === 'swapna') {
+      // Consolidated Swapna block below sums by head_type alone, and Misc
+      // is grandTotal minus this - a subtraction, not a second independent
+      // sum - so the two blocks are mathematically guaranteed to add up to
+      // the top total exactly, even if a row were missing its item/swapna
+      // id link entirely.
       swapnaGrandTotal += amt;
       swapnaGrandReceived += rcvd;
-      if (d.swapna_item_id) {
+      if (d.head_type === 'swapna_item' && d.swapna_item_id) {
         if (!swapnaTotals[d.swapna_item_id]) swapnaTotals[d.swapna_item_id] = { total: 0, received: 0, count: 0 };
         swapnaTotals[d.swapna_item_id].total += amt;
         swapnaTotals[d.swapna_item_id].received += rcvd;
         swapnaTotals[d.swapna_item_id].count++;
+      } else if (d.head_type === 'swapna' && d.swapna_id) {
+        if (!swapnaDirectTotals[d.swapna_id]) swapnaDirectTotals[d.swapna_id] = { total: 0, received: 0, count: 0 };
+        swapnaDirectTotals[d.swapna_id].total += amt;
+        swapnaDirectTotals[d.swapna_id].received += rcvd;
+        swapnaDirectTotals[d.swapna_id].count++;
       }
     }
     if (d.head_type === 'general_head' && d.general_head_id) {
@@ -133,30 +145,26 @@ async function loadLiveData() {
       <div style="font-size:12px;opacity:0.7;margin-top:4px;">${donations.length} entries</div>
     </div>
 
-    <!-- Consolidated Swapna vs Misc - these two always add up to the Grand
-         Total above exactly (Misc is computed as Grand Total minus Swapna,
-         not a separate independent sum). -->
-    <div class="total-grid" style="margin-bottom:16px;">
-      <div class="total-card" style="border-left:4px solid var(--accent);">
-        <div class="head-name">🔶 Swapna (All Items)</div>
-        <div class="total-amount">${formatAmount(swapnaGrandTotal)}</div>
-        <div style="font-size:11px;color:#2E7D32;font-weight:600;">Received: ${formatAmount(swapnaGrandReceived)}</div>
-      </div>
-      <div class="total-card" style="border-left:4px solid var(--primary);">
-        <div class="head-name">🔷 Misc (General Heads, incl. Sub-heads)</div>
-        <div class="total-amount">${formatAmount(miscGrandTotal)}</div>
-        <div style="font-size:11px;color:#2E7D32;font-weight:600;">Received: ${formatAmount(miscGrandReceived)}</div>
-      </div>
-    </div>
-
-    <!-- Swapna Totals -->
+    <!-- Swapna Totals (per item, plus a "Direct" card for donations made
+         straight to the auction with no specific item picked - these used
+         to be silently uncounted anywhere on this page). -->
     ${swapnas && swapnas.length > 0 ? `
     <div class="card">
       <div class="card-title">🔶 Swapna (Auction)</div>
-      ${swapnas.map(sw => `
+      ${swapnas.map(sw => {
+        const direct = swapnaDirectTotals[sw.id] || { total: 0, received: 0, count: 0 };
+        return `
         <div style="margin-bottom:14px;">
           <div style="font-weight:700;color:var(--primary);margin-bottom:6px;">${sw.name}</div>
           <div class="total-grid">
+            ${direct.count > 0 ? `
+              <div class="total-card" style="border-left:4px solid var(--accent);">
+                <div class="head-name">Direct (no item picked)</div>
+                <div class="total-amount">${formatAmount(direct.total)}</div>
+                <div style="font-size:11px;color:#2E7D32;font-weight:600;">Received: ${formatAmount(direct.received)}</div>
+                <div class="entry-count">${direct.count} entr${direct.count === 1 ? 'y' : 'ies'}</div>
+              </div>
+            ` : ''}
             ${(sw.dr_swapna_items || []).map(item => {
               const t = swapnaTotals[item.id] || { total: 0, received: 0, count: 0 };
               return `
@@ -170,16 +178,28 @@ async function loadLiveData() {
             }).join('')}
           </div>
         </div>
-      `).join('')}
+      `; }).join('')}
     </div>
     ` : ''}
 
-    <!-- General Head Totals -->
-    ${generalHeads && generalHeads.length > 0 ? `
+    <!-- General Head Totals - the Swapna and Misc consolidated totals sit
+         as the first two cards in this SAME grid (not a separate section),
+         so it reads as one continuous block: Grand Total above = Swapna +
+         Misc + every individual head/sub-head card that follows them. -->
     <div class="card">
       <div class="card-title">🔷 General Heads</div>
       <div class="total-grid">
-        ${generalHeads.map(h => {
+        <div class="total-card" style="border-left:4px solid var(--accent);">
+          <div class="head-name">🔶 Swapna (All Items + Direct)</div>
+          <div class="total-amount">${formatAmount(swapnaGrandTotal)}</div>
+          <div style="font-size:11px;color:#2E7D32;font-weight:600;">Received: ${formatAmount(swapnaGrandReceived)}</div>
+        </div>
+        <div class="total-card" style="border-left:4px solid var(--primary);">
+          <div class="head-name">🔷 Misc Subtotal (all heads below)</div>
+          <div class="total-amount">${formatAmount(miscGrandTotal)}</div>
+          <div style="font-size:11px;color:#2E7D32;font-weight:600;">Received: ${formatAmount(miscGrandReceived)}</div>
+        </div>
+        ${(generalHeads || []).map(h => {
           const t = generalTotals[h.id] || { total: 0, received: 0, count: 0 };
           return `
             <div class="total-card">
@@ -192,7 +212,6 @@ async function loadLiveData() {
         }).join('')}
       </div>
     </div>
-    ` : ''}
 
     <!-- Recent Donations -->
     <div class="card">
@@ -206,7 +225,7 @@ async function loadLiveData() {
                 <tr>
                   <td>${d.donor_name}</td>
                   <td>${d.family_no || '—'}</td>
-                  <td><span class="badge ${d.head_type === 'swapna_item' ? 'badge-swapna' : 'badge-general'}">${d.head_type === 'swapna_item' ? 'Swapna' : 'General'}</span></td>
+                  <td><span class="badge ${(d.head_type === 'swapna_item' || d.head_type === 'swapna') ? 'badge-swapna' : 'badge-general'}">${(d.head_type === 'swapna_item' || d.head_type === 'swapna') ? 'Swapna' : 'General'}</span></td>
                   <td><strong>${formatAmount(d.amount)}</strong></td>
                   <td style="font-size:11px;color:var(--text-muted);">${new Date(d.created_at).toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'})}</td>
                 </tr>
