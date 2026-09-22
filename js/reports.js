@@ -83,17 +83,28 @@ async function loadLiveData() {
   const generalTotals = {};
   let grandTotal = 0;
   let grandReceived = 0;
+  let swapnaGrandTotal = 0;
+  let swapnaGrandReceived = 0;
 
   donations.forEach(d => {
     const amt = parseFloat(d.amount) || 0;
     const rcvd = parseFloat(d.received_amount) || 0;
     grandTotal += amt;
     grandReceived += rcvd;
-    if (d.head_type === 'swapna_item' && d.swapna_item_id) {
-      if (!swapnaTotals[d.swapna_item_id]) swapnaTotals[d.swapna_item_id] = { total: 0, received: 0, count: 0 };
-      swapnaTotals[d.swapna_item_id].total += amt;
-      swapnaTotals[d.swapna_item_id].received += rcvd;
-      swapnaTotals[d.swapna_item_id].count++;
+    if (d.head_type === 'swapna_item') {
+      // Consolidated Swapna block below sums by head_type alone (not also
+      // requiring swapna_item_id), and Misc is grandTotal minus this - a
+      // subtraction, not a second independent sum - so the two blocks are
+      // mathematically guaranteed to add up to the top total exactly, even
+      // if some row were missing its swapna_item_id link.
+      swapnaGrandTotal += amt;
+      swapnaGrandReceived += rcvd;
+      if (d.swapna_item_id) {
+        if (!swapnaTotals[d.swapna_item_id]) swapnaTotals[d.swapna_item_id] = { total: 0, received: 0, count: 0 };
+        swapnaTotals[d.swapna_item_id].total += amt;
+        swapnaTotals[d.swapna_item_id].received += rcvd;
+        swapnaTotals[d.swapna_item_id].count++;
+      }
     }
     if (d.head_type === 'general_head' && d.general_head_id) {
       if (!generalTotals[d.general_head_id]) generalTotals[d.general_head_id] = { total: 0, received: 0, count: 0 };
@@ -102,6 +113,9 @@ async function loadLiveData() {
       generalTotals[d.general_head_id].count++;
     }
   });
+
+  const miscGrandTotal = grandTotal - swapnaGrandTotal;
+  const miscGrandReceived = grandReceived - swapnaGrandReceived;
 
   el.innerHTML = `
     <!-- Grand Total -->
@@ -117,6 +131,22 @@ async function loadLiveData() {
         </div>
       </div>
       <div style="font-size:12px;opacity:0.7;margin-top:4px;">${donations.length} entries</div>
+    </div>
+
+    <!-- Consolidated Swapna vs Misc - these two always add up to the Grand
+         Total above exactly (Misc is computed as Grand Total minus Swapna,
+         not a separate independent sum). -->
+    <div class="total-grid" style="margin-bottom:16px;">
+      <div class="total-card" style="border-left:4px solid var(--accent);">
+        <div class="head-name">🔶 Swapna (All Items)</div>
+        <div class="total-amount">${formatAmount(swapnaGrandTotal)}</div>
+        <div style="font-size:11px;color:#2E7D32;font-weight:600;">Received: ${formatAmount(swapnaGrandReceived)}</div>
+      </div>
+      <div class="total-card" style="border-left:4px solid var(--primary);">
+        <div class="head-name">🔷 Misc (General Heads, incl. Sub-heads)</div>
+        <div class="total-amount">${formatAmount(miscGrandTotal)}</div>
+        <div style="font-size:11px;color:#2E7D32;font-weight:600;">Received: ${formatAmount(miscGrandReceived)}</div>
+      </div>
     </div>
 
     <!-- Swapna Totals -->
