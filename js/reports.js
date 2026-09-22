@@ -4,6 +4,17 @@
 
 let liveSubscription = null;
 
+// Shows what's still outstanding rather than what's already in hand -
+// "NIL" when fully received, the shortfall amount (in red) otherwise.
+function pendingHtml(total, received, onDarkBg) {
+  const pending = total - received;
+  const colorPending = onDarkBg ? '#FFAB91' : 'var(--danger)';
+  const colorNil = onDarkBg ? '#A5D6A7' : 'var(--success)';
+  return pending > 0.5
+    ? `<span style="color:${colorPending};">${formatAmount(pending)}</span>`
+    : `<span style="color:${colorNil};">NIL</span>`;
+}
+
 async function renderLive() {
   const content = document.getElementById('page-content');
 
@@ -158,8 +169,8 @@ async function loadLiveData() {
           <div style="font-size:36px;font-weight:800;">${formatAmount(grandTotal)}</div>
         </div>
         <div>
-          <div style="font-size:13px;opacity:0.8;margin-bottom:4px;">Received</div>
-          <div style="font-size:36px;font-weight:800;color:#A5D6A7;">${formatAmount(grandReceived)}</div>
+          <div style="font-size:13px;opacity:0.8;margin-bottom:4px;">Pending</div>
+          <div style="font-size:36px;font-weight:800;">${pendingHtml(grandTotal, grandReceived, true)}</div>
         </div>
       </div>
       <div style="font-size:12px;opacity:0.7;margin-top:4px;">${donations.length} entries</div>
@@ -181,6 +192,7 @@ async function loadLiveData() {
             <div style="font-size:10px;color:var(--text-muted);">${b.auctionName}</div>
             <div class="head-name">${b.itemName}</div>
             <div class="total-amount">${formatAmount(b.total)}</div>
+            <div style="font-size:11px;font-weight:600;">Pending: ${pendingHtml(b.total, b.received)}</div>
             <div class="entry-count">${b.count} entr${b.count === 1 ? 'y' : 'ies'}</div>
           </div>
         `).join('')}
@@ -198,12 +210,12 @@ async function loadLiveData() {
         <div class="total-card" style="border-left:4px solid var(--accent);">
           <div class="head-name">🔶 Swapna (All Items + Direct)</div>
           <div class="total-amount">${formatAmount(swapnaGrandTotal)}</div>
-          <div style="font-size:11px;color:#2E7D32;font-weight:600;">Received: ${formatAmount(swapnaGrandReceived)}</div>
+          <div style="font-size:11px;font-weight:600;">Pending: ${pendingHtml(swapnaGrandTotal, swapnaGrandReceived)}</div>
         </div>
         <div class="total-card" style="border-left:4px solid var(--primary);">
           <div class="head-name">🔷 Misc Subtotal (all heads below)</div>
           <div class="total-amount">${formatAmount(miscGrandTotal)}</div>
-          <div style="font-size:11px;color:#2E7D32;font-weight:600;">Received: ${formatAmount(miscGrandReceived)}</div>
+          <div style="font-size:11px;font-weight:600;">Pending: ${pendingHtml(miscGrandTotal, miscGrandReceived)}</div>
         </div>
         ${(generalHeads || []).map(h => {
           const t = generalTotals[h.id] || { total: 0, received: 0, count: 0 };
@@ -211,7 +223,7 @@ async function loadLiveData() {
             <div class="total-card">
               <div class="head-name">${h.name}</div>
               <div class="total-amount">${formatAmount(t.total)}</div>
-              <div style="font-size:11px;color:#2E7D32;font-weight:600;">Received: ${formatAmount(t.received)}</div>
+              <div style="font-size:11px;font-weight:600;">Pending: ${pendingHtml(t.total, t.received)}</div>
               <div class="entry-count">${t.count} entr${t.count === 1 ? 'y' : 'ies'}</div>
             </div>
           `;
