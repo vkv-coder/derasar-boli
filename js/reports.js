@@ -145,40 +145,37 @@ async function loadLiveData() {
       <div style="font-size:12px;opacity:0.7;margin-top:4px;">${donations.length} entries</div>
     </div>
 
-    <!-- Swapna Totals (per item, plus a "Direct" card for donations made
-         straight to the auction with no specific item picked - these used
-         to be silently uncounted anywhere on this page). -->
+    <!-- Swapna Totals - one compact card per auction (4 per row on wider
+         screens, fewer on narrow ones), each listing its items as tight
+         rows instead of full-size tiles, so 14 auctions don't turn into an
+         extremely long single-column scroll. -->
     ${swapnas && swapnas.length > 0 ? `
     <div class="card">
       <div class="card-title">🔶 Swapna (Auction)</div>
-      ${swapnas.map(sw => {
-        const direct = swapnaDirectTotals[sw.id] || { total: 0, received: 0, count: 0 };
-        return `
-        <div style="margin-bottom:14px;">
-          <div style="font-weight:700;color:var(--primary);margin-bottom:6px;">${sw.name}</div>
-          <div class="total-grid">
+      <div class="swapna-auction-grid">
+        ${swapnas.map(sw => {
+          const direct = swapnaDirectTotals[sw.id] || { total: 0, received: 0, count: 0 };
+          const auctionTotal = (sw.dr_swapna_items || []).reduce((s, item) => s + (swapnaTotals[item.id]?.total || 0), 0) + direct.total;
+          return `
+          <div class="swapna-auction-card">
+            <div class="swapna-auction-name">${sw.name}</div>
+            <div class="swapna-auction-total">${formatAmount(auctionTotal)}</div>
             ${direct.count > 0 ? `
-              <div class="total-card" style="border-left:4px solid var(--accent);">
-                <div class="head-name">Direct (no item picked)</div>
-                <div class="total-amount">${formatAmount(direct.total)}</div>
-                <div style="font-size:11px;color:#2E7D32;font-weight:600;">Received: ${formatAmount(direct.received)}</div>
-                <div class="entry-count">${direct.count} entr${direct.count === 1 ? 'y' : 'ies'}</div>
+              <div class="swapna-item-row" style="font-style:italic;">
+                <span>Direct (no item)</span><span>${formatAmount(direct.total)}</span>
               </div>
             ` : ''}
             ${(sw.dr_swapna_items || []).map(item => {
               const t = swapnaTotals[item.id] || { total: 0, received: 0, count: 0 };
               return `
-                <div class="total-card">
-                  <div class="head-name">${item.name}</div>
-                  <div class="total-amount">${formatAmount(t.total)}</div>
-                  <div style="font-size:11px;color:#2E7D32;font-weight:600;">Received: ${formatAmount(t.received)}</div>
-                  <div class="entry-count">${t.count} entr${t.count === 1 ? 'y' : 'ies'}</div>
+                <div class="swapna-item-row">
+                  <span>${item.name}</span><span>${formatAmount(t.total)}</span>
                 </div>
               `;
             }).join('')}
           </div>
-        </div>
-      `; }).join('')}
+        `; }).join('')}
+      </div>
     </div>
     ` : ''}
 
