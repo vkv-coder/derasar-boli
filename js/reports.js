@@ -57,12 +57,22 @@ async function loadLiveData() {
     .eq('org_id', currentOrgId)
     .order('created_at', { ascending: false });
 
-  // Load swapna items — org-wide, not tied to any one event.
+  // Load swapna items — org-wide, not tied to any one event. Ordering
+  // column is sort_order, not display_order (matching every other file
+  // that queries dr_swapna/dr_swapna_items - display_order doesn't exist
+  // on this table, which is why auctions were rendering in a seemingly
+  // random order before). Embedded dr_swapna_items also need their own
+  // sort - PostgREST doesn't order nested resources from a single
+  // .order() call, so sort each auction's items client-side same as
+  // donations.js already does elsewhere.
   const { data: swapnas } = await db
     .from('dr_swapna')
     .select('*, dr_swapna_items(*)')
     .eq('org_id', currentOrgId)
-    .order('display_order');
+    .order('sort_order');
+  (swapnas || []).forEach(sw => {
+    (sw.dr_swapna_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  });
 
   // General heads have no event_id of their own — fetch by org, not event.
   const { data: generalHeads } = await db
@@ -129,6 +139,16 @@ async function loadLiveData() {
   const miscGrandTotal = grandTotal - swapnaGrandTotal;
   const miscGrandReceived = grandReceived - swapnaGrandReceived;
 
+  // Flat, sequential (auction order, then item order within it) list for
+  // the block grid below - e.g. 14 auctions x 3 items = 42 blocks.
+  const swapnaItemBlocks = [];
+  (swapnas || []).forEach(sw => {
+    (sw.dr_swapna_items || []).forEach(item => {
+      const t = swapnaTotals[item.id] || { total: 0, received: 0, count: 0 };
+      swapnaItemBlocks.push({ auctionName: sw.name, itemName: item.name, total: t.total, received: t.received, count: t.count });
+    });
+  });
+
   el.innerHTML = `
     <!-- Grand Total -->
     <div class="card" style="background:var(--primary);color:white;text-align:center;">
@@ -145,36 +165,25 @@ async function loadLiveData() {
       <div style="font-size:12px;opacity:0.7;margin-top:4px;">${donations.length} entries</div>
     </div>
 
-    <!-- Swapna Totals - one compact card per auction (4 per row on wider
-         screens, fewer on narrow ones), each listing its items as tight
-         rows instead of full-size tiles, so 14 auctions don't turn into an
-         extremely long single-column scroll. -->
-    ${swapnas && swapnas.length > 0 ? `
+    <!-- Swapna Totals - flat, sequential list of every item across every
+         auction (auction 1's items, then auction 2's, then auction 3's...
+         in sort_order), one block each - no auction grouping/headers/
+         totals here, those are covered by the Swapna consolidated card in
+         the matrix below instead. "Direct" (donated to the auction with no
+         item picked) still counts toward that consolidated total but isn't
+         shown as its own block here, since it's not one of the named items. -->
+    ${swapnaItemBlocks.length > 0 ? `
     <div class="card">
-      <div class="card-title">🔶 Swapna (Auction)</div>
-      <div class="swapna-auction-grid">
-        ${swapnas.map(sw => {
-          const direct = swapnaDirectTotals[sw.id] || { total: 0, received: 0, count: 0 };
-          const auctionTotal = (sw.dr_swapna_items || []).reduce((s, item) => s + (swapnaTotals[item.id]?.total || 0), 0) + direct.total;
-          return `
-          <div class="swapna-auction-card">
-            <div class="swapna-auction-name">${sw.name}</div>
-            <div class="swapna-auction-total">${formatAmount(auctionTotal)}</div>
-            ${direct.count > 0 ? `
-              <div class="swapna-item-row" style="font-style:italic;">
-                <span>Direct (no item)</span><span>${formatAmount(direct.total)}</span>
-              </div>
-            ` : ''}
-            ${(sw.dr_swapna_items || []).map(item => {
-              const t = swapnaTotals[item.id] || { total: 0, received: 0, count: 0 };
-              return `
-                <div class="swapna-item-row">
-                  <span>${item.name}</span><span>${formatAmount(t.total)}</span>
-                </div>
-              `;
-            }).join('')}
+      <div class="card-title">🔶 Swapna Items (${swapnaItemBlocks.length})</div>
+      <div class="total-grid">
+        ${swapnaItemBlocks.map(b => `
+          <div class="total-card">
+            <div style="font-size:10px;color:var(--text-muted);">${b.auctionName}</div>
+            <div class="head-name">${b.itemName}</div>
+            <div class="total-amount">${formatAmount(b.total)}</div>
+            <div class="entry-count">${b.count} entr${b.count === 1 ? 'y' : 'ies'}</div>
           </div>
-        `; }).join('')}
+        `).join('')}
       </div>
     </div>
     ` : ''}

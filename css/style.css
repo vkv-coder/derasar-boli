@@ -299,46 +299,6 @@ body {
   margin-bottom: 16px;
 }
 
-/* Compact 4-per-row Swapna auction cards (Live View) - was one full-width
-   stacked section per auction, making a 14-auction org an extremely long
-   scroll. Grid fills left-to-right/top-to-bottom in display_order, so
-   reading order stays 1st, 2nd, 3rd... across each row. */
-.swapna-auction-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 16px;
-}
-@media (max-width: 700px) {
-  .swapna-auction-grid { grid-template-columns: repeat(2, 1fr); }
-}
-.swapna-auction-card {
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius);
-  padding: 10px 12px;
-  background: var(--bg-card);
-}
-.swapna-auction-name {
-  font-weight: 700;
-  color: var(--primary);
-  font-size: 13px;
-  margin-bottom: 2px;
-}
-.swapna-auction-total {
-  font-weight: 800;
-  font-size: 15px;
-  margin-bottom: 6px;
-}
-.swapna-item-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-light);
-  padding: 2px 0;
-  border-top: 1px solid var(--border);
-}
-.swapna-item-row:first-of-type { border-top: none; }
 
 .total-card {
   background: white;
