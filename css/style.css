@@ -58,7 +58,18 @@ body {
 .logo-area h1 { color: var(--primary); font-size: 26px; font-weight: 700; }
 .logo-area .subtitle { color: var(--text-muted); font-size: 13px; margin-top: 4px; }
 
-/* ========== TOPBAR ========== */
+/* ========== TOPBAR + NAV TABS (stick together as one unit) ========== */
+/* Previously only .topbar was sticky - the nav tabs scrolled away with the
+   page content, so switching menus on any long page (Members, Live View,
+   etc.) meant scrolling all the way back up first. Wrapping both in one
+   sticky container keeps them stacked correctly without needing to guess
+   .topbar's exact pixel height for a second sticky offset. */
+.app-header-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
 .topbar {
   background: var(--primary);
   color: white;
@@ -66,9 +77,6 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  position: sticky;
-  top: 0;
-  z-index: 100;
   box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 

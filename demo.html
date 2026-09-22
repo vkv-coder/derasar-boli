@@ -57,19 +57,19 @@
         </div>
       </div>
 
-      <!-- Top Bar -->
-      <div class="topbar">
-        <div class="topbar-left">
-          <span class="app-title">🛕 Derasar Boli (Demo)</span>
+      <!-- Top Bar + Nav Tabs stick together as one unit -->
+      <div class="app-header-sticky">
+        <div class="topbar">
+          <div class="topbar-left">
+            <span class="app-title">🛕 Derasar Boli (Demo)</span>
+          </div>
+          <div class="topbar-right">
+            <span id="user-role-badge" class="role-badge"></span>
+            <button class="btn-logout" onclick="location.reload()">Exit Demo</button>
+          </div>
         </div>
-        <div class="topbar-right">
-          <span id="user-role-badge" class="role-badge"></span>
-          <button class="btn-logout" onclick="location.reload()">Exit Demo</button>
-        </div>
+        <div class="nav-tabs" id="nav-tabs"></div>
       </div>
-
-      <!-- Nav Tabs -->
-      <div class="nav-tabs" id="nav-tabs"></div>
 
       <!-- Page Content -->
       <div id="page-content" class="page-content"></div>
