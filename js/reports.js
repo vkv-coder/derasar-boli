@@ -140,10 +140,14 @@ async function loadLiveData() {
       }
     }
     if (d.head_type === 'general_head' && d.general_head_id) {
-      if (!generalTotals[d.general_head_id]) generalTotals[d.general_head_id] = { total: 0, received: 0, count: 0 };
+      if (!generalTotals[d.general_head_id]) generalTotals[d.general_head_id] = { total: 0, received: 0, count: 0, persons: 0 };
       generalTotals[d.general_head_id].total += amt;
       generalTotals[d.general_head_id].received += rcvd;
       generalTotals[d.general_head_id].count++;
+      // For a Pass-type head (Swamivatsalya Pass, etc.) the headcount
+      // matters more than the rupee figure — this is what "no. of person
+      // is imp, not the amnt" turns into on the card below.
+      generalTotals[d.general_head_id].persons += parseInt(d.pass_qty, 10) || 0;
     }
   });
 
@@ -218,11 +222,18 @@ async function loadLiveData() {
           <div style="font-size:11px;font-weight:600;">Pending: ${pendingHtml(miscGrandTotal, miscGrandReceived)}</div>
         </div>
         ${(generalHeads || []).map(h => {
-          const t = generalTotals[h.id] || { total: 0, received: 0, count: 0 };
+          const t = generalTotals[h.id] || { total: 0, received: 0, count: 0, persons: 0 };
+          const isPass = h.fee_type === 'pass';
           return `
-            <div class="total-card">
+            <div class="total-card"${isPass ? ' style="border-left:4px solid #1565C0;"' : ''}>
               <div class="head-name">${h.name}</div>
-              <div class="total-amount">${formatAmount(t.total)}</div>
+              ${isPass ? `
+                <div style="font-size:26px;font-weight:800;color:#1565C0;">👤 ${t.persons}</div>
+                <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">person${t.persons === 1 ? '' : 's'}</div>
+                <div class="total-amount" style="font-size:14px;">${formatAmount(t.total)}</div>
+              ` : `
+                <div class="total-amount">${formatAmount(t.total)}</div>
+              `}
               <div style="font-size:11px;font-weight:600;">Pending: ${pendingHtml(t.total, t.received)}</div>
               <div class="entry-count">${t.count} entr${t.count === 1 ? 'y' : 'ies'}</div>
             </div>
