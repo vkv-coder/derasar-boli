@@ -235,7 +235,9 @@ async function loadLiveData() {
                 <div class="total-amount">${formatAmount(t.total)}</div>
               `}
               <div style="font-size:11px;font-weight:600;">Pending: ${pendingHtml(t.total, t.received)}</div>
-              <div class="entry-count">${t.count} entr${t.count === 1 ? 'y' : 'ies'}</div>
+              ${isPass
+                ? `<div class="entry-count">${t.count} transaction${t.count === 1 ? '' : 's'}</div>`
+                : `<div class="entry-count">${t.count} entr${t.count === 1 ? 'y' : 'ies'}</div>`}
             </div>
           `;
         }).join('')}

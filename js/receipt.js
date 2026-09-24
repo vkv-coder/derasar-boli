@@ -1198,6 +1198,102 @@ async function showTokenSlip(tokenId) {
   win.document.close();
 }
 
+// A Pass-type donation (Swamivatsalya Pass, નિશાળ ગરણું, etc.) is entered
+// and receipted as ONE line for the whole family — but the family members
+// attending may come through the gate separately, each needing their own
+// individual pass in hand, not one shared paper for all of them (user
+// request 2026-09-24). This prints pass_qty separate small tear-off slips
+// ("Pass 1 of 4", "Pass 2 of 4", ...) from that single donation line, same
+// physical-ticket pattern as showTokenSlip above, just repeated N times
+// and laid out to flow several per sheet instead of a fixed 2-copy split.
+async function printPassSlips(donationId) {
+  const { data: d, error } = await db.from('dr_donations').select('*').eq('id', donationId).single();
+  if (error || !d) { showToast('Could not load entry', 'error'); return; }
+  if (!d.pass_qty || d.pass_qty <= 0) { showToast('This entry has no pass quantity to print', 'error'); return; }
+
+  const { data: org } = await db.from('dr_organizations').select('name').eq('id', d.org_id || currentOrgId).single();
+  const { data: h } = d.general_head_id ? await db.from('dr_general_heads').select('name').eq('id', d.general_head_id).single() : { data: null };
+
+  // Best-effort receipt number for display only (never assigns one) —
+  // checks the line itself, then its parent token, then that token's
+  // printed splits, same fallback order Reports uses.
+  let receiptLabel = 'Pending print';
+  if (d.receipt_no) {
+    receiptLabel = String(d.receipt_no);
+  } else if (d.token_id) {
+    const { data: t } = await db.from('dr_receipt_tokens').select('receipt_no').eq('id', d.token_id).single();
+    if (t?.receipt_no) {
+      receiptLabel = String(t.receipt_no);
+    } else {
+      const { data: splits } = await db.from('dr_token_splits').select('receipt_no').eq('token_id', d.token_id).not('receipt_no', 'is', null);
+      if (splits && splits.length) receiptLabel = splits.map(s => s.receipt_no).join(', ');
+    }
+  }
+
+  const name = d.receipt_name || d.donor_name;
+  const dt = new Date(d.created_at);
+  const dateStr = dt.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const headName = h?.name || '';
+  const orgName = org?.name || '';
+  const total = d.pass_qty;
+
+  const slipBlock = i => `
+    <div class="slip">
+      <div class="slip-org">${orgName}</div>
+      <div class="slip-title">${headName}</div>
+      <div class="slip-pass-no">Pass ${i} of ${total}</div>
+      <div class="slip-row"><span>Name</span><span>${name}</span></div>
+      ${d.family_no ? `<div class="slip-row"><span>Family No.</span><span>${d.family_no}</span></div>` : ''}
+      <div class="slip-row"><span>Receipt No.</span><span>${receiptLabel}</span></div>
+      <div class="slip-row"><span>Date</span><span>${dateStr}</span></div>
+    </div>
+  `;
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>${headName} — ${total} passes</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,sans-serif;}
+  body{background:#eee;padding:16px;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
+  .btns{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+  .btn{padding:10px 18px;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600;font-family:inherit;}
+  .btn-print{background:#333;color:#fff;}
+  .btn-close{background:#e8e8e8;color:#333;}
+  .grid{display:flex;flex-wrap:wrap;gap:0;}
+  .slip{width:3.3in;padding:12px 14px;border:1.5px dashed #999;margin:-0.75px;background:#fff;}
+  .slip-org{font-size:10px;color:#888;text-align:center;margin-bottom:2px;}
+  .slip-title{font-size:13px;font-weight:800;color:#7B1E3B;text-align:center;letter-spacing:0.3px;margin-bottom:2px;}
+  .slip-pass-no{font-size:15px;font-weight:800;text-align:center;color:#1565C0;margin-bottom:8px;}
+  .slip-row{display:flex;justify-content:space-between;font-size:11.5px;padding:3px 0;border-bottom:1px solid #eee;}
+  .slip-row span:first-child{color:#555;}
+  .slip-row span:last-child{font-weight:700;text-align:right;}
+  @media print{
+    @page{size:A4;margin:8mm;}
+    body{background:#fff;padding:0;}
+    .btns{display:none;}
+    .slip{page-break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+<div class="btns">
+  <button class="btn btn-print" onclick="window.print()">🖨 Print all ${total} passes</button>
+  <button class="btn btn-close" onclick="window.close()">Close</button>
+</div>
+<div class="grid">
+  ${Array.from({ length: total }, (_, i) => slipBlock(i + 1)).join('')}
+</div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=760,height=800,scrollbars=yes');
+  if (!win) { showToast('Allow pop-ups to view passes', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+}
+
 function numToGujaratiWords(n) {
   if (!n || n === 0) return 'શૂન્ય';
   const ones = ['', 'એક', 'બે', 'ત્રણ', 'ચાર', 'પાંચ', 'છ', 'સાત', 'આઠ', 'નવ',

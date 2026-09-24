@@ -900,7 +900,7 @@ async function generateTokenFromCart(btn) {
     showToast(`✅ All entries saved successfully — 🎫 Token issued for ${formatAmount(total)}. Give the slip to the donor.`, 'success');
     lastSavedDonationId = saved[saved.length - 1].id;
 
-    saved.forEach((s, i) => recentEntries.unshift({ id: s.id, donor: s.donor_name, family: s.family_no || '—', phone: s.phone || '—', head: currentCart[i]?.headName || '—', amount: s.amount, munQty: s.mun_qty }));
+    saved.forEach((s, i) => recentEntries.unshift({ id: s.id, donor: s.donor_name, family: s.family_no || '—', phone: s.phone || '—', head: currentCart[i]?.headName || '—', amount: s.amount, munQty: s.mun_qty, passQty: s.pass_qty }));
     updateRecentEntries();
 
     showTokenSlip(token.id);
@@ -1001,7 +1001,7 @@ async function generateManualReceiptFromCart(btn) {
     showToast(`✅ Saved as Receipt No. ${manualNo} — opening receipt`, 'success');
     lastSavedDonationId = saved[saved.length - 1].id;
 
-    saved.forEach((s, i) => recentEntries.unshift({ id: s.id, donor: s.donor_name, family: s.family_no || '—', phone: s.phone || '—', head: currentCart[i]?.headName || '—', amount: s.amount, munQty: s.mun_qty }));
+    saved.forEach((s, i) => recentEntries.unshift({ id: s.id, donor: s.donor_name, family: s.family_no || '—', phone: s.phone || '—', head: currentCart[i]?.headName || '—', amount: s.amount, munQty: s.mun_qty, passQty: s.pass_qty }));
     updateRecentEntries();
 
     showCombinedTokenReceipt(token.id);
@@ -1044,10 +1044,11 @@ function updateRecentEntries() {
               <td>${e.donor}</td>
               <td>${e.phone || '—'}</td>
               <td style="font-size:12px;">${e.head}</td>
-              <td><strong>${formatAmount(e.amount)}</strong>${e.munQty ? `<div style="font-size:11px;color:var(--text-muted);">${e.munQty} mun</div>` : ''}</td>
+              <td><strong>${formatAmount(e.amount)}</strong>${e.munQty ? `<div style="font-size:11px;color:var(--text-muted);">${e.munQty} mun</div>` : ''}${e.passQty ? `<div style="font-size:11px;color:var(--text-muted);">${e.passQty} pass${e.passQty === 1 ? '' : 'es'}</div>` : ''}</td>
               <td>
                 <div style="display:flex;gap:4px;">
                   <button class="btn-sm btn-secondary" onclick="showDonationReceipt('${e.id}')">🧾</button>
+                  ${e.passQty > 1 ? `<button class="btn-sm" style="background:#1565C0;color:white;" onclick="printPassSlips('${e.id}')" title="Print ${e.passQty} separate pass slips">🎟 ${e.passQty}</button>` : ''}
                   <button class="btn-sm" style="background:#25D366;color:white;" onclick="whatsappDonation('${e.id}')">📲</button>
                   ${isAdmin() ? `<button class="btn-sm btn-danger" onclick="deleteDonation('${e.id}','entry')">✕</button>` : ''}
                 </div>
