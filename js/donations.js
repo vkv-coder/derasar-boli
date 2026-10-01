@@ -18,6 +18,7 @@ let entrySelectedDay = null; // which of the 3/5/7/8 day-tab buttons is active
 
 let currentCart = [];
 let cartPayer = null; // { memberId, name, phone, familyNo }
+let quickPickMembers = []; // demo-mode only — lets a trial visitor pick a member without knowing what to type
 
 // Resolves the effective unit for a given head, based on the org-wide
 // master switch (Boli Unit Setup) — only 'mixed' mode looks at the
@@ -98,6 +99,14 @@ async function renderEntry() {
         </div>
       </div>
       <div id="cart-member-fields" style="display:none;">
+        ${window.isDemoMode ? `
+        <div class="form-group">
+          <label>Quick Pick (Demo)</label>
+          <select id="cart-member-quickpick" onchange="selectQuickPickMember(this.value)">
+            <option value="">-- choose a sample member --</option>
+          </select>
+        </div>
+        ` : ''}
         <div class="form-group">
           <label>Search Member</label>
           <input type="text" id="cart-member-search" placeholder="Type name or family no..." oninput="searchCartMember()" onkeydown="handleCartMemberSearchKeydown(event)" />
@@ -182,6 +191,7 @@ async function renderEntry() {
   entryEventId = (events && events.length === 1) ? events[0].id : null;
   expandedEntryHeads = {};
   entrySelectedDay = null;
+  if (window.isDemoMode) loadQuickPickMembers();
   await loadDay1HeadsEntry();
 }
 
@@ -661,6 +671,28 @@ let modalMemberTimer = null;
 let modalSelectedMember = null;
 let cartMemberSearchResults = [];
 let cartMemberHighlightIndex = -1;
+
+// Demo mode only: a plain dropdown of every member in the (small) demo
+// org, so a trial visitor can pick someone without knowing a name/family
+// no. to type into the real search box. Real orgs never see this — only
+// rendered when window.isDemoMode (see the cart-member-fields markup above).
+async function loadQuickPickMembers() {
+  const sel = document.getElementById('cart-member-quickpick');
+  if (!sel) return;
+  const { data } = await db.from('dr_members').select('*').eq('org_id', currentOrgId).order('family_no');
+  quickPickMembers = data || [];
+  sel.innerHTML = `
+    <option value="">-- choose a sample member --</option>
+    ${quickPickMembers.map((m, i) => `<option value="${i}">${m.family_no} — ${m.person_name}</option>`).join('')}
+  `;
+}
+
+function selectQuickPickMember(idx) {
+  if (idx === '') return;
+  const m = quickPickMembers[idx];
+  if (!m) return;
+  selectCartMember(m.id, m.person_name, m.family_no, m.phone_no || '');
+}
 
 function searchCartMember() {
   clearTimeout(modalMemberTimer);

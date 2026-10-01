@@ -34,7 +34,9 @@ async function initApp() {
   const badge = document.getElementById('user-role-badge');
   badge.textContent = window.isDemoMode ? 'Demo' : (isAdmin() ? 'Admin' : 'Operator');
   buildNav();
-  if (isAdmin()) {
+  if (window.isDemoMode) {
+    loadTab('guide');
+  } else if (isAdmin()) {
     loadTab('events');
   } else {
     loadTab('entry');
@@ -79,6 +81,7 @@ function buildNav() {
   ];
 
   const tabs = isAdmin() ? adminTabs : operatorTabs;
+  if (window.isDemoMode) tabs.unshift({ id: 'guide', label: 'ℹ️ How This Works' });
 
   tabs.forEach(tab => {
     const el = document.createElement('div');
@@ -100,6 +103,7 @@ function loadTab(tabId) {
   content.innerHTML = '';
 
   switch (tabId) {
+    case 'guide':    renderGuide(); break;
     case 'events':   renderEvents(); break;
     case 'heads':    renderHeads(); break;
     case 'members':  renderMembers(); break;
@@ -143,4 +147,62 @@ function formatAmount(n) {
 function formatDate(d) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// ========== DEMO ORIENTATION TAB (demo-mode only, see buildNav/initApp) ==========
+function renderGuide() {
+  const content = document.getElementById('page-content');
+  content.innerHTML = `
+    <div class="card">
+      <div class="card-title">👋 Welcome — How This Demo Works</div>
+      <p style="font-size:13.5px;line-height:1.7;">
+        Derasar Boli is a complete digital system for running your Sangh's boli
+        (auction), donations, membership, and accounts — from the collection
+        counter during Paryushan right through to the final Sangh-wide total.
+        You're looking at a sample Sangh, already filled in with real-looking
+        families, donations, and receipts, so you can click around and see
+        exactly what your own Sangh's data would look like.
+      </p>
+      <p style="font-size:13.5px;line-height:1.7;background:#FFF3CD;color:#7B3F00;padding:8px 10px;border-radius:8px;font-weight:600;">
+        🔒 Nothing you do here is saved. Explore freely — add a donation, delete
+        a member, try anything. It all resets, and nothing ever touches a real
+        Sangh's data.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">✅ Things to try</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div>
+          <strong>💰 Donation Entry</strong>
+          <div style="font-size:12.5px;color:var(--text-muted);">Choose "Member" as donor type and use the <strong>Quick Pick</strong> dropdown to select a sample family — no need to know a name to search for. Add a boli or donation, then "Generate Token" and print or WhatsApp-share the receipt.</div>
+        </div>
+        <div>
+          <strong>📋 Heads Setup</strong>
+          <div style="font-size:12.5px;color:var(--text-muted);">See a full real Paryushan head structure already set up — all 14 Swapna, Kalp Sutra, Guru Pujan, general heads like Devdravya/Gyaan/Jivdaya — and how Rupees/Mun/Aani units and categories are managed.</div>
+        </div>
+        <div>
+          <strong>👥 Members</strong>
+          <div style="font-size:12.5px;color:var(--text-muted);">Browse the sample family list, open a family's Membership Card, and see the full roster used for "Receipt In Name Of".</div>
+        </div>
+        <div>
+          <strong>📊 Reports &amp; 🔴 Live View</strong>
+          <div style="font-size:12.5px;color:var(--text-muted);">See live running totals, pending vs. collected amounts, and category-wise/item-wise summaries — exactly what you'd show your trustees.</div>
+        </div>
+        <div>
+          <strong>🎟 Event Passes</strong>
+          <div style="font-size:12.5px;color:var(--text-muted);">Set up a Swamivatsalya or function pass and control how many of a family's members get one.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🙏 Want this for your own Sangh?</div>
+      <p style="font-size:13px;line-height:1.6;">No approval was needed for this demo — but to actually run your Sangh's real collections, you'll register your Sangh (quick signup) and it gets approved so your data stays private to only your own team.</p>
+      <p style="font-size:13px;line-height:1.8;">
+        📞 <strong>9327243611</strong><br/>
+        📧 <strong>vkvcoder.support@gmail.com</strong>
+      </p>
+    </div>
+  `;
 }
