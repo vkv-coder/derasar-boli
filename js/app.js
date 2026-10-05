@@ -55,7 +55,8 @@ function checkFamilyDeepLink() {
 
 async function loadOrgBranding() {
   if (!currentOrgId) return;
-  const { data } = await db.from('dr_organizations').select('name, namah_text').eq('id', currentOrgId).single();
+  const { data, error } = await db.from('dr_organizations').select('name, namah_text').eq('id', currentOrgId).single();
+  if (error) console.error('loadOrgBranding failed:', error.message);
   if (data) {
     document.querySelectorAll('.sangh-name').forEach(el => el.textContent = data.name || '');
     document.querySelectorAll('.gujarati-text').forEach(el => el.textContent = data.namah_text || '');

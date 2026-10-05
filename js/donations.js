@@ -207,7 +207,12 @@ async function loadDay1HeadsEntry() {
     .eq('paryushan_day', 1)
     .order('display_order');
 
-  if (error || !data || data.length === 0) {
+  if (error) {
+    console.error('loadDay1HeadsEntry failed:', error.message);
+    el.innerHTML = `<p style="color:#D32F2F;font-size:13px;">Could not load Day 1 heads (${error.message}). Please refresh.</p>`;
+    return;
+  }
+  if (!data || data.length === 0) {
     el.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">No Day 1 heads found.</p>`;
     return;
   }
@@ -269,11 +274,15 @@ async function addMembershipFeeToCart(headId, headName, unitPrice) {
   if (payer.familyNo) {
     const year = new Date().getFullYear();
     const yearStart = new Date(year, 0, 1).toISOString();
-    const { data: existing } = await db.from('dr_donations')
+    const { data: existing, error: existingErr } = await db.from('dr_donations')
       .select('amount, created_at')
       .eq('org_id', currentOrgId).eq('head_type', 'general_head').eq('general_head_id', headId)
       .eq('family_no', payer.familyNo).gte('created_at', yearStart)
       .order('created_at', { ascending: false }).limit(1);
+    if (existingErr) {
+      showToast('Could not check for a duplicate payment (' + existingErr.message + ') — try again', 'error');
+      return;
+    }
     if (existing && existing.length) {
       const e = existing[0];
       const dt = new Date(e.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -336,10 +345,16 @@ async function loadDayTabHeadsEntry() {
   if (!day) { el.innerHTML = ''; return; }
   el.innerHTML = 'Loading...';
 
-  const [{ data: genHeads }, { data: swHeads }] = await Promise.all([
+  const [{ data: genHeads, error: genErr }, { data: swHeads, error: swErr }] = await Promise.all([
     db.from('dr_general_heads').select('*').eq('org_id', currentOrgId).eq('paryushan_day', day).order('display_order'),
     db.from('dr_swapna').select('*').eq('org_id', currentOrgId).eq('paryushan_day', day).order('sort_order')
   ]);
+
+  if (genErr || swErr) {
+    console.error('loadDayTabHeadsEntry failed:', (genErr || swErr).message);
+    el.innerHTML = `<p style="color:#D32F2F;font-size:13px;margin-top:10px;">Could not load Day ${day} heads (${(genErr || swErr).message}). Please refresh.</p>`;
+    return;
+  }
 
   const items = [
     ...(genHeads || []).map(h => ({ id: h.id, name: h.name, headType: 'general', unitMode: h.unit_mode, feeType: h.fee_type, unitPrice: h.unit_price })),
@@ -701,16 +716,25 @@ function searchCartMember() {
     const resultsEl = document.getElementById('cart-member-results');
     if (q.length < 1) { resultsEl.style.display = 'none'; cartMemberSearchResults = []; cartMemberHighlightIndex = -1; return; }
 
-    const { data } = await db
+    const { data, error } = await db
       .from('dr_members')
       .select('*')
       .eq('org_id', currentOrgId)
       .or(`person_name.ilike.%${q}%,family_no.ilike.%${q}%`)
       .limit(8);
 
+    resultsEl.style.display = 'block';
+
+    if (error) {
+      console.error('searchCartMember failed:', error.message);
+      cartMemberSearchResults = [];
+      cartMemberHighlightIndex = -1;
+      resultsEl.innerHTML = '<p style="padding:8px;font-size:13px;color:#D32F2F;">Search failed (' + error.message + ') — try again.</p>';
+      return;
+    }
+
     cartMemberSearchResults = data || [];
     cartMemberHighlightIndex = cartMemberSearchResults.length > 0 ? 0 : -1;
-    resultsEl.style.display = 'block';
 
     if (cartMemberSearchResults.length === 0) {
       resultsEl.innerHTML = '<p style="padding:8px;font-size:13px;color:var(--text-muted);">No members found.</p>';
@@ -792,9 +816,10 @@ async function loadCartReceiptNameOptions(familyNo) {
   const freeText = document.getElementById('cart-receipt-name');
   if (!sel) return;
 
-  const { data: members } = await db.from('dr_family_individuals')
+  const { data: members, error } = await db.from('dr_family_individuals')
     .select('person_name').eq('org_id', currentOrgId).eq('family_no', familyNo)
     .order('is_head', { ascending: false });
+  if (error) console.error('loadCartReceiptNameOptions failed:', error.message);
 
   sel.innerHTML = `
     <option value="">-- Same as Donor --</option>
@@ -1219,11 +1244,22 @@ async function deleteDonation(id, refreshFn) {
   let token = null;
   let siblingCount = 0;
   if (d.token_id) {
-    const { data: t } = await db.from('dr_receipt_tokens')
+    const { data: t, error: tokErr } = await db.from('dr_receipt_tokens')
       .select('status, receipt_no, token_no').eq('id', d.token_id).single();
+    if (tokErr) {
+      // Can't verify whether this line's parent token is already paid — refuse
+      // to delete rather than risk silently orphaning a paid/printed receipt
+      // the way receipt #7 did on 2026-09-08 when this guard was bypassed.
+      showToast('Could not verify this item\'s receipt status (' + tokErr.message + ') — try again before deleting', 'error');
+      return;
+    }
     token = t || null;
-    const { count } = await db.from('dr_donations')
+    const { count, error: countErr } = await db.from('dr_donations')
       .select('id', { count: 'exact', head: true }).eq('token_id', d.token_id);
+    if (countErr) {
+      showToast('Could not verify this item\'s receipt status (' + countErr.message + ') — try again before deleting', 'error');
+      return;
+    }
     siblingCount = count || 0;
   }
 
