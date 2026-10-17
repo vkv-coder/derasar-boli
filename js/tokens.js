@@ -412,8 +412,10 @@ async function saveTokenAllocation(tokenId) {
   // needs each line's own amount — fetch then write, same as the loop
   // confirmTokenReceived() already does for the non-split path.
   const { data: tokenLines } = await db.from('dr_donations').select('id, amount').eq('token_id', tokenId);
+  let reconcileError = null;
   for (const line of (tokenLines || [])) {
-    await db.from('dr_donations').update({ received_amount: line.amount }).eq('id', line.id);
+    const { error: lineErr } = await db.from('dr_donations').update({ received_amount: line.amount }).eq('id', line.id);
+    if (lineErr) reconcileError = lineErr;
   }
 
   const { error: updErr } = await db.from('dr_receipt_tokens')
@@ -422,6 +424,9 @@ async function saveTokenAllocation(tokenId) {
   if (updErr) { showToast('Error: ' + updErr.message, 'error'); return; }
 
   showToast(`✅ Allocated into ${saved.length} receipts`, 'success');
+  if (reconcileError) {
+    showToast('Note: received amount may be stale on one or more lines — ' + reconcileError.message, 'error');
+  }
   await showAllocationResultsModal(saved.map(s => ({ ...s, receipt_no: null })), tokenId);
   await loadTokensList();
 }
@@ -593,6 +598,7 @@ async function savePaymentModeEdit(source, id) {
   // received_amount need to move together to stay consistent with an
   // already-paid token (real incident 2026-09-12: receipt #78's line and
   // token total were edited separately and drifted apart).
+  let donationSyncError = null;
   if (source === 'Token') {
     const donationUpdate = { donor_name: newName, payment_mode: mode, payment_ref: ref, ...(update.created_at ? { created_at: update.created_at } : {}) };
     if (newAmount !== null) {
@@ -602,11 +608,15 @@ async function savePaymentModeEdit(source, id) {
         donationUpdate.received_amount = newAmount;
       }
     }
-    await db.from('dr_donations').update(donationUpdate).eq('token_id', id);
+    const { error: syncErr } = await db.from('dr_donations').update(donationUpdate).eq('token_id', id);
+    donationSyncError = syncErr;
   }
 
   closeModal();
   showToast('✅ Receipt updated', 'success');
+  if (donationSyncError) {
+    showToast('Note: receipt line may not have synced — ' + donationSyncError.message, 'error');
+  }
   if (document.getElementById('register-table-container')) await loadReceiptRegister();
   if (document.getElementById('tokens-list')) await loadTokensList();
 }

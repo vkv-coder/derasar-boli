@@ -635,14 +635,19 @@ async function updateMember(id) {
   // family was first added) in sync, so the "Receipt In Name Of" dropdown
   // doesn't keep showing a stale name (or the old family_no) after an edit.
   // dob/gender also live only there (dr_members has no such columns).
+  let individualSyncError = null;
   if (before?.family_no) {
-    await db.from('dr_family_individuals')
+    const { error: syncErr } = await db.from('dr_family_individuals')
       .update({ person_name, family_no, dob, age, gender })
       .eq('org_id', currentOrgId).eq('family_no', before.family_no).eq('is_head', true);
+    individualSyncError = syncErr;
   }
 
   closeModal();
   showToast('Member updated!', 'success');
+  if (individualSyncError) {
+    showToast('Note: could not sync "' + person_name + '" to Receipt In Name Of list — ' + individualSyncError.message, 'error');
+  }
   await Promise.all([loadMembersStats(), loadMembersList()]);
 }
 
