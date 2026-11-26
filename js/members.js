@@ -70,7 +70,11 @@ async function loadMembersList(query = '') {
   const data = raw ? sortFamilyNo(raw) : raw;
 
   const el = document.getElementById('members-list');
-  if (error || !data || data.length === 0) {
+  if (error) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><p>Could not load members - please try again. (Do NOT re-add members, this is a loading error, not an empty list.)</p></div>`;
+    return;
+  }
+  if (!data || data.length === 0) {
     el.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><p>No members found.</p></div>`;
     return;
   }

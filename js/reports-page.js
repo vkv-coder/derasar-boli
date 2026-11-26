@@ -97,16 +97,7 @@ async function loadReport() {
   const el = document.getElementById('report-content');
   el.innerHTML = `<div class="card" style="text-align:center;padding:30px;color:var(--text-muted);">Loading...</div>`;
 
-  const [
-    { data: donations },
-    { data: swapnaTree },
-    { data: swapnaItems },
-    { data: generalHeads },
-    { data: receipts },
-    { data: tokens },
-    { data: splits },
-    { data: orgRow }
-  ] = await Promise.all([
+  const results = await Promise.all([
     db.from('dr_donations').select('*').eq('org_id', currentOrgId).order('created_at', { ascending: true }),
     db.from('dr_swapna').select('*').eq('org_id', currentOrgId).order('sort_order'),
     db.from('dr_swapna_items').select('*').eq('org_id', currentOrgId),
@@ -116,6 +107,21 @@ async function loadReport() {
     db.from('dr_token_splits').select('token_id, receipt_no').eq('org_id', currentOrgId),
     db.from('dr_organizations').select('receipt_prefix').eq('id', currentOrgId).single()
   ]);
+  const firstError = results.find(r => r.error)?.error;
+  if (firstError) {
+    el.innerHTML = `<div class="card" style="text-align:center;padding:30px;color:var(--err);">Could not load the report (${firstError.message}) - please try again. This is NOT a real donation total, do not trust any numbers below until this reloads successfully.</div>`;
+    return;
+  }
+  const [
+    { data: donations },
+    { data: swapnaTree },
+    { data: swapnaItems },
+    { data: generalHeads },
+    { data: receipts },
+    { data: tokens },
+    { data: splits },
+    { data: orgRow }
+  ] = results;
 
   reportAllDonations = donations || [];
   reportSwapnaTree = swapnaTree || [];
