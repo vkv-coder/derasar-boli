@@ -135,6 +135,7 @@ async function renderEntry() {
           <a href="javascript:void(0)" style="font-size:12px;color:var(--text-muted);" onclick="toggleManualReceiptEntry()">📝 Back-entry for an already-issued paper receipt no.</a>
           <div id="cart-manual-receipt-row" style="display:none;margin-top:6px;gap:6px;align-items:center;">
             <input type="number" id="cart-manual-receipt-no" placeholder="Receipt No." min="1" style="width:100px;display:inline-block;" />
+            <input type="date" id="cart-manual-receipt-date" title="Leave blank for today's date" style="display:inline-block;" />
             <select id="cart-manual-payment-mode" onchange="toggleManualRefInput()" style="display:inline-block;">
               <option value="cash" selected>💵 Cash</option>
               <option value="online">📱 Online</option>
@@ -1002,6 +1003,7 @@ async function generateManualReceiptFromCart(btn) {
   const noInput = document.getElementById('cart-manual-receipt-no');
   const manualNo = parseInt(noInput?.value, 10);
   if (!manualNo || manualNo <= 0) { showToast('Enter a valid receipt number', 'error'); return; }
+  const dateInput = document.getElementById('cart-manual-receipt-date');
   const paymentMode = document.getElementById('cart-manual-payment-mode')?.value || 'cash';
   const paymentRef = paymentMode === 'online'
     ? (document.getElementById('cart-manual-payment-ref')?.value || '').trim() || null
@@ -1033,7 +1035,17 @@ async function generateManualReceiptFromCart(btn) {
     // bypassing here) — set it directly so this back-entry shows up in the
     // Register and is reprintable from any admin's device, exactly like a
     // normal receipt.
-    const nowIso = new Date().toISOString();
+    // An optional date box lets this back-entry carry the paper receipt's
+    // real date instead of today's — same keep-the-time/swap-the-day
+    // approach as the Receipt Register's own date-correction field (see
+    // tokens.js editPaymentModeModal), so this stays one consistent
+    // pattern across the app rather than two different date conventions.
+    const now = new Date();
+    if (dateInput?.value) {
+      const [y, m, d] = dateInput.value.split('-').map(Number);
+      now.setFullYear(y, m - 1, d);
+    }
+    const nowIso = now.toISOString();
     const { data: token, error: tErr } = await db.from('dr_receipt_tokens').insert({
       org_id: currentOrgId,
       member_id: payer.memberId,
@@ -1043,6 +1055,7 @@ async function generateManualReceiptFromCart(btn) {
       total_amount: total,
       created_by: currentUser?.id || null,
       status: 'paid',
+      created_at: nowIso,
       paid_at: nowIso,
       receipt_no: manualNo,
       receipt_no_assigned_at: nowIso,
@@ -1051,7 +1064,7 @@ async function generateManualReceiptFromCart(btn) {
     }).select().single();
     if (tErr) { showToast('Error: ' + tErr.message, 'error'); return; }
 
-    const records = buildCartRecords(payer, receiptName).map(r => ({ ...r, token_id: token.id, received_amount: r.amount, payment_mode: paymentMode, payment_ref: paymentRef }));
+    const records = buildCartRecords(payer, receiptName).map(r => ({ ...r, token_id: token.id, received_amount: r.amount, payment_mode: paymentMode, payment_ref: paymentRef, created_at: nowIso }));
     const { data: saved, error: dErr } = await db.from('dr_donations').insert(records).select();
     if (dErr) { showToast('Error: ' + dErr.message, 'error'); return; }
 
@@ -1067,6 +1080,7 @@ async function generateManualReceiptFromCart(btn) {
     renderCartList();
     resetCartDonorFields();
     if (noInput) noInput.value = '';
+    if (dateInput) dateInput.value = '';
     const refInput = document.getElementById('cart-manual-payment-ref');
     if (refInput) { refInput.value = ''; refInput.style.display = 'none'; }
     await loadDay1HeadsEntry();
