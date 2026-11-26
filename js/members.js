@@ -356,12 +356,15 @@ async function addMember(familyNo = null, personName = null, btn = null) {
       .insert({ org_id: currentOrgId, family_no, person_name, is_head: true, dob, age, gender, phone_no });
 
     closeModal();
-    showToast('Member added!', 'success');
     if (individualError) {
       // dr_members insert above already succeeded — the member exists — but
       // the head won't show up in the "Receipt In Name Of" dropdown until
       // this is retried, so surface it rather than silently dropping it.
-      showToast('Note: could not add "' + person_name + '" to Receipt In Name Of list — ' + individualError.message, 'error');
+      // Checked before the success toast so the user never sees "added!"
+      // immediately followed by an error about the same action.
+      showToast('Member added, but could not add "' + person_name + '" to Receipt In Name Of list — ' + individualError.message, 'error');
+    } else {
+      showToast('Member added!', 'success');
     }
     await Promise.all([loadMembersStats(), loadMembersList()]);
     showFamilyIndividualsModal(family_no, person_name);
@@ -644,9 +647,12 @@ async function updateMember(id) {
   }
 
   closeModal();
-  showToast('Member updated!', 'success');
   if (individualSyncError) {
-    showToast('Note: could not sync "' + person_name + '" to Receipt In Name Of list — ' + individualSyncError.message, 'error');
+    // Checked before the success toast so the user never sees "updated!"
+    // immediately followed by an error about the same action.
+    showToast('Member updated, but could not sync "' + person_name + '" to Receipt In Name Of list — ' + individualSyncError.message, 'error');
+  } else {
+    showToast('Member updated!', 'success');
   }
   await Promise.all([loadMembersStats(), loadMembersList()]);
 }
