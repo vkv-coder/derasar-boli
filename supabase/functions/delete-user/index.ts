@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
       headers: { 'Authorization': `Bearer ${serviceRoleKey}`, 'apikey': serviceRoleKey, 'Accept': 'application/json' }
     })
     const profiles = await profileRes.json()
-    if (!profiles.length || profiles[0].role !== 'admin') {
+    if (!profiles.length || !['admin', 'master_admin'].includes(profiles[0].role)) {
       return new Response(JSON.stringify({ error: 'Admin access required' }), { status: 403, headers: corsHeaders })
     }
 
@@ -47,12 +47,21 @@ Deno.serve(async (req) => {
     }
 
     // Target user must be in the caller's own org
-    const targetRes = await fetch(`${supabaseUrl}/rest/v1/dr_profiles?id=eq.${userId}&select=org_id`, {
+    const targetRes = await fetch(`${supabaseUrl}/rest/v1/dr_profiles?id=eq.${userId}&select=org_id,role`, {
       headers: { 'Authorization': `Bearer ${serviceRoleKey}`, 'apikey': serviceRoleKey, 'Accept': 'application/json' }
     })
     const targets = await targetRes.json()
     if (!targets.length || targets[0].org_id !== profiles[0].org_id) {
       return new Response(JSON.stringify({ error: 'User not found in your organization' }), { status: 403, headers: corsHeaders })
+    }
+
+    // A Master Admin can never be removed here — an org must always keep
+    // exactly one. Only a Master Admin may remove a regular Admin.
+    if (targets[0].role === 'master_admin') {
+      return new Response(JSON.stringify({ error: 'The Master Admin account cannot be removed' }), { status: 403, headers: corsHeaders })
+    }
+    if (targets[0].role === 'admin' && profiles[0].role !== 'master_admin') {
+      return new Response(JSON.stringify({ error: 'Only the Master Admin can remove an Admin' }), { status: 403, headers: corsHeaders })
     }
 
     // Delete profile first

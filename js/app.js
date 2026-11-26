@@ -32,7 +32,7 @@ async function initApp() {
   showMainApp();
   await loadOrgBranding();
   const badge = document.getElementById('user-role-badge');
-  badge.textContent = window.isDemoMode ? 'Demo' : (isAdmin() ? 'Admin' : 'Operator');
+  badge.textContent = window.isDemoMode ? 'Demo' : (isMasterAdmin() ? 'Master Admin' : isAdmin() ? 'Admin' : 'Operator');
   buildNav();
   if (window.isDemoMode) {
     loadTab('guide');

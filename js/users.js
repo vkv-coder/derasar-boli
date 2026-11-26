@@ -55,15 +55,16 @@ async function loadUsersList() {
             <td><div style="font-weight:600;">${u.full_name}</div></td>
             <td style="font-size:12px;color:var(--text-muted);">${emails[u.id] || '—'}</td>
             <td>
-              <span class="badge ${u.role === 'admin' ? 'badge-swapna' : 'badge-general'}">
-                ${u.role === 'admin' ? '🔑 Admin' : '✏️ Operator'}
+              <span class="badge ${u.role === 'master_admin' ? 'badge-swapna' : u.role === 'admin' ? 'badge-swapna' : 'badge-general'}">
+                ${u.role === 'master_admin' ? '👑 Master Admin' : u.role === 'admin' ? '🔑 Admin' : '✏️ Operator'}
               </span>
             </td>
             <td>
               <div style="display:flex;gap:6px;">
-                ${u.id !== currentUser.id ? `
-                  <button class="btn-sm btn-danger" onclick="deleteAppUser('${u.id}','${u.full_name}')">Remove</button>
-                ` : '<span style="font-size:12px;color:var(--text-muted);">You</span>'}
+                ${u.id === currentUser.id ? '<span style="font-size:12px;color:var(--text-muted);">You</span>'
+                  : u.role === 'master_admin' ? '<span style="font-size:12px;color:var(--text-muted);">—</span>'
+                  : (u.role === 'admin' && !isMasterAdmin()) ? '<span style="font-size:12px;color:var(--text-muted);">Only Master Admin can remove</span>'
+                  : `<button class="btn-sm btn-danger" onclick="deleteAppUser('${u.id}','${u.full_name}')">Remove</button>`}
               </div>
             </td>
           </tr>
@@ -112,7 +113,7 @@ function showAddUserModal() {
       <label>Role</label>
       <select id="new-user-role">
         <option value="operator">✏️ Operator (Donation Entry only)</option>
-        <option value="admin">🔑 Admin (Full Access)</option>
+        ${isMasterAdmin() ? '<option value="admin">🔑 Admin (Full Access)</option>' : ''}
       </select>
     </div>
     <div id="add-user-error" class="error-msg"></div>

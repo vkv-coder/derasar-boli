@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
       }
     })
     const profiles = await profileRes.json()
-    if (!profiles.length || profiles[0].role !== 'admin') {
+    if (!profiles.length || !['admin', 'master_admin'].includes(profiles[0].role)) {
       return new Response(JSON.stringify({ error: 'Admin access required' }), { status: 403, headers: corsHeaders })
     }
 
@@ -52,6 +52,16 @@ Deno.serve(async (req) => {
     // New user must be created inside the calling admin's own org
     if (org_id !== profiles[0].org_id) {
       return new Response(JSON.stringify({ error: 'org_id does not match caller\'s organization' }), { status: 403, headers: corsHeaders })
+    }
+
+    // Only a master admin can create another admin. A regular admin can
+    // only create operators. master_admin itself is never created here —
+    // there is exactly one per org, set at signup or by direct migration.
+    if (role === 'master_admin') {
+      return new Response(JSON.stringify({ error: 'Cannot create a Master Admin here' }), { status: 403, headers: corsHeaders })
+    }
+    if (role === 'admin' && profiles[0].role !== 'master_admin') {
+      return new Response(JSON.stringify({ error: 'Only the Master Admin can add another Admin' }), { status: 403, headers: corsHeaders })
     }
 
     // Create user via REST admin API

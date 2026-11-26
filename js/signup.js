@@ -77,7 +77,7 @@ async function submitSignup() {
   const { error: profErr } = await db.from('dr_profiles').upsert({
     id: userId,
     full_name: sanghName,
-    role: 'admin',
+    role: 'master_admin',
     org_id: orgData.id,
     status: 'pending',
     phone: phone

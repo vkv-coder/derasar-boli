@@ -73,7 +73,11 @@ async function loadProfile() {
 }
 
 function isAdmin() {
-  return currentProfile && currentProfile.role === 'admin';
+  return currentProfile && (currentProfile.role === 'admin' || currentProfile.role === 'master_admin');
+}
+
+function isMasterAdmin() {
+  return currentProfile && currentProfile.role === 'master_admin';
 }
 
 function showMainApp() {

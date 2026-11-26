@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
       headers: { 'Authorization': `Bearer ${serviceRoleKey}`, 'apikey': serviceRoleKey, 'Accept': 'application/json' }
     })
     const profiles = await profileRes.json()
-    if (!profiles.length || profiles[0].role !== 'admin') {
+    if (!profiles.length || !['admin', 'master_admin'].includes(profiles[0].role)) {
       return new Response(JSON.stringify({ error: 'Admin access required' }), { status: 403, headers: corsHeaders })
     }
 
