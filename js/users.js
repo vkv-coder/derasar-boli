@@ -22,7 +22,7 @@ async function renderUsers() {
 async function loadUsersList() {
   const { data: users, error } = await db
     .from('dr_profiles')
-    .select('id, full_name, role, created_at')
+    .select('id, full_name, role, status, created_at')
     .eq('org_id', currentOrgId)
     .order('created_at');
 
@@ -46,6 +46,7 @@ async function loadUsersList() {
           <th>Name</th>
           <th>Email</th>
           <th>Role</th>
+          <th>Status</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -60,11 +61,11 @@ async function loadUsersList() {
               </span>
             </td>
             <td>
-              <div style="display:flex;gap:6px;">
-                ${u.id === currentUser.id ? '<span style="font-size:12px;color:var(--text-muted);">You</span>'
-                  : u.role === 'master_admin' ? '<span style="font-size:12px;color:var(--text-muted);">—</span>'
-                  : (u.role === 'admin' && !isMasterAdmin()) ? '<span style="font-size:12px;color:var(--text-muted);">Only Master Admin can remove</span>'
-                  : `<button class="btn-sm btn-danger" onclick="deleteAppUser('${u.id}','${u.full_name}')">Remove</button>`}
+              ${u.status === 'paused' ? '<span class="badge badge-general">⏸ Paused</span>' : '<span class="badge badge-swapna">✅ Active</span>'}
+            </td>
+            <td>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                ${renderUserActions(u)}
               </div>
             </td>
           </tr>
@@ -73,6 +74,78 @@ async function loadUsersList() {
     </table>
     <p style="font-size:12px;color:var(--text-muted);margin-top:10px;">Total: ${users.length} users</p>
   `;
+}
+
+function renderUserActions(u) {
+  if (u.id === currentUser.id) return '<span style="font-size:12px;color:var(--text-muted);">You</span>';
+  if (u.role === 'master_admin') return '<span style="font-size:12px;color:var(--text-muted);">—</span>';
+
+  const canManageThisRole = u.role === 'operator' || isMasterAdmin();
+  if (!canManageThisRole) return '<span style="font-size:12px;color:var(--text-muted);">Only Master Admin can manage Admins</span>';
+
+  const buttons = [];
+  buttons.push(u.status === 'paused'
+    ? `<button class="btn-sm btn-secondary" onclick="resumeAppUser('${u.id}','${u.full_name}')">▶ Resume</button>`
+    : `<button class="btn-sm btn-secondary" onclick="pauseAppUser('${u.id}','${u.full_name}')">⏸ Pause</button>`);
+
+  if (isMasterAdmin()) {
+    buttons.push(u.role === 'admin'
+      ? `<button class="btn-sm btn-secondary" onclick="demoteAppUser('${u.id}','${u.full_name}')">⬇ Make Operator</button>`
+      : `<button class="btn-sm btn-secondary" onclick="promoteAppUser('${u.id}','${u.full_name}')">⬆ Make Admin</button>`);
+  }
+
+  buttons.push(`<button class="btn-sm btn-danger" onclick="deleteAppUser('${u.id}','${u.full_name}')">Remove</button>`);
+  return buttons.join('');
+}
+
+async function callUpdateUser(userId, action, confirmMsg) {
+  if (confirmMsg && !confirm(confirmMsg)) return false;
+
+  const { data: { session } } = await db.auth.getSession();
+  let response, rawText;
+  try {
+    response = await fetch(`${SUPABASE_URL}/functions/v1/update-user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': SUPABASE_ANON_KEY
+      },
+      body: JSON.stringify({ userId, action })
+    });
+    rawText = await response.text();
+  } catch (fetchErr) {
+    showToast('Network error: ' + fetchErr.message, 'error');
+    return false;
+  }
+
+  if (!response.ok) {
+    let msg = rawText;
+    try { msg = JSON.parse(rawText).error || rawText; } catch(e) {}
+    showToast('Error: ' + msg, 'error');
+    return false;
+  }
+  return true;
+}
+
+async function pauseAppUser(id, name) {
+  const ok = await callUpdateUser(id, 'pause', `Pause "${name}"? They won't be able to log in until resumed.`);
+  if (ok) { showToast(`"${name}" paused.`); await loadUsersList(); }
+}
+
+async function resumeAppUser(id, name) {
+  const ok = await callUpdateUser(id, 'resume');
+  if (ok) { showToast(`"${name}" resumed.`, 'success'); await loadUsersList(); }
+}
+
+async function promoteAppUser(id, name) {
+  const ok = await callUpdateUser(id, 'promote', `Make "${name}" an Admin? They'll get full access to Reports, Members, Heads Setup etc.`);
+  if (ok) { showToast(`"${name}" is now an Admin.`, 'success'); await loadUsersList(); }
+}
+
+async function demoteAppUser(id, name) {
+  const ok = await callUpdateUser(id, 'demote', `Make "${name}" an Operator? They'll lose Admin access and be limited to Donation Entry.`);
+  if (ok) { showToast(`"${name}" is now an Operator.`, 'success'); await loadUsersList(); }
 }
 
 async function fetchUserEmails() {

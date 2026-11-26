@@ -44,6 +44,13 @@ async function checkProfileAccess(errEl) {
     currentProfile = null;
     return true;
   }
+  if (currentProfile.status === 'paused') {
+    if (errEl) errEl.textContent = 'Your account has been paused by your Sangh\'s admin. Contact them to restore access.';
+    await db.auth.signOut();
+    currentUser = null;
+    currentProfile = null;
+    return true;
+  }
   currentOrgId = currentProfile.org_id;
   return false;
 }
